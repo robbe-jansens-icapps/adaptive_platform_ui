@@ -1,5 +1,9 @@
 # Adaptive Platform UI
 
+> **Blue Bike fork.** Vendored from [adaptive_platform_ui 1.0.1](https://pub.dev/packages/adaptive_platform_ui/versions/1.0.1)
+> (MIT, see `LICENSE`). The upstream `img/`, `example/`, `CLAUDE.md` and `codecov.yml` were left out.
+> Changes made on top of 1.0.1 are listed under "Blue Bike fork" in `CHANGELOG.md`.
+
 [![CI](https://github.com/berkaycatak/adaptive_platform_ui/workflows/CI/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/actions)
 [![Release](https://github.com/berkaycatak/adaptive_platform_ui/workflows/Release/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
