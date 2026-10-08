@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 
@@ -74,6 +75,58 @@ void main() {
         ].where((p) => p).length;
 
         expect(platformCount, equals(1));
+      }
+    });
+  });
+
+  group('PlatformInfo debug overrides', () {
+    tearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      PlatformInfo.debugIOSVersionOverride = null;
+    });
+
+    test('an iOS override with a version takes the iOS 26+ path', () {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 27;
+
+      expect(PlatformInfo.isIOS, isTrue);
+      expect(PlatformInfo.isAndroid, isFalse);
+      expect(PlatformInfo.isWeb, isFalse);
+      expect(PlatformInfo.iOSVersion, 27);
+      expect(PlatformInfo.isIOS26OrHigher(), isTrue);
+      expect(PlatformInfo.platformDescription, 'iOS 27');
+    });
+
+    test('an older iOS version override takes the legacy iOS path', () {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 18;
+
+      expect(PlatformInfo.isIOS26OrHigher(), isFalse);
+      expect(PlatformInfo.isIOS18OrLower(), isTrue);
+    });
+
+    test('an Android override reports no iOS version', () {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+      PlatformInfo.debugIOSVersionOverride = 26;
+
+      expect(PlatformInfo.isAndroid, isTrue);
+      expect(PlatformInfo.isIOS, isFalse);
+      expect(PlatformInfo.iOSVersion, 0);
+      expect(PlatformInfo.isIOS26OrHigher(), isFalse);
+    });
+
+    test('other platforms can be overridden too', () {
+      for (final platform in [
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.fuchsia,
+      ]) {
+        PlatformInfo.debugPlatformOverride = platform;
+        expect(PlatformInfo.isMacOS, platform == TargetPlatform.macOS);
+        expect(PlatformInfo.isWindows, platform == TargetPlatform.windows);
+        expect(PlatformInfo.isLinux, platform == TargetPlatform.linux);
+        expect(PlatformInfo.isFuchsia, platform == TargetPlatform.fuchsia);
       }
     });
   });
