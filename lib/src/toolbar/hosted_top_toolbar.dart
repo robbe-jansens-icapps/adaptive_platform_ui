@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
 import '../style/sf_symbol.dart';
+import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
@@ -23,6 +24,8 @@ class TopToolbarContent {
     this.actions = const <AdaptiveAppBarAction>[],
     this.tint,
     this.navigator,
+    this.onBack,
+    this.backStyle = AdaptiveBackButtonStyle.back,
   });
 
   /// No page owns the chrome, the page has no toolbar, or it draws a
@@ -45,6 +48,8 @@ class TopToolbarContent {
           : appBar.actions ?? const <AdaptiveAppBarAction>[],
       tint: appBar.tintColor,
       navigator: entry.navigator,
+      onBack: appBar.onBack,
+      backStyle: appBar.backButtonStyle,
     );
   }
 
@@ -58,6 +63,10 @@ class TopToolbarContent {
   final List<AdaptiveAppBarAction> actions;
   final Color? tint;
   final NavigatorState? navigator;
+
+  /// Performed by the back button instead of popping [navigator].
+  final VoidCallback? onBack;
+  final AdaptiveBackButtonStyle backStyle;
 
   bool get isEmpty =>
       title == null &&
@@ -172,9 +181,7 @@ class HostedTopToolbar extends StatelessWidget {
                     child: FadeTransition(
                       key: const ValueKey<String>('adaptive_toolbar_back_fade'),
                       opacity: backOpacity,
-                      child: _BackButton(
-                        navigator: (upperOwns ? upper : lower).navigator,
-                      ),
+                      child: _BackButton(content: upperOwns ? upper : lower),
                     ),
                   ),
               ],
@@ -274,21 +281,28 @@ class _Backdrop extends StatelessWidget {
   }
 }
 
-/// Back for the page that owns the chrome, performed on that page's own
-/// navigator so nested navigators (tabs, shell routes) pop the right stack.
+/// Back for the page that owns the chrome: the page's own handler, or else a
+/// pop of the page's own navigator, so nested navigators (tabs, shell routes)
+/// pop the right stack.
 class _BackButton extends StatelessWidget {
-  const _BackButton({required this.navigator});
+  const _BackButton({required this.content});
 
-  final NavigatorState? navigator;
+  final TopToolbarContent content;
 
   @override
   Widget build(BuildContext context) {
+    final onBack = content.onBack;
     return SizedBox(
       height: 38,
       width: 38,
       child: AdaptiveButton.sfSymbol(
-        onPressed: () => navigator?.maybePop(),
-        sfSymbol: const SFSymbol('chevron.left', size: 20),
+        onPressed: onBack ?? () => content.navigator?.maybePop(),
+        sfSymbol: SFSymbol(
+          content.backStyle == AdaptiveBackButtonStyle.close
+              ? 'xmark'
+              : 'chevron.left',
+          size: 20,
+        ),
       ),
     );
   }

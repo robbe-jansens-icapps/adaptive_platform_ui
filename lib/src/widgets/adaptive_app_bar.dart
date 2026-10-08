@@ -1,6 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'adaptive_app_bar_action.dart';
 
+/// What the back button of the fixed iOS 26 toolbar looks like.
+enum AdaptiveBackButtonStyle {
+  /// A chevron, for a page pushed onto another one.
+  back,
+
+  /// A cross, for a page that covers the screen like a dialog.
+  close,
+}
+
 /// Configuration for an adaptive app bar
 ///
 /// This class holds the configuration for the app bar in [AdaptiveScaffold].
@@ -26,6 +35,9 @@ class AdaptiveAppBar {
     this.titleWidget,
     this.cupertinoNavigationBar,
     this.appBar,
+    this.onBack,
+    this.backButtonStyle = AdaptiveBackButtonStyle.back,
+    this.automaticallyImplyLeading = true,
   });
 
   /// Title for the app bar
@@ -85,6 +97,19 @@ class AdaptiveAppBar {
   /// Ignored on iOS platforms.
   final PreferredSizeWidget? appBar;
 
+  /// Called by the back button that the fixed iOS 26 toolbar (see
+  /// `AdaptiveToolbarHost`) shows for this page, instead of popping the page's
+  /// navigator. With [onBack] set the back button is shown even when the page
+  /// cannot pop.
+  final VoidCallback? onBack;
+
+  /// Whether the back button of the fixed toolbar is a chevron or a cross.
+  final AdaptiveBackButtonStyle backButtonStyle;
+
+  /// Whether the fixed toolbar adds a back button by itself when the page can
+  /// pop. Turn it off for pages that show one only through [onBack].
+  final bool automaticallyImplyLeading;
+
   /// Creates a copy of this app bar with the given fields replaced
   AdaptiveAppBar copyWith({
     String? title,
@@ -96,6 +121,9 @@ class AdaptiveAppBar {
     Widget? titleWidget,
     PreferredSizeWidget? cupertinoNavigationBar,
     PreferredSizeWidget? appBar,
+    VoidCallback? onBack,
+    AdaptiveBackButtonStyle? backButtonStyle,
+    bool? automaticallyImplyLeading,
   }) {
     return AdaptiveAppBar(
       title: title ?? this.title,
@@ -108,6 +136,10 @@ class AdaptiveAppBar {
       cupertinoNavigationBar:
           cupertinoNavigationBar ?? this.cupertinoNavigationBar,
       appBar: appBar ?? this.appBar,
+      onBack: onBack ?? this.onBack,
+      backButtonStyle: backButtonStyle ?? this.backButtonStyle,
+      automaticallyImplyLeading:
+          automaticallyImplyLeading ?? this.automaticallyImplyLeading,
     );
   }
 }

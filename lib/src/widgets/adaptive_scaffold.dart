@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_native_tab_bar.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,7 @@ import 'adaptive_button.dart';
 import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
 import '../toolbar/toolbar_registry.dart';
+import '../utils/size_reporter.dart';
 
 /// Navigation destination for bottom navigation
 class AdaptiveNavigationDestination {
@@ -69,6 +72,33 @@ enum TabBarMinimizeBehavior {
 
   /// Let the system decide
   automatic,
+}
+
+/// How much of the bottom of a page the native iOS 26 tab bar of the
+/// [AdaptiveScaffold] around it covers. The bar floats over the page, so a
+/// page can let a map or a list run underneath it and keep its own controls
+/// clear of it (the page's `MediaQuery` bottom padding already includes it).
+///
+/// 0 where there is no such bar, and on iPhone Duo while the tabs are shown
+/// in the trailing vertical bar.
+class AdaptiveBottomBarInset extends InheritedWidget {
+  const AdaptiveBottomBarInset({
+    super.key,
+    required this.height,
+    required super.child,
+  });
+
+  final double height;
+
+  static double of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<AdaptiveBottomBarInset>()
+          ?.height ??
+      0;
+
+  @override
+  bool updateShouldNotify(AdaptiveBottomBarInset oldWidget) =>
+      height != oldWidget.height;
 }
 
 /// An adaptive scaffold that renders platform-specific navigation
@@ -198,6 +228,38 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// [AdaptiveToolbarHost] is installed above the navigator.
   ToolbarRegistry? _toolbarRegistry;
 
+  /// Height the native tab bar covers at the bottom of the body, once
+  /// measured.
+  double _tabBarHeight = 0;
+
+  void _onTabBarSizeChanged(Size size) {
+    if (!mounted || size.height == _tabBarHeight) return;
+    setState(() => _tabBarHeight = size.height);
+  }
+
+  /// Lets the body keep its content clear of the native tab bar floating over
+  /// it: raises the bottom padding to the bar's height and publishes that
+  /// height through [AdaptiveBottomBarInset]. The body still runs underneath
+  /// the bar, so a map or a list can show through its glass.
+  Widget _withBottomBarInset(Widget body, {required bool barShown}) {
+    final height = barShown && !widget.tabBarHidden ? _tabBarHeight : 0.0;
+    final mediaQuery = MediaQuery.of(context);
+    return AdaptiveBottomBarInset(
+      height: height,
+      child: MediaQuery(
+        data: mediaQuery.copyWith(
+          padding: mediaQuery.padding.copyWith(
+            bottom: math.max(mediaQuery.padding.bottom, height),
+          ),
+          viewPadding: mediaQuery.viewPadding.copyWith(
+            bottom: math.max(mediaQuery.viewPadding.bottom, height),
+          ),
+        ),
+        child: body,
+      ),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -294,6 +356,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         // releases after 3.35; `of` works on every supported version.
         // ignore: deprecated_member_use
         visible: TickerMode.of(context) && Visibility.of(context),
+        selected: Visibility.of(context),
         tabBar: _tabBarForChrome,
       ),
     );
@@ -588,7 +651,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                 child: PlatformInfo.isIOS26OrHigher() && useNativeBottomBar
                     ? Stack(
                         children: [
-                          widget.body ?? const SizedBox.shrink(),
+                          _withBottomBarInset(
+                            widget.body ?? const SizedBox.shrink(),
+                            barShown: !_tabsInTrailingBar(context),
+                          ),
                           // On iPhone Duo the fixed chrome shows the tabs at
                           // the bottom of the trailing bar instead, so the
                           // bottom bar is not built at all.
@@ -597,7 +663,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                               left: 0,
                               right: 0,
                               bottom: 0,
-                              child: tabBar!,
+                              child: SizeReporter(
+                                onSizeChanged: _onTabBarSizeChanged,
+                                child: tabBar!,
+                              ),
                             ),
                         ],
                       )

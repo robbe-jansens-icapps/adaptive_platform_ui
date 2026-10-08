@@ -25,7 +25,8 @@ class PlatformInfo {
   }
 
   /// Returns true if the current platform is iOS
-  static bool get isIOS => _isPlatform(TargetPlatform.iOS, () => Platform.isIOS);
+  static bool get isIOS =>
+      _isPlatform(TargetPlatform.iOS, () => Platform.isIOS);
 
   /// Returns true if the current platform is Android
   static bool get isAndroid =>

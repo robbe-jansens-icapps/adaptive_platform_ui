@@ -4,6 +4,10 @@
 Changes on top of the vendored 1.0.1 release.
 
 * **NEW**: `PlatformInfo.debugPlatformOverride` and `PlatformInfo.debugIOSVersionOverride` let tests take the iOS 26+ or Android paths on any host. Native views keep checking the real platform, so they still draw their Flutter fallbacks off device
+* **FIX**: iPhone Duo: tabs built as an `IndexedStack` inside the tab scaffold's own route (no navigator per tab) keep their tab bar in the trailing bar on every tab. Before, a tab page with an app bar found no tab layout, and the tabs disappeared. A page that leaves also uncovers the selected tab instead of a hidden one
+* **NEW**: `AdaptiveAppBar.onBack`, `backButtonStyle` and `automaticallyImplyLeading`. The back button of the fixed toolbar and of the iPhone Duo trailing bar can call the page's own handler instead of popping, show a cross for pages shown like a dialog, or be left out for pages that cannot go back
+* **NEW**: On iOS 26+ the native tab bar of an `AdaptiveScaffold` without an app bar raises the body's bottom padding to its measured height and publishes it through `AdaptiveBottomBarInset`, so pages keep their content clear of the floating bar while still running underneath it
+
 ## [1.0.1]
 * **FIX**: 📱 **iPhone Duo: the tab bar now lives in the vertical bar**, at the bottom of it, the way the system lays it out. In 1.0.0 it stayed at the bottom of the screen. The strip now reads, from the top: status cluster, back button, toolbar items, tab bar. Measured against a native UIKit app on the iPhone Duo simulator
 * **FIX**: iPhone Duo: the vertical bar follows the hardware through every rotation. On the cover display in landscape it stays on the side, including the rotation that puts the strip on the left, and it keeps clear of the camera wherever the rotation puts it (top or bottom of the strip). In 1.0.0 rotating fell back to horizontal bars. The inner display in portrait keeps horizontal bars, as it does in UIKit

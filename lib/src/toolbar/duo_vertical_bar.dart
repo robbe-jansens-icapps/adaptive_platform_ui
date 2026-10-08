@@ -454,9 +454,16 @@ class _ActionCapsule extends StatelessWidget {
 
 /// The back button of the trailing bar: one round glass control.
 class DuoBarBackButton extends StatelessWidget {
-  const DuoBarBackButton({super.key, required this.onPressed});
+  const DuoBarBackButton({
+    super.key,
+    required this.onPressed,
+    this.close = false,
+  });
 
   final VoidCallback onPressed;
+
+  /// A cross instead of a chevron, for a page shown like a dialog.
+  final bool close;
 
   @override
   Widget build(BuildContext context) {
@@ -464,12 +471,18 @@ class DuoBarBackButton extends StatelessWidget {
       width: IOS26GlassCapsule.width,
       height: IOS26GlassCapsule.width,
       child: IOS26GlassCapsule(
-        items: const [
-          GlassCapsuleItem(
-            symbol: 'chevron.left',
-            label: 'Back',
-            fallback: Icon(CupertinoIcons.chevron_left, size: 22),
-          ),
+        items: [
+          close
+              ? const GlassCapsuleItem(
+                  symbol: 'xmark',
+                  label: 'Close',
+                  fallback: Icon(CupertinoIcons.xmark, size: 22),
+                )
+              : const GlassCapsuleItem(
+                  symbol: 'chevron.left',
+                  label: 'Back',
+                  fallback: Icon(CupertinoIcons.chevron_left, size: 22),
+                ),
         ],
         onTap: (_) => onPressed(),
       ),

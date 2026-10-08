@@ -17,6 +17,7 @@ class ToolbarEntry {
     required this.route,
     required this.navigator,
     required this.visible,
+    this.selected = true,
     this.tabBar,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
@@ -45,6 +46,11 @@ class ToolbarEntry {
   /// False while the page is kept alive but not on screen, e.g. a
   /// non-selected tab of an IndexedStack.
   final bool visible;
+
+  /// False while the page is a non-selected tab of an IndexedStack. Unlike
+  /// [visible] it stays true while the page's route is covered by another
+  /// page, so a back swipe can tell which tab it uncovers.
+  final bool selected;
 
   /// The routes of the navigators this page's navigator is nested in, nearest
   /// first: for a page inside a tab or shell route, the route that hosts the
@@ -90,9 +96,15 @@ class ToolbarEntry {
     return !route.isFirst || route.willHandlePopInternally;
   }
 
-  /// Whether the chrome should supply a back button on its own: the page can
-  /// go back, brought no leading widget of its own, and is not a tab root.
-  bool get impliesBackButton => canPop && appBar?.leading == null && !hasTabBar;
+  /// Whether the chrome should supply a back button on its own: the page
+  /// brought no leading widget of its own, is not a tab root, and either
+  /// handles back itself ([AdaptiveAppBar.onBack]) or can pop.
+  bool get impliesBackButton {
+    final appBar = this.appBar;
+    if (appBar?.leading != null || hasTabBar) return false;
+    if (appBar?.onBack != null) return true;
+    return (appBar?.automaticallyImplyLeading ?? true) && canPop;
+  }
 }
 
 /// Ordered set of the pages currently mounted under an [AdaptiveToolbarHost].
@@ -141,8 +153,10 @@ class ToolbarRegistry extends ChangeNotifier {
     if (entry.hasTabBar) return entry;
     for (var i = _entries.length - 1; i >= 0; i--) {
       final candidate = _entries[i];
-      if (candidate.hasTabBar &&
-          candidate.route != null &&
+      if (!candidate.hasTabBar || candidate.route == null) continue;
+      // The tabs are in the page's own route (an IndexedStack of tabs) or in
+      // a route around its navigator (a shell route).
+      if (candidate.route == entry.route ||
           entry.enclosingRoutes.contains(candidate.route)) {
         return candidate;
       }
@@ -162,17 +176,20 @@ class ToolbarRegistry extends ChangeNotifier {
   /// back when [entry] is popped or dragged away. Null for a root page.
   ToolbarEntry? below(ToolbarEntry entry) {
     final index = _entries.indexWhere((e) => e.id == entry.id);
+    ToolbarEntry? hiddenTab;
     for (var i = index - 1; i >= 0; i--) {
       final candidate = _entries[i];
       // Not filtered by [ToolbarEntry.visible]: a covered page is kept alive
       // with its tickers off until the page above starts to leave, and that
-      // is exactly the page being asked for.
+      // is exactly the page being asked for. A tab that is not selected stays
+      // hidden when the page above leaves, so the selected one wins.
       if (candidate.navigator == entry.navigator &&
           (candidate.route?.isActive ?? false)) {
-        return candidate;
+        if (candidate.selected) return candidate;
+        hiddenTab ??= candidate;
       }
     }
-    return null;
+    return hiddenTab;
   }
 
   /// Adds [entry] or replaces the one with the same [ToolbarEntry.id].

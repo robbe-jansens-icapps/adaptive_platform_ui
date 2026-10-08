@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
+import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
 import 'duo_vertical_bar.dart';
@@ -92,8 +93,10 @@ class HostedDuoBar extends StatelessWidget {
                 opacity: backOpacity,
                 child: DuoVerticalBar(
                   leading: DuoBarBackButton(
-                    onPressed: () =>
-                        (upperOwns ? upper : lower).navigator?.maybePop(),
+                    onPressed: () => (upperOwns ? upper : lower).back(),
+                    close:
+                        (upperOwns ? upper : lower).backStyle ==
+                        AdaptiveBackButtonStyle.close,
                   ),
                   regions: regions,
                 ),
@@ -148,6 +151,8 @@ class _BarContent {
     this.navigator,
     this.actions = const <AdaptiveAppBarAction>[],
     this.tint,
+    this.onBack,
+    this.backStyle = AdaptiveBackButtonStyle.back,
   });
 
   /// No page owns the chrome (a page without an [AdaptiveScaffold] is in
@@ -165,6 +170,8 @@ class _BarContent {
       navigator: entry.navigator,
       actions: appBar.actions ?? const <AdaptiveAppBarAction>[],
       tint: appBar.tintColor,
+      onBack: appBar.onBack,
+      backStyle: appBar.backButtonStyle,
     );
   }
 
@@ -173,6 +180,18 @@ class _BarContent {
   final NavigatorState? navigator;
   final List<AdaptiveAppBarAction> actions;
   final Color? tint;
+  final VoidCallback? onBack;
+  final AdaptiveBackButtonStyle backStyle;
+
+  /// The page's own back handler, or else a pop of its own navigator.
+  void back() {
+    final onBack = this.onBack;
+    if (onBack != null) {
+      onBack();
+    } else {
+      navigator?.maybePop();
+    }
+  }
 
   bool get isEmpty => customLeading == null && !impliesBack && actions.isEmpty;
 }
