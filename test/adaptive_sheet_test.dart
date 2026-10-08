@@ -84,6 +84,49 @@ void main() {
     expect(glass.bottom, _phone.height - 8);
   });
 
+  testWidgets('keeps clear of the iPhone Duo vertical bar', (tester) async {
+    usePhone(tester);
+    // The strip pose: no top inset, the system strip on one side only.
+    tester.view.padding = const FakeViewPadding(right: 60, bottom: 20);
+    tester.view.viewPadding = const FakeViewPadding(right: 60, bottom: 20);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    final glass = tester.getRect(find.byType(IOS26GlassSurface));
+    final band = DuoLayout.bandWidth(const EdgeInsets.only(right: 60));
+    expect(glass.left, 8);
+    expect(glass.right, _phone.width - band - 8);
+  });
+
+  testWidgets('keeps clear of the iPhone Duo vertical bar on the left', (
+    tester,
+  ) async {
+    usePhone(tester);
+    tester.view.padding = const FakeViewPadding(left: 60, bottom: 20);
+    tester.view.viewPadding = const FakeViewPadding(left: 60, bottom: 20);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    final glass = tester.getRect(find.byType(IOS26GlassSurface));
+    final band = DuoLayout.bandWidth(const EdgeInsets.only(left: 60));
+    expect(glass.left, band + 8);
+    expect(glass.right, _phone.width - 8);
+  });
+
+  testWidgets('ignores a one-sided cutout on Android', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+    addTearDown(() => PlatformInfo.debugPlatformOverride = null);
+    usePhone(tester);
+    tester.view.padding = const FakeViewPadding(right: 60, bottom: 20);
+    tester.view.viewPadding = const FakeViewPadding(right: 60, bottom: 20);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    final sheet = tester.getRect(find.byType(Material).last);
+    expect(sheet.left, 0);
+    expect(sheet.right, _phone.width);
+  });
+
   testWidgets('a fling down collapses it and a fling up brings it back', (
     tester,
   ) async {

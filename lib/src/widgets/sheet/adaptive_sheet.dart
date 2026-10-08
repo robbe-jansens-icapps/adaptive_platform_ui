@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
 import '../../platform/platform_info.dart';
+import '../../toolbar/duo_vertical_bar.dart';
 import '../../utils/size_reporter.dart';
 import '../ios26/ios26_glass_surface.dart';
 import 'adaptive_sheet_detent.dart';
@@ -129,6 +130,7 @@ class _Metrics {
     required this.sidePanel,
     required this.material,
     required this.rtl,
+    this.sides = EdgeInsets.zero,
   });
 
   final Size size;
@@ -137,6 +139,10 @@ class _Metrics {
   final bool material;
   final bool rtl;
 
+  /// Room a floating sheet leaves at its sides: the band of the iPhone Duo
+  /// vertical bar, which carries the tab bar and toolbar along that edge.
+  final EdgeInsets sides;
+
   @override
   bool operator ==(Object other) =>
       other is _Metrics &&
@@ -144,10 +150,12 @@ class _Metrics {
       other.padding == padding &&
       other.sidePanel == sidePanel &&
       other.material == material &&
-      other.rtl == rtl;
+      other.rtl == rtl &&
+      other.sides == sides;
 
   @override
-  int get hashCode => Object.hash(size, padding, sidePanel, material, rtl);
+  int get hashCode =>
+      Object.hash(size, padding, sidePanel, material, rtl, sides);
 }
 
 class _AdaptiveSheetState extends State<AdaptiveSheet>
@@ -480,7 +488,26 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     final bottom = m.size.height - inset + _overhang * t;
     final top = m.size.height - extent;
     final height = math.max(bottom - top, minHeight);
-    return Rect.fromLTWH(inset, top, m.size.width - 2 * inset, height);
+    final left = m.sides.left + inset;
+    final width = m.size.width - left - m.sides.right - inset;
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
+  /// The band of the iPhone Duo vertical bar, on the side the system reserves
+  /// for it. Android has no such bar; its landscape cutouts are no reason to
+  /// move the sheet.
+  static EdgeInsets _sidesOf(BuildContext context, {required bool material}) {
+    if (material) return EdgeInsets.zero;
+    final viewPadding = MediaQuery.viewPaddingOf(context);
+    return switch (DuoLayout.barSide(viewPadding)) {
+      DuoBarSide.left => EdgeInsets.only(
+        left: DuoLayout.bandWidth(viewPadding),
+      ),
+      DuoBarSide.right => EdgeInsets.only(
+        right: DuoLayout.bandWidth(viewPadding),
+      ),
+      null => EdgeInsets.zero,
+    };
   }
 
   @override
@@ -498,6 +525,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           sidePanel: sidePanel,
           material: material,
           rtl: rtl,
+          sides: _sidesOf(context, material: material),
         );
         if (metrics != _metrics) {
           _metrics = metrics;

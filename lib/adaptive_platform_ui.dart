@@ -43,6 +43,7 @@ export 'src/widgets/adaptive_app.dart';
 // Fixed toolbar chrome (installed automatically by AdaptiveApp; exported so
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
 export 'src/toolbar/adaptive_toolbar_host.dart';
+export 'src/toolbar/duo_vertical_bar.dart' show DuoBarSide, DuoLayout;
 export 'src/toolbar/toolbar_registry.dart';
 export 'src/widgets/adaptive_app_bar.dart';
 export 'src/widgets/adaptive_bottom_navigation_bar.dart';
@@ -76,6 +77,7 @@ export 'src/widgets/sheet/adaptive_sheet_detent.dart';
 
 // iOS 26 specific widgets (for advanced usage)
 export 'src/widgets/ios26/ios26_button.dart';
+export 'src/widgets/ios26/ios26_glass_capsule.dart';
 export 'src/widgets/ios26/ios26_glass_surface.dart';
 export 'src/widgets/ios26/ios26_switch.dart';
 export 'src/widgets/ios26/ios26_slider.dart';
