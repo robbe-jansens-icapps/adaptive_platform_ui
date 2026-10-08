@@ -224,6 +224,22 @@ class iOS26GlassCapsuleView: NSObject, FlutterPlatformView {
                     badge.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -12),
                 ])
                 badges[index] = badge
+            } else if (item["badge"] as? NSNumber)?.intValue == -1 {
+                // `kBadgeDot`: a dot without a count.
+                let dot = UILabel()
+                dot.backgroundColor = .systemRed
+                dot.clipsToBounds = true
+                dot.isUserInteractionEnabled = false
+                dot.layer.cornerRadius = 5
+                dot.translatesAutoresizingMaskIntoConstraints = false
+                container.addSubview(dot)
+                NSLayoutConstraint.activate([
+                    dot.heightAnchor.constraint(equalToConstant: 10),
+                    dot.widthAnchor.constraint(equalToConstant: 10),
+                    dot.centerXAnchor.constraint(equalTo: button.centerXAnchor, constant: 11),
+                    dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -11),
+                ])
+                badges[index] = dot
             }
         }
     }

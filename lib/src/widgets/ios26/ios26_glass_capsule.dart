@@ -56,7 +56,7 @@ class GlassCapsuleItem {
       file: image is FileImage ? image.file.path : null,
       network: image is NetworkImage ? image.url : null,
       label: d.label,
-      badge: d.badgeCount,
+      badge: d.nativeBadge,
       fallback: icon is IconData
           ? Icon(icon, size: 22)
           : image != null
@@ -82,6 +82,7 @@ class GlassCapsuleItem {
   /// Accessibility label.
   final String? label;
   final Color? tint;
+  /// A count, or [kBadgeDot] for a dot without one.
   final int? badge;
 
   /// When set, tapping the item opens a native menu of these entries instead
@@ -108,7 +109,7 @@ class GlassCapsuleItem {
     if (title != null) 'title': title,
     if (label != null) 'label': label,
     if (tint != null) 'tint': tint!.toARGB32(),
-    if (badge != null && badge! > 0) 'badge': badge,
+    if (badge != null && (badge! > 0 || badge == kBadgeDot)) 'badge': badge,
     if (menu != null)
       'menu': [
         for (final entry in menu!)

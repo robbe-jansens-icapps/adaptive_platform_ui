@@ -185,7 +185,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
       final selectedNetworkIcons = _mapSelectedNetworkIcons();
 
       final searchFlags = widget.destinations.map((e) => e.isSearch).toList();
-      final badgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
+      final badgeCounts = widget.destinations.map((e) => e.nativeBadge).toList();
       final spacerFlags = widget.destinations
           .map((e) => e.addSpacerAfter)
           .toList();
@@ -352,7 +352,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final networkIcons = _mapNetworkIcons();
     final selectedNetworkIcons = _mapSelectedNetworkIcons();
     final searchFlags = widget.destinations.map((e) => e.isSearch).toList();
-    final badgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
+    final badgeCounts = widget.destinations.map((e) => e.nativeBadge).toList();
 
     if (_lastLabels?.join('|') != labels.join('|') ||
         _lastSymbols?.join('|') != symbols.join('|') ||
@@ -392,7 +392,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
 
     // Badge counts update
     final currentBadgeCounts = widget.destinations
-        .map((e) => e.badgeCount)
+        .map((e) => e.nativeBadge)
         .toList();
     if (_lastBadgeCounts?.join('|') != currentBadgeCounts.join('|')) {
       await ch.invokeMethod('setBadgeCounts', {
@@ -443,7 +443,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     _lastSelectedFileIcons = _mapSelectedFileIcons();
     _lastNetworkIcons = _mapNetworkIcons();
     _lastSelectedNetworkIcons = _mapSelectedNetworkIcons();
-    _lastBadgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
+    _lastBadgeCounts = widget.destinations.map((e) => e.nativeBadge).toList();
   }
 
   Future<void> _syncHiddenIfNeeded() async {
@@ -480,7 +480,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final networkIcons = _mapNetworkIcons();
     final selectedNetworkIcons = _mapSelectedNetworkIcons();
     final searchFlags = widget.destinations.map((e) => e.isSearch).toList();
-    final badgeCounts = widget.destinations.map((e) => e.badgeCount).toList();
+    final badgeCounts = widget.destinations.map((e) => e.nativeBadge).toList();
 
     try {
       await ch.invokeMethod('setItems', {

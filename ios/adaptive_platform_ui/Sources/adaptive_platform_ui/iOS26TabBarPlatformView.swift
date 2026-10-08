@@ -265,11 +265,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                 }
 
                 // Set badge value if provided
-                if let count = badgeCount, count > 0 {
-                    item.badgeValue = count > 99 ? "99+" : String(count)
-                } else {
-                    item.badgeValue = nil
-                }
+                item.badgeValue = tabBadgeText(badgeCount)
 
                 items.append(item)
             }
@@ -281,6 +277,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             max(max(assetIcons.count, fileIcons.count), networkIcons.count)
         )
         bar.items = buildItems(0..<count)
+        applyAppFont(to: bar)
 
         // Note: spacerFlags are received but not yet implemented for UITabBar
         // UITabBar doesn't natively support flexible spacing between items like UIToolbar does
@@ -493,11 +490,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                     }
 
                     // Set badge value if provided
-                    if let count = badgeCount, count > 0 {
-                        item.badgeValue = count > 99 ? "99+" : String(count)
-                    } else {
-                        item.badgeValue = nil
-                    }
+                    item.badgeValue = tabBadgeText(badgeCount)
 
                     items.append(item)
                 }
@@ -506,6 +499,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
 
             if let bar = self.tabBar {
                 bar.items = buildItems(0..<count)
+                applyAppFont(to: bar)
                 if let items = bar.items, selectedIndex >= 0, selectedIndex < items.count {
                     bar.selectedItem = items[selectedIndex]
                 }
@@ -618,12 +612,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             if let bar = self.tabBar, let items = bar.items {
                 for (index, item) in items.enumerated() {
                     if index < badgeCounts.count {
-                        let count = badgeCounts[index]
-                        if let count = count, count > 0 {
-                            item.badgeValue = count > 99 ? "99+" : String(count)
-                        } else {
-                            item.badgeValue = nil
-                        }
+                        item.badgeValue = tabBadgeText(badgeCounts[index])
                     }
                 }
             }
@@ -733,14 +722,14 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                 }
             }
 
-            if let count = badgeCount, count > 0 {
-                item.badgeValue = count > 99 ? "99+" : String(count)
-            }
+            item.badgeValue = tabBadgeText(badgeCount)
 
             items.append(item)
         }
 
         bar.items = items
+        applyAppFont(to: bar)
+
         if currentSelectedIndex < items.count {
             bar.selectedItem = items[currentSelectedIndex]
         }
@@ -946,4 +935,13 @@ class iOS26TabBarViewFactory: NSObject, FlutterPlatformViewFactory {
     func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
         return FlutterStandardMessageCodec.sharedInstance()
     }
+}
+
+/// The badge text for a count from Dart: nil for none, "99+" past 99, and an
+/// empty string, which UIKit draws as a dot, for -1 (`kBadgeDot`).
+func tabBadgeText(_ count: Int?) -> String? {
+    guard let count = count else { return nil }
+    if count == -1 { return "" }
+    if count <= 0 { return nil }
+    return count > 99 ? "99+" : String(count)
 }

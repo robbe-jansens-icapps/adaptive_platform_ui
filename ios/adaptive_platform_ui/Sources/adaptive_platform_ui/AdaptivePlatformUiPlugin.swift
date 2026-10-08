@@ -6,6 +6,21 @@ import UIKit
 public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
 
     public static func register(with registrar: FlutterPluginRegistrar) {
+        // The app font for native text (Dart: AdaptiveNativeFonts)
+        let fontsChannel = FlutterMethodChannel(
+            name: "adaptive_platform_ui/fonts",
+            binaryMessenger: registrar.messenger()
+        )
+        fontsChannel.setMethodCallHandler { call, result in
+            guard call.method == "register" else {
+                result(FlutterMethodNotImplemented)
+                return
+            }
+            let fonts = (call.arguments as? [String: Any])?["fonts"] as? [[String: Any]] ?? []
+            AdaptiveFontRegistry.shared.register(fonts)
+            result(nil)
+        }
+
         // Initialize iOS 26+ Native Tab Bar Manager
         if #available(iOS 26.0, *) {
             iOS26NativeTabBarManager.shared.setup(messenger: registrar.messenger())
@@ -79,6 +94,13 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
         registrar.register(
             ios26GlassCapsuleFactory,
             withId: "adaptive_platform_ui/ios26_glass_capsule"
+        )
+
+        // Register the Liquid Glass surface that Flutter content is drawn on
+        let ios26GlassSurfaceFactory = iOS26GlassSurfaceFactory(messenger: registrar.messenger())
+        registrar.register(
+            ios26GlassSurfaceFactory,
+            withId: "adaptive_platform_ui/ios26_glass_surface"
         )
     }
 }

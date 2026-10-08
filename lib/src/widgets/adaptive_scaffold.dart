@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_native_tab_bar.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
@@ -14,6 +15,10 @@ import '../toolbar/toolbar_chrome_scope.dart';
 import '../toolbar/toolbar_registry.dart';
 import '../utils/size_reporter.dart';
 
+/// Sent to the native tab bar and glass capsule in place of a badge count for
+/// a dot without a count (see [AdaptiveNavigationDestination.showsBadgeDot]).
+const int kBadgeDot = -1;
+
 /// Navigation destination for bottom navigation
 class AdaptiveNavigationDestination {
   const AdaptiveNavigationDestination({
@@ -22,6 +27,7 @@ class AdaptiveNavigationDestination {
     this.selectedIcon,
     this.isSearch = false,
     this.badgeCount,
+    this.showsBadgeDot = false,
     this.addSpacerAfter = false,
   });
 
@@ -52,6 +58,14 @@ class AdaptiveNavigationDestination {
   /// On iOS 26+: Uses native UITabBarItem.badgeValue
   /// On iOS <26 and Android: Uses AdaptiveBadge widget
   final int? badgeCount;
+
+  /// Shows a dot without a count, for something that needs attention but
+  /// cannot be counted. Ignored while [badgeCount] is set.
+  final bool showsBadgeDot;
+
+  /// The badge as the native views take it: the count, or [kBadgeDot].
+  @internal
+  int? get nativeBadge => badgeCount ?? (showsBadgeDot ? kBadgeDot : null);
 
   /// Add flexible space after this tab item (iOS 26+ only)
   /// Useful for creating grouped tabs (e.g., left group and right group)
@@ -622,6 +636,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                     count: dest.badgeCount,
                     child: activeIconWidget,
                   );
+                } else if (dest.showsBadgeDot) {
+                  iconWidget = Badge(child: iconWidget);
+                  activeIconWidget = Badge(child: activeIconWidget);
                 }
 
                 return BottomNavigationBarItem(
@@ -897,6 +914,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                 count: dest.badgeCount,
                 child: selectedIconWidget,
               );
+            } else if (dest.showsBadgeDot) {
+              iconWidget = Badge(child: iconWidget);
+              selectedIconWidget = Badge(child: selectedIconWidget);
             }
 
             return NavigationDestination(

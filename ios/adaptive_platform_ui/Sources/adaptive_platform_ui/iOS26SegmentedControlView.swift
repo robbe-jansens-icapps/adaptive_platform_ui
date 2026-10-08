@@ -169,7 +169,8 @@ class iOS26SegmentedControlView: NSObject, FlutterPlatformView {
     private func applyTheme() {
         let normalTextColor = textColor ?? .label
         let selectedColor = selectedTextColor ?? normalTextColor
-        let font = UIFont.systemFont(ofSize: 13, weight: .medium)
+        let font = AdaptiveFontRegistry.shared.font(weight: 500, size: 13)
+            ?? UIFont.systemFont(ofSize: 13, weight: .medium)
         let normalAttributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: normalTextColor,
             .font: font,

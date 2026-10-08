@@ -28,6 +28,7 @@
 library;
 
 // Platform utilities
+export 'src/platform/adaptive_native_fonts.dart';
 export 'src/platform/platform_info.dart';
 
 // Animation utilities
@@ -70,9 +71,12 @@ export 'src/widgets/adaptive_floating_action_button.dart';
 export 'src/widgets/adaptive_form_section.dart';
 export 'src/widgets/adaptive_expansion_tile.dart';
 export 'src/widgets/adaptive_blur_view.dart';
+export 'src/widgets/sheet/adaptive_sheet.dart';
+export 'src/widgets/sheet/adaptive_sheet_detent.dart';
 
 // iOS 26 specific widgets (for advanced usage)
 export 'src/widgets/ios26/ios26_button.dart';
+export 'src/widgets/ios26/ios26_glass_surface.dart';
 export 'src/widgets/ios26/ios26_switch.dart';
 export 'src/widgets/ios26/ios26_slider.dart';
 export 'src/widgets/ios26/ios26_segmented_control.dart';

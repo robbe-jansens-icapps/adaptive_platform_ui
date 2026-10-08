@@ -351,7 +351,9 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
             if let args = call.arguments as? [String: Any],
                let label = args["label"] as? String {
                 buttonLabel = label
-                button.setTitle(label, for: .normal)
+                // The title is part of the button's configuration, which
+                // `setTitle` does not reach: build the style again.
+                applyLiquidGlassStyle()
             }
             result(nil)
 
