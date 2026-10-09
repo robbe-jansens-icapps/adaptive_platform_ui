@@ -14,7 +14,7 @@ Changes on top of the vendored 1.0.1 release.
 * **FIX**: `IOS26Button` enables or disables itself again when only `onPressed` switches between null and a callback, and a new label reaches buttons that use a configuration
 * **FIX**: iPhone Duo: a floating `AdaptiveSheet` keeps clear of the vertical bar instead of running underneath the tab bar in it
 * **NEW**: Exports `IOS26GlassCapsule`, for a vertical group of glass controls like the map controls of Find My, and `DuoLayout`, to lay out around the iPhone Duo vertical bar
-* **FIX**: Tab bar titles in the app font (`AdaptiveNativeFonts`) are no longer truncated: they were measured in the system font. Bars created before the app font was registered switch to it as soon as it is
+* **FIX**: Tab bar titles in the app font (`AdaptiveNativeFonts`), now in its regular weight, are no longer truncated: they were measured in the system font. Bars created before the app font was registered switch to it as soon as it is
 
 ## [1.0.1]
 * **FIX**: 📱 **iPhone Duo: the tab bar now lives in the vertical bar**, at the bottom of it, the way the system lays it out. In 1.0.0 it stayed at the bottom of the screen. The strip now reads, from the top: status cluster, back button, toolbar items, tab bar. Measured against a native UIKit app on the iPhone Duo simulator

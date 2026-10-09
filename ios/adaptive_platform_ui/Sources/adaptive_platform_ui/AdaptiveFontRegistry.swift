@@ -53,7 +53,7 @@ final class AdaptiveFontRegistry {
 
 /// Draws the item titles of `bar` in the app font, if one is registered.
 func applyAppFont(to bar: UITabBar) {
-    guard let font = AdaptiveFontRegistry.shared.font(weight: 600, size: 10),
+    guard let font = AdaptiveFontRegistry.shared.font(weight: 400, size: 10),
           let items = bar.items
     else { return }
     for item in items {
