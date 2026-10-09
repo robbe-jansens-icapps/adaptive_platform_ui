@@ -36,6 +36,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     private var currentSearchFlags: [Bool] = []
     private var currentBadgeCounts: [Int?] = []
     private let imageCache = NSCache<NSString, UIImage>()
+    private var fontObserver: NSObjectProtocol?
 
     init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
         self.channel = FlutterMethodChannel(
@@ -104,6 +105,15 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         // Create single tab bar
         let bar = UITabBar(frame: .zero)
         tabBar = bar
+        // The app font may only be registered after the bar is on screen.
+        fontObserver = NotificationCenter.default.addObserver(
+            forName: AdaptiveFontRegistry.didRegister,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let bar = self?.tabBar else { return }
+            applyAppFont(to: bar)
+        }
         bar.delegate = self
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.semanticContentAttribute = isRtl ? .forceRightToLeft : .forceLeftToRight
@@ -736,6 +746,10 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     }
 
     func view() -> UIView { container }
+
+    deinit {
+        if let fontObserver { NotificationCenter.default.removeObserver(fontObserver) }
+    }
 
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
         if let bar = self.tabBar, bar === tabBar, let items = bar.items, let idx = items.firstIndex(of: item) {

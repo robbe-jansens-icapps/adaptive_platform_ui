@@ -8,6 +8,10 @@ import UIKit
 final class AdaptiveFontRegistry {
     static let shared = AdaptiveFontRegistry()
 
+    /// Posted on the main queue once faces were registered, so native views
+    /// that were already on screen can switch to the app font.
+    static let didRegister = Notification.Name("AdaptiveFontRegistryDidRegister")
+
     /// PostScript names of the registered faces, by weight (100...900).
     private var faces: [Int: String] = [:]
 
@@ -31,6 +35,7 @@ final class AdaptiveFontRegistry {
             CTFontManagerRegisterFontsForURL(url, .process, nil)
             faces[weight] = name
         }
+        NotificationCenter.default.post(name: Self.didRegister, object: self)
     }
 
     /// The registered face closest to `weight` (100...900; a tie goes to the
@@ -48,9 +53,18 @@ final class AdaptiveFontRegistry {
 
 /// Draws the item titles of `bar` in the app font, if one is registered.
 func applyAppFont(to bar: UITabBar) {
-    guard let font = AdaptiveFontRegistry.shared.font(weight: 600, size: 10) else { return }
-    for item in bar.items ?? [] {
+    guard let font = AdaptiveFontRegistry.shared.font(weight: 600, size: 10),
+          let items = bar.items
+    else { return }
+    for item in items {
         item.setTitleTextAttributes([.font: font], for: .normal)
         item.setTitleTextAttributes([.font: font], for: .selected)
     }
+    // Titles of items that are already in the bar keep the width they were
+    // measured at in the system font, which truncates a wider face. Installed
+    // again, they are laid out in the app font.
+    let selected = bar.selectedItem
+    bar.items = nil
+    bar.items = items
+    bar.selectedItem = selected
 }

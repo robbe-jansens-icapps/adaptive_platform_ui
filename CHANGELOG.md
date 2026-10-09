@@ -16,6 +16,7 @@ Changes on top of the vendored 1.0.1 release.
 * **NEW**: Exports `IOS26GlassCapsule`, for a vertical group of glass controls like the map controls of Find My, and `DuoLayout`, to lay out around the iPhone Duo vertical bar
 * **IMPROVEMENT**: The fixed iOS 26 toolbar no longer has a background of its own. Like the system bars, it is clear over a page that rests at its top, and shows the scroll edge effect only while content is scrolled underneath it: the content blurs progressively and fades into the page's background, set with the new `AdaptiveAppBar.scrollEdgeColor` (the system background by default). Before, a white gradient sat behind every bar. The iPhone Duo title band works the same way
 * **FIX**: The scroll edge effect blurs again on iOS. A blur under a mask blurs nothing there once native views are on screen, so the effect eases off in bands of plain blur instead
+* **FIX**: Tab bar titles in the app font (`AdaptiveNativeFonts`) are no longer truncated: they were measured in the system font. Bars created before the app font was registered switch to it as soon as it is
 
 ## [1.0.1]
 * **FIX**: 📱 **iPhone Duo: the tab bar now lives in the vertical bar**, at the bottom of it, the way the system lays it out. In 1.0.0 it stayed at the bottom of the screen. The strip now reads, from the top: status cluster, back button, toolbar items, tab bar. Measured against a native UIKit app on the iPhone Duo simulator
