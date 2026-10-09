@@ -14,7 +14,6 @@ Changes on top of the vendored 1.0.1 release.
 * **FIX**: `IOS26Button` enables or disables itself again when only `onPressed` switches between null and a callback, and a new label reaches buttons that use a configuration
 * **FIX**: iPhone Duo: a floating `AdaptiveSheet` keeps clear of the vertical bar instead of running underneath the tab bar in it
 * **NEW**: Exports `IOS26GlassCapsule`, for a vertical group of glass controls like the map controls of Find My, and `DuoLayout`, to lay out around the iPhone Duo vertical bar
-* **IMPROVEMENT**: The fixed iOS 26 toolbar no longer draws a background of its own: the white gradient behind every bar is gone. Like the system bars, it is clear over a page that rests at its top, and while the page's content is scrolled underneath it, UIKit draws its own scroll edge effect there. Since UIKit cannot see Flutter content scroll, an empty stand-in scroll view is scrolled with the page and the bar's area is registered over its edge (`UIScrollEdgeElementContainerInteraction`); the effect, shared by all pages like a navigation controller's bar background, is the system's, and covers native views underneath too. The iPhone Duo title band works the same way
 * **FIX**: Tab bar titles in the app font (`AdaptiveNativeFonts`) are no longer truncated: they were measured in the system font. Bars created before the app font was registered switch to it as soon as it is
 
 ## [1.0.1]

@@ -246,20 +246,6 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// measured.
   double _tabBarHeight = 0;
 
-  /// Whether the page's content is scrolled under the fixed toolbar, which
-  /// shows its scroll edge effect only then.
-  final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
-
-  /// Follows the page's main scroll view, the one Material's app bar follows
-  /// too: the outermost vertical one.
-  bool _onScroll(ScrollNotification notification) {
-    if (defaultScrollNotificationPredicate(notification) &&
-        notification.metrics.axis == Axis.vertical) {
-      _scrolledUnder.value = notification.metrics.extentBefore > 0.5;
-    }
-    return false;
-  }
-
   void _onTabBarSizeChanged(Size size) {
     if (!mounted || size.height == _tabBarHeight) return;
     setState(() => _tabBarHeight = size.height);
@@ -308,7 +294,6 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   @override
   void dispose() {
     _toolbarRegistry?.remove(this);
-    _scrolledUnder.dispose();
     super.dispose();
   }
 
@@ -387,7 +372,6 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         visible: TickerMode.of(context) && Visibility.of(context),
         selected: Visibility.of(context),
         tabBar: _tabBarForChrome,
-        scrolledUnder: _scrolledUnder,
       ),
     );
   }
@@ -516,26 +500,23 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       }
 
       return _wrapWithDrawerIfNeeded(
-        NotificationListener<ScrollNotification>(
-          onNotification: _onScroll,
-          child: IOS26Scaffold(
-            key: ValueKey(
-              'ios26_scaffold_${widget.bottomNavigationBar?.selectedIndex ?? 0}_${widget.body?.runtimeType.toString() ?? "empty"}',
-            ),
-            bottomNavigationBar: widget.bottomNavigationBar,
-            title: widget.appBar?.title,
-            actions: widget.appBar?.actions,
-            leading: widget.appBar?.leading,
-            tintColor: widget.appBar?.tintColor,
-            titleWidget: _buildIOS26TitleOverlay(),
-            minimizeBehavior: widget.minimizeBehavior,
-            enableBlur: widget.enableBlur,
-            useHeroBackButton: widget.useHeroBackButton,
-            useFixedToolbar: _usesFixedToolbar(context),
-            tabBarHidden: widget.tabBarHidden,
-            resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
-            children: childrenList,
+        IOS26Scaffold(
+          key: ValueKey(
+            'ios26_scaffold_${widget.bottomNavigationBar?.selectedIndex ?? 0}_${widget.body?.runtimeType.toString() ?? "empty"}',
           ),
+          bottomNavigationBar: widget.bottomNavigationBar,
+          title: widget.appBar?.title,
+          actions: widget.appBar?.actions,
+          leading: widget.appBar?.leading,
+          tintColor: widget.appBar?.tintColor,
+          titleWidget: _buildIOS26TitleOverlay(),
+          minimizeBehavior: widget.minimizeBehavior,
+          enableBlur: widget.enableBlur,
+          useHeroBackButton: widget.useHeroBackButton,
+          useFixedToolbar: _usesFixedToolbar(context),
+          tabBarHidden: widget.tabBarHidden,
+          resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+          children: childrenList,
         ),
       );
     }

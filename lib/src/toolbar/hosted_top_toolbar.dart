@@ -5,7 +5,6 @@ import '../style/sf_symbol.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
-import '../widgets/ios26/ios26_bar_backdrop.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
 import 'duo_vertical_bar.dart';
 import 'toolbar_blend.dart';
@@ -112,7 +111,6 @@ class HostedTopToolbar extends StatelessWidget {
     final upperOwns = blend.upperOwns;
     final upperOpacity = blend.upperOpacity;
     final lowerOpacity = blend.lowerOpacity;
-    final ownerEntry = upperOwns ? upperEntry : lowerEntry;
 
     final upperBack = upper.impliesBack && upper.customLeading == null;
     final lowerBack = lower.impliesBack && lower.customLeading == null;
@@ -123,77 +121,71 @@ class HostedTopToolbar extends StatelessWidget {
       (false, false) => null,
     };
 
-    final height = titleOnly
-        ? kDuoTitleBandHeight
-        : kHostedToolbarHeight + topInset;
+    // The bar's backdrop belongs to the chrome, not to a page: it only fades
+    // when the toolbar as a whole comes or goes.
+    final Animation<double> backdropOpacity = switch ((
+      upper.isEmpty,
+      lower.isEmpty,
+    )) {
+      (false, false) => kAlwaysCompleteAnimation,
+      (false, true) =>
+        blend.isBlending && lowerEntry != null
+            ? upperOpacity
+            : kAlwaysCompleteAnimation,
+      (true, false) => lowerOpacity,
+      (true, true) => kAlwaysDismissedAnimation,
+    };
 
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
-        height: height,
+        height: titleOnly
+            ? kDuoTitleBandHeight
+            : kHostedToolbarHeight + topInset,
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
-          child: Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.none,
-            children: [
-              // Like the background of a navigation controller's bar, the
-              // backdrop belongs to the chrome, not to a page, and follows the
-              // page that owns it. It is never faded with the chrome: a fade
-              // would break the system's effect.
-              Positioned(
-                key: const ValueKey<String>('adaptive_toolbar_backdrop'),
-                top: 0,
-                left: 0,
-                right: 0,
-                height: height + kBarBackdropFade,
-                child: BarScrollEdge(
-                  scrolledUnder: ownerEntry?.scrolledUnder,
-                  shown: !upper.isEmpty || !lower.isEmpty,
+          child: FadeTransition(
+            opacity: blend.chromeOpacity,
+            // Every layer is keyed, so a page's native bar survives the start
+            // and the end of a blend instead of being torn down and rebuilt.
+            child: Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                FadeTransition(
+                  key: const ValueKey<String>('adaptive_toolbar_backdrop'),
+                  opacity: backdropOpacity,
+                  child: titleOnly
+                      ? const DuoTitleBackdrop()
+                      : const _Backdrop(),
                 ),
-              ),
-              FadeTransition(
-                opacity: blend.chromeOpacity,
-                // Every layer is keyed, so a page's native bar survives the
-                // start and the end of a blend instead of being torn down and
-                // rebuilt.
-                child: Stack(
-                  fit: StackFit.expand,
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (lowerEntry != null && !lower.isEmpty)
-                      _layer(
-                        key: ValueKey<Object>(lowerEntry.id),
-                        content: lower,
-                        opacity: lowerOpacity,
-                        interactive: !upperOwns,
-                      ),
-                    if (upperEntry != null && !upper.isEmpty)
-                      _layer(
-                        key: ValueKey<Object>(upperEntry.id),
-                        content: upper,
-                        opacity: upperOpacity,
-                        interactive: upperOwns,
-                      ),
-                    if (backOpacity != null)
-                      Positioned(
-                        key: const ValueKey<String>('adaptive_toolbar_back'),
-                        left: 16 + (_isWindowed(context) ? 62 : 0),
-                        bottom: 3,
-                        child: FadeTransition(
-                          key: const ValueKey<String>(
-                            'adaptive_toolbar_back_fade',
-                          ),
-                          opacity: backOpacity,
-                          child: _BackButton(
-                            content: upperOwns ? upper : lower,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+                if (lowerEntry != null && !lower.isEmpty)
+                  _layer(
+                    key: ValueKey<Object>(lowerEntry.id),
+                    content: lower,
+                    opacity: lowerOpacity,
+                    interactive: !upperOwns,
+                  ),
+                if (upperEntry != null && !upper.isEmpty)
+                  _layer(
+                    key: ValueKey<Object>(upperEntry.id),
+                    content: upper,
+                    opacity: upperOpacity,
+                    interactive: upperOwns,
+                  ),
+                if (backOpacity != null)
+                  Positioned(
+                    key: const ValueKey<String>('adaptive_toolbar_back'),
+                    left: 16 + (_isWindowed(context) ? 62 : 0),
+                    bottom: 3,
+                    child: FadeTransition(
+                      key: const ValueKey<String>('adaptive_toolbar_back_fade'),
+                      opacity: backOpacity,
+                      child: _BackButton(content: upperOwns ? upper : lower),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -250,36 +242,41 @@ class HostedTopToolbar extends StatelessWidget {
   }
 }
 
-/// How far below a bar its backdrop runs on, fading out.
-const double kBarBackdropFade = 16;
-
-/// The native backdrop of a bar: clear while the page rests at its top, the
-/// system's scroll edge effect while its content is scrolled under the bar.
-@visibleForTesting
-class BarScrollEdge extends StatelessWidget {
-  const BarScrollEdge({
-    super.key,
-    required this.scrolledUnder,
-    this.shown = true,
-  });
-
-  /// Whether the page's content is under the bar; null when the page does
-  /// not tell, which leaves the bar clear.
-  final ValueListenable<bool>? scrolledUnder;
-
-  /// False while there is no bar to show.
-  final bool shown;
+/// The soft gradient that keeps the bar readable over scrolling content.
+class _Backdrop extends StatelessWidget {
+  const _Backdrop();
 
   @override
   Widget build(BuildContext context) {
-    final scrolledUnder = this.scrolledUnder;
-    if (scrolledUnder == null) {
-      return const IOS26BarBackdrop(visible: false, fade: kBarBackdropFade);
-    }
-    return ValueListenableBuilder<bool>(
-      valueListenable: scrolledUnder,
-      builder: (context, scrolled, _) =>
-          IOS26BarBackdrop(visible: shown && scrolled, fade: kBarBackdropFade),
+    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final base = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+    return IgnorePointer(
+      child: OverflowBox(
+        alignment: Alignment.topCenter,
+        maxHeight: double.infinity,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Container(
+            // Runs on below the bar for a smooth fade into the content.
+            height:
+                MediaQuery.viewPaddingOf(context).top +
+                kHostedToolbarHeight +
+                30,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0.0, 0.4, 0.7, 1.0],
+                colors: [
+                  base.withValues(alpha: 0.85),
+                  base.withValues(alpha: 0.6),
+                  base.withValues(alpha: 0.2),
+                  base.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

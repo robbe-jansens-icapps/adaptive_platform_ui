@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -22,7 +21,6 @@ class ToolbarEntry {
     this.tabBar,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
-    this.scrolledUnder,
   });
 
   /// Identifies the registering scaffold instance.
@@ -63,12 +61,6 @@ class ToolbarEntry {
   /// The tab bar the registering scaffold shows, if any. On iPhone Duo the
   /// chrome draws it at the bottom of the trailing bar instead.
   final AdaptiveBottomNavigationBar? tabBar;
-
-  /// Whether the page's content is scrolled under the toolbar right now. The
-  /// chrome shows its scroll edge effect only then: like an iOS 26 bar, it
-  /// is clear over a page that is at its top. Null for a page that does not
-  /// tell, which always gets the effect.
-  final ValueListenable<bool>? scrolledUnder;
 
   /// Whether the registering scaffold shows a tab bar. Such a scaffold is the
   /// root of a tab layout and never gets an automatic back button.
