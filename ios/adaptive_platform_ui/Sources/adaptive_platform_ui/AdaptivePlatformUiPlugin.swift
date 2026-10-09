@@ -102,5 +102,11 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             ios26GlassSurfaceFactory,
             withId: "adaptive_platform_ui/ios26_glass_surface"
         )
+
+        // Register the blur behind the fixed toolbar
+        registrar.register(
+            iOS26BarBackdropFactory(messenger: registrar.messenger()),
+            withId: "adaptive_platform_ui/ios26_bar_backdrop"
+        )
     }
 }

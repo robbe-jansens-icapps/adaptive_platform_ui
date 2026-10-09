@@ -5,7 +5,7 @@ import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_scaffold.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
-import 'scroll_edge_blur.dart';
+import '../widgets/ios26/ios26_bar_backdrop.dart';
 
 /// Fallback width of the trailing vertical control bar on the iPhone Duo inner
 /// display, used only if the system reports no trailing safe-area inset. The
@@ -146,25 +146,22 @@ const double kDuoBarRegionGap = 11.0;
 /// below the top, with the controls in the trailing bar instead of beside it.
 const double kDuoTitleBandHeight = 70.0;
 
-/// What sits behind the title on iPhone Duo: content scrolling underneath is
-/// blurred and faded out towards the top, like the system's scroll edge
-/// effect, so the leading-aligned title never reads on top of a list row.
+/// What sits behind the title on iPhone Duo: the system's bar blur, so the
+/// leading-aligned title never reads on top of a list row scrolling
+/// underneath.
 class DuoTitleBackdrop extends StatelessWidget {
-  const DuoTitleBackdrop({super.key, this.color});
+  const DuoTitleBackdrop({super.key, this.visible = true});
 
-  /// The page's background, which content under the band fades into; the
-  /// system background when null.
-  final Color? color;
+  /// Whether content is under the band, which brings the blur in.
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
     return OverflowBox(
       alignment: Alignment.topCenter,
-      maxHeight: double.infinity,
-      child: ScrollEdgeBlur(
-        height: kDuoTitleBandHeight,
-        color: color ?? CupertinoColors.systemBackground.resolveFrom(context),
-      ),
+      maxHeight: kDuoTitleBandHeight + 16,
+      minHeight: kDuoTitleBandHeight + 16,
+      child: IOS26BarBackdrop(visible: visible),
     );
   }
 }

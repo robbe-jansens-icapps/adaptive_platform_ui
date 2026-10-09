@@ -5,9 +5,9 @@ import '../style/sf_symbol.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/ios26/ios26_bar_backdrop.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
 import 'duo_vertical_bar.dart';
-import 'scroll_edge_blur.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -123,77 +123,77 @@ class HostedTopToolbar extends StatelessWidget {
       (false, false) => null,
     };
 
-    // The bar's backdrop belongs to the chrome, not to a page: it only fades
-    // when the toolbar as a whole comes or goes. Within it, the scroll edge
-    // effect follows the page that owns the chrome.
-    final Animation<double> backdropOpacity = switch ((
-      upper.isEmpty,
-      lower.isEmpty,
-    )) {
-      (false, false) => kAlwaysCompleteAnimation,
-      (false, true) =>
-        blend.isBlending && lowerEntry != null
-            ? upperOpacity
-            : kAlwaysCompleteAnimation,
-      (true, false) => lowerOpacity,
-      (true, true) => kAlwaysDismissedAnimation,
-    };
+    final height = titleOnly
+        ? kDuoTitleBandHeight
+        : kHostedToolbarHeight + topInset;
 
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
-        height: titleOnly
-            ? kDuoTitleBandHeight
-            : kHostedToolbarHeight + topInset,
+        height: height,
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
-          child: FadeTransition(
-            opacity: blend.chromeOpacity,
-            // Every layer is keyed, so a page's native bar survives the start
-            // and the end of a blend instead of being torn down and rebuilt.
-            child: Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
-              children: [
-                FadeTransition(
-                  key: const ValueKey<String>('adaptive_toolbar_backdrop'),
-                  opacity: backdropOpacity,
-                  child: ScrollEdgeEffect(
-                    scrolledUnder: ownerEntry?.scrolledUnder,
-                    child: titleOnly
-                        ? DuoTitleBackdrop(
-                            color: ownerEntry?.appBar?.scrollEdgeColor,
-                          )
-                        : _Backdrop(color: ownerEntry?.appBar?.scrollEdgeColor),
-                  ),
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              // Like the background of a navigation controller's bar, the
+              // backdrop belongs to the chrome, not to a page, and follows the
+              // page that owns it. It is never faded with the chrome: a fade
+              // would break its blur.
+              Positioned(
+                key: const ValueKey<String>('adaptive_toolbar_backdrop'),
+                top: 0,
+                left: 0,
+                right: 0,
+                height: height + kBarBackdropFade,
+                child: BarScrollEdge(
+                  scrolledUnder: ownerEntry?.scrolledUnder,
+                  shown: !upper.isEmpty || !lower.isEmpty,
                 ),
-                if (lowerEntry != null && !lower.isEmpty)
-                  _layer(
-                    key: ValueKey<Object>(lowerEntry.id),
-                    content: lower,
-                    opacity: lowerOpacity,
-                    interactive: !upperOwns,
-                  ),
-                if (upperEntry != null && !upper.isEmpty)
-                  _layer(
-                    key: ValueKey<Object>(upperEntry.id),
-                    content: upper,
-                    opacity: upperOpacity,
-                    interactive: upperOwns,
-                  ),
-                if (backOpacity != null)
-                  Positioned(
-                    key: const ValueKey<String>('adaptive_toolbar_back'),
-                    left: 16 + (_isWindowed(context) ? 62 : 0),
-                    bottom: 3,
-                    child: FadeTransition(
-                      key: const ValueKey<String>('adaptive_toolbar_back_fade'),
-                      opacity: backOpacity,
-                      child: _BackButton(content: upperOwns ? upper : lower),
-                    ),
-                  ),
-              ],
-            ),
+              ),
+              FadeTransition(
+                opacity: blend.chromeOpacity,
+                // Every layer is keyed, so a page's native bar survives the
+                // start and the end of a blend instead of being torn down and
+                // rebuilt.
+                child: Stack(
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (lowerEntry != null && !lower.isEmpty)
+                      _layer(
+                        key: ValueKey<Object>(lowerEntry.id),
+                        content: lower,
+                        opacity: lowerOpacity,
+                        interactive: !upperOwns,
+                      ),
+                    if (upperEntry != null && !upper.isEmpty)
+                      _layer(
+                        key: ValueKey<Object>(upperEntry.id),
+                        content: upper,
+                        opacity: upperOpacity,
+                        interactive: upperOwns,
+                      ),
+                    if (backOpacity != null)
+                      Positioned(
+                        key: const ValueKey<String>('adaptive_toolbar_back'),
+                        left: 16 + (_isWindowed(context) ? 62 : 0),
+                        bottom: 3,
+                        child: FadeTransition(
+                          key: const ValueKey<String>(
+                            'adaptive_toolbar_back_fade',
+                          ),
+                          opacity: backOpacity,
+                          child: _BackButton(
+                            content: upperOwns ? upper : lower,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -250,58 +250,36 @@ class HostedTopToolbar extends StatelessWidget {
   }
 }
 
-/// Shows [child], the scroll edge effect of a bar, only while the page's
-/// content is scrolled under the bar, the way an iOS 26 bar is clear over a
-/// page that is at its top.
+/// How far below a bar its backdrop runs on, fading out.
+const double kBarBackdropFade = 16;
+
+/// The native backdrop of a bar: clear while the page rests at its top, the
+/// system's bar blur while its content is scrolled under the bar.
 @visibleForTesting
-class ScrollEdgeEffect extends StatelessWidget {
-  const ScrollEdgeEffect({
+class BarScrollEdge extends StatelessWidget {
+  const BarScrollEdge({
     super.key,
     required this.scrolledUnder,
-    required this.child,
+    this.shown = true,
   });
 
-  /// Whether content is under the bar. Null keeps the effect on.
+  /// Whether the page's content is under the bar; null when the page does
+  /// not tell, which leaves the bar clear.
   final ValueListenable<bool>? scrolledUnder;
-  final Widget child;
 
-  static const Duration _fade = Duration(milliseconds: 180);
+  /// False while there is no bar to show.
+  final bool shown;
 
   @override
   Widget build(BuildContext context) {
     final scrolledUnder = this.scrolledUnder;
-    if (scrolledUnder == null) return child;
+    if (scrolledUnder == null) {
+      return const IOS26BarBackdrop(visible: false, fade: kBarBackdropFade);
+    }
     return ValueListenableBuilder<bool>(
       valueListenable: scrolledUnder,
-      child: child,
-      // At 0 the blur below is not drawn at all.
-      builder: (context, scrolled, child) => AnimatedOpacity(
-        opacity: scrolled ? 1 : 0,
-        duration: _fade,
-        curve: Curves.easeOut,
-        child: child,
-      ),
-    );
-  }
-}
-
-/// The scroll edge effect of the bar, from the top of the screen to a little
-/// below the bar.
-class _Backdrop extends StatelessWidget {
-  const _Backdrop({this.color});
-
-  /// The page's background; the system background when null.
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return OverflowBox(
-      alignment: Alignment.topCenter,
-      maxHeight: double.infinity,
-      child: ScrollEdgeBlur(
-        height: MediaQuery.viewPaddingOf(context).top + kHostedToolbarHeight,
-        color: color ?? CupertinoColors.systemBackground.resolveFrom(context),
-      ),
+      builder: (context, scrolled, _) =>
+          IOS26BarBackdrop(visible: shown && scrolled, fade: kBarBackdropFade),
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_bar_backdrop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foldable/foldable.dart';
@@ -15,27 +15,20 @@ FoldableData forcedChrome() => FoldableData(
   displayFeatures: const [],
 );
 
-const pageBackground = Color(0xFFF2F4F5);
-
-Widget scrollingPage(
-  String title, {
-  Color? edge = pageBackground,
-  Axis axis = Axis.vertical,
-}) => AdaptiveScaffold(
-  appBar: AdaptiveAppBar(
-    title: title,
-    useNativeToolbar: true,
-    scrollEdgeColor: edge,
-  ),
-  body: ListView(
-    key: ValueKey('list:$title'),
-    scrollDirection: axis,
-    children: [
-      for (var i = 0; i < 60; i++)
-        SizedBox(height: 60, width: 80, child: Text('$title $i')),
-    ],
-  ),
-);
+Widget scrollingPage(String? title, {Axis axis = Axis.vertical}) =>
+    AdaptiveScaffold(
+      appBar: title == null
+          ? null
+          : AdaptiveAppBar(title: title, useNativeToolbar: true),
+      body: ListView(
+        key: ValueKey('list:$title'),
+        scrollDirection: axis,
+        children: [
+          for (var i = 0; i < 60; i++)
+            SizedBox(height: 60, width: 80, child: Text('$title $i')),
+        ],
+      ),
+    );
 
 Widget hostedApp({
   required Widget home,
@@ -55,28 +48,9 @@ void usePhone(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
-/// Opacity of the scroll edge effect of the fixed toolbar.
-double effectOpacity(WidgetTester tester) => tester
-    .widget<AnimatedOpacity>(
-      find.descendant(
-        of: find.byType(ScrollEdgeEffect),
-        matching: find.byType(AnimatedOpacity),
-      ),
-    )
-    .opacity;
-
-/// The color at the top of the effect, where content fades furthest.
-Color effectColor(WidgetTester tester) {
-  final box = tester.widget<DecoratedBox>(
-    find.descendant(
-      of: find.byType(ScrollEdgeEffect),
-      matching: find.byType(DecoratedBox),
-    ),
-  );
-  final gradient =
-      (box.decoration as BoxDecoration).gradient! as LinearGradient;
-  return gradient.colors.first;
-}
+/// Whether the native blur behind the fixed toolbar is shown.
+bool backdropVisible(WidgetTester tester) =>
+    tester.widget<IOS26BarBackdrop>(find.byType(IOS26BarBackdrop)).visible;
 
 void main() {
   setUp(() {
@@ -96,11 +70,10 @@ void main() {
     await tester.pumpWidget(hostedApp(home: scrollingPage('Settings')));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ScrollEdgeEffect), findsOneWidget);
-    expect(effectOpacity(tester), 0);
+    expect(backdropVisible(tester), isFalse);
   });
 
-  testWidgets('content scrolled under the bar blurs into the page background', (
+  testWidgets('content scrolled under the bar brings in the native blur', (
     tester,
   ) async {
     usePhone(tester);
@@ -110,42 +83,37 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
 
-    expect(effectOpacity(tester), 1);
-    expect(effectColor(tester), pageBackground.withValues(alpha: 0.8));
-    // A blur that eases off in bands, none under a mask: iOS blurs nothing
-    // under one once native views are on screen.
-    expect(
-      find.descendant(
-        of: find.byType(ScrollEdgeEffect),
-        matching: find.byType(BackdropFilter),
-      ),
-      findsNWidgets(4),
-    );
-    expect(
-      find.descendant(
-        of: find.byType(ScrollEdgeEffect),
-        matching: find.byType(ShaderMask),
-      ),
-      findsNothing,
-    );
+    expect(backdropVisible(tester), isTrue);
 
     // Back at the top it clears again.
     await tester.drag(find.byType(ListView), const Offset(0, 600));
     await tester.pumpAndSettle();
 
-    expect(effectOpacity(tester), 0);
+    expect(backdropVisible(tester), isFalse);
   });
 
-  testWidgets('fades into the system background by default', (tester) async {
+  testWidgets('the toolbar draws no blur or fade of its own', (tester) async {
     usePhone(tester);
-    await tester.pumpWidget(
-      hostedApp(home: scrollingPage('Settings', edge: null)),
-    );
+    await tester.pumpWidget(hostedApp(home: scrollingPage('Settings')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
 
+    final inToolbar = find.byType(HostedTopToolbar);
+    for (final type in [BackdropFilter, ShaderMask, DecoratedBox]) {
+      expect(
+        find.descendant(of: inToolbar, matching: find.byType(type)),
+        findsNothing,
+        reason: '$type',
+      );
+    }
+    // Nor is the blur faded with the chrome, which would break it.
     expect(
-      effectColor(tester),
-      CupertinoColors.systemBackground.color.withValues(alpha: 0.8),
+      find.ancestor(
+        of: find.byType(IOS26BarBackdrop),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
     );
   });
 
@@ -159,7 +127,18 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(-300, 0));
     await tester.pumpAndSettle();
 
-    expect(effectOpacity(tester), 0);
+    expect(backdropVisible(tester), isFalse);
+  });
+
+  testWidgets('stays clear on a page without a bar', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(hostedApp(home: scrollingPage(null)));
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(backdropVisible(tester), isFalse);
   });
 
   testWidgets('follows the page in front', (tester) async {
@@ -171,19 +150,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
-    expect(effectOpacity(tester), 1);
+    expect(backdropVisible(tester), isTrue);
 
     // A new page starts at its top.
     nav.currentState!.push(
       MaterialPageRoute<void>(builder: (_) => scrollingPage('General')),
     );
     await tester.pumpAndSettle();
-    expect(effectOpacity(tester), 0);
+    expect(backdropVisible(tester), isFalse);
 
     // The page underneath is still scrolled when it comes back.
     nav.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(effectOpacity(tester), 1);
+    expect(backdropVisible(tester), isTrue);
   });
 
   testWidgets('the iPhone Duo title band clears the same way', (tester) async {
@@ -196,19 +175,27 @@ void main() {
     await tester.pumpWidget(hostedApp(home: scrollingPage('Settings')));
     await tester.pumpAndSettle();
 
+    expect(backdropVisible(tester), isFalse);
     expect(
-      find.descendant(
-        of: find.byType(ScrollEdgeEffect),
-        matching: find.byType(DuoTitleBackdrop),
-      ),
-      findsOneWidget,
+      tester.getSize(find.byType(IOS26BarBackdrop)).height,
+      kDuoTitleBandHeight + kBarBackdropFade,
     );
-    expect(effectOpacity(tester), 0);
 
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await tester.pumpAndSettle();
 
-    expect(effectOpacity(tester), 1);
-    expect(effectColor(tester), pageBackground.withValues(alpha: 0.8));
+    expect(backdropVisible(tester), isTrue);
+  });
+
+  testWidgets('without UIKit the backdrop draws nothing', (tester) async {
+    await tester.pumpWidget(
+      const Directionality(
+        textDirection: TextDirection.ltr,
+        child: IOS26BarBackdrop(visible: true),
+      ),
+    );
+
+    expect(find.byType(UiKitView), findsNothing);
+    expect(find.byType(BackdropFilter), findsNothing);
   });
 }
