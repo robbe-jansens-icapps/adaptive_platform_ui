@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 /// What a fixed iOS 26 bar has behind it: nothing while [visible] is false,
-/// and the system's bar blur while it is true, its lower [fade] points
-/// softened.
+/// and the system's own scroll edge effect while it is true.
 ///
 /// Like the system bars, the bar itself has no background: show this while
-/// content is scrolled underneath it. The blur is UIKit's own, so it also
-/// blurs native views underneath. It animates in and out by itself; never
-/// wrap it in a fade or a clip, which would break the blur. It never takes
+/// content is scrolled underneath it. UIKit draws the effect for its own
+/// scroll views; this lets it draw it for Flutter content, and since the
+/// effect is UIKit's, it also covers native views underneath. It animates in
+/// and out by itself; never wrap it in a fade or a clip. It never takes
 /// touches.
 ///
 /// Where there is no UIKit (other platforms, widget tests) it draws nothing.
@@ -20,7 +20,8 @@ class IOS26BarBackdrop extends StatefulWidget {
 
   final bool visible;
 
-  /// How far up from its lower edge the blur fades out.
+  /// How far below the bar the effect may soften out, at the bottom of this
+  /// widget.
   final double fade;
 
   @override

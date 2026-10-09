@@ -140,7 +140,7 @@ class HostedTopToolbar extends StatelessWidget {
               // Like the background of a navigation controller's bar, the
               // backdrop belongs to the chrome, not to a page, and follows the
               // page that owns it. It is never faded with the chrome: a fade
-              // would break its blur.
+              // would break the system's effect.
               Positioned(
                 key: const ValueKey<String>('adaptive_toolbar_backdrop'),
                 top: 0,
@@ -254,7 +254,7 @@ class HostedTopToolbar extends StatelessWidget {
 const double kBarBackdropFade = 16;
 
 /// The native backdrop of a bar: clear while the page rests at its top, the
-/// system's bar blur while its content is scrolled under the bar.
+/// system's scroll edge effect while its content is scrolled under the bar.
 @visibleForTesting
 class BarScrollEdge extends StatelessWidget {
   const BarScrollEdge({

@@ -146,8 +146,8 @@ const double kDuoBarRegionGap = 11.0;
 /// below the top, with the controls in the trailing bar instead of beside it.
 const double kDuoTitleBandHeight = 70.0;
 
-/// What sits behind the title on iPhone Duo: the system's bar blur, so the
-/// leading-aligned title never reads on top of a list row scrolling
+/// What sits behind the title on iPhone Duo: the system's scroll edge effect,
+/// so the leading-aligned title never reads on top of a list row scrolling
 /// underneath.
 class DuoTitleBackdrop extends StatelessWidget {
   const DuoTitleBackdrop({super.key, this.visible = true});

@@ -27,13 +27,14 @@ class iOS26BarBackdropFactory: NSObject, FlutterPlatformViewFactory {
     }
 }
 
-/// What the fixed toolbar has behind it: nothing while the page rests at its
-/// top, and the system's bar blur while content is scrolled underneath, its
-/// lower edge softened. A UIKit blur, so it blurs everything below it, native
-/// views included, the way the system bars do.
+/// The system's scroll edge effect under the fixed toolbar.
 ///
-/// It shows and hides itself by animating its effect: an alpha on a blur
-/// breaks it, so it is never faded.
+/// UIKit draws that effect for its own scroll views where they pass under a
+/// bar. The page's content is Flutter's, so UIKit cannot see it scroll: a
+/// stand-in scroll view tells it instead, scrolled while the page is, and the
+/// bar's area is registered as the elements over its top edge
+/// (`UIScrollEdgeElementContainerInteraction`). The effect itself, and its
+/// blur of whatever is underneath, native views included, is UIKit's own.
 class iOS26BarBackdropView: NSObject, FlutterPlatformView {
     private let container = BarBackdropContainer()
     private let channel: FlutterMethodChannel
@@ -78,26 +79,18 @@ class iOS26BarBackdropView: NSObject, FlutterPlatformView {
         let visible = params["visible"] as? Bool ?? false
         guard visible != self.visible else { return }
         self.visible = visible
-        let effect: UIVisualEffect? = visible ? UIBlurEffect(style: .systemUltraThinMaterial) : nil
-        guard animated else {
-            container.effectView.effect = effect
-            return
-        }
-        UIView.animate(
-            withDuration: 0.25,
-            delay: 0,
-            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
-        ) {
-            self.container.effectView.effect = effect
-        }
+        container.setScrolledUnder(visible, animated: animated)
     }
 }
 
-/// The blur, masked so that it fades out over its last `fade` points.
+/// A stand-in scroll view, empty and clear, with the bar's area over its top
+/// edge.
 final class BarBackdropContainer: UIView {
-    let effectView = UIVisualEffectView(effect: nil)
-    private let fadeMask = GradientMaskView()
+    private let scrollView = UIScrollView()
+    private let barArea = UIView()
+    private let barShape = UIImageView()
 
+    /// How far below the bar the effect may soften out.
     var fade: CGFloat = 16 {
         didSet {
             if fade != oldValue { setNeedsLayout() }
@@ -108,9 +101,30 @@ final class BarBackdropContainer: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isUserInteractionEnabled = false
-        effectView.isUserInteractionEnabled = false
-        addSubview(effectView)
-        effectView.mask = fadeMask
+
+        scrollView.backgroundColor = .clear
+        scrollView.isUserInteractionEnabled = false
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.showsHorizontalScrollIndicator = false
+        addSubview(scrollView)
+
+        // The effect takes its shape from the elements in the bar's area: a
+        // clear image spanning it gives the band of a navigation bar.
+        barArea.backgroundColor = .clear
+        barArea.isUserInteractionEnabled = false
+        barShape.image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+        barShape.contentMode = .scaleToFill
+        barArea.addSubview(barShape)
+        addSubview(barArea)
+
+        if #available(iOS 26.0, *) {
+            scrollView.topEdgeEffect.style = .soft
+            let interaction = UIScrollEdgeElementContainerInteraction()
+            interaction.scrollView = scrollView
+            interaction.edge = .top
+            barArea.addInteraction(interaction)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -119,33 +133,16 @@ final class BarBackdropContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        effectView.frame = bounds
-        // A mask is not in the view hierarchy, so it is laid out by hand.
-        fadeMask.frame = effectView.bounds
-        fadeMask.solidUntil = bounds.height > 0 ? max(0, (bounds.height - fade) / bounds.height) : 1
-    }
-}
-
-/// Opaque down to `solidUntil` (a fraction of its height), clear at the bottom.
-final class GradientMaskView: UIView {
-    override class var layerClass: AnyClass { CAGradientLayer.self }
-
-    var solidUntil: CGFloat = 1 {
-        didSet { updateGradient() }
+        scrollView.frame = bounds
+        scrollView.contentSize = CGSize(width: bounds.width, height: max(bounds.height, 1) * 20)
+        barArea.frame = CGRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - fade))
+        barShape.frame = barArea.bounds
     }
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        updateGradient()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func updateGradient() {
-        guard let gradient = layer as? CAGradientLayer else { return }
-        gradient.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
-        gradient.locations = [0, NSNumber(value: Double(solidUntil)), 1]
+    /// Content under the edge is what brings the effect in, as it does for a
+    /// UIKit scroll view.
+    func setScrolledUnder(_ scrolledUnder: Bool, animated: Bool) {
+        let offset = CGPoint(x: 0, y: scrolledUnder ? 120 : 0)
+        scrollView.setContentOffset(offset, animated: animated)
     }
 }
