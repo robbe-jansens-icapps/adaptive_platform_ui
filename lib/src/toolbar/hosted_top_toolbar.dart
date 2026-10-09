@@ -7,6 +7,7 @@ import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
 import 'duo_vertical_bar.dart';
+import 'scroll_edge_blur.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -111,6 +112,7 @@ class HostedTopToolbar extends StatelessWidget {
     final upperOwns = blend.upperOwns;
     final upperOpacity = blend.upperOpacity;
     final lowerOpacity = blend.lowerOpacity;
+    final ownerEntry = upperOwns ? upperEntry : lowerEntry;
 
     final upperBack = upper.impliesBack && upper.customLeading == null;
     final lowerBack = lower.impliesBack && lower.customLeading == null;
@@ -122,7 +124,8 @@ class HostedTopToolbar extends StatelessWidget {
     };
 
     // The bar's backdrop belongs to the chrome, not to a page: it only fades
-    // when the toolbar as a whole comes or goes.
+    // when the toolbar as a whole comes or goes. Within it, the scroll edge
+    // effect follows the page that owns the chrome.
     final Animation<double> backdropOpacity = switch ((
       upper.isEmpty,
       lower.isEmpty,
@@ -155,9 +158,14 @@ class HostedTopToolbar extends StatelessWidget {
                 FadeTransition(
                   key: const ValueKey<String>('adaptive_toolbar_backdrop'),
                   opacity: backdropOpacity,
-                  child: titleOnly
-                      ? const DuoTitleBackdrop()
-                      : const _Backdrop(),
+                  child: ScrollEdgeEffect(
+                    scrolledUnder: ownerEntry?.scrolledUnder,
+                    child: titleOnly
+                        ? DuoTitleBackdrop(
+                            color: ownerEntry?.appBar?.scrollEdgeColor,
+                          )
+                        : _Backdrop(color: ownerEntry?.appBar?.scrollEdgeColor),
+                  ),
                 ),
                 if (lowerEntry != null && !lower.isEmpty)
                   _layer(
@@ -242,40 +250,57 @@ class HostedTopToolbar extends StatelessWidget {
   }
 }
 
-/// The soft gradient that keeps the bar readable over scrolling content.
-class _Backdrop extends StatelessWidget {
-  const _Backdrop();
+/// Shows [child], the scroll edge effect of a bar, only while the page's
+/// content is scrolled under the bar, the way an iOS 26 bar is clear over a
+/// page that is at its top.
+@visibleForTesting
+class ScrollEdgeEffect extends StatelessWidget {
+  const ScrollEdgeEffect({
+    super.key,
+    required this.scrolledUnder,
+    required this.child,
+  });
+
+  /// Whether content is under the bar. Null keeps the effect on.
+  final ValueListenable<bool>? scrolledUnder;
+  final Widget child;
+
+  static const Duration _fade = Duration(milliseconds: 180);
 
   @override
   Widget build(BuildContext context) {
-    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final base = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
-    return IgnorePointer(
-      child: OverflowBox(
-        alignment: Alignment.topCenter,
-        maxHeight: double.infinity,
-        child: LayoutBuilder(
-          builder: (context, constraints) => Container(
-            // Runs on below the bar for a smooth fade into the content.
-            height:
-                MediaQuery.viewPaddingOf(context).top +
-                kHostedToolbarHeight +
-                30,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: const [0.0, 0.4, 0.7, 1.0],
-                colors: [
-                  base.withValues(alpha: 0.85),
-                  base.withValues(alpha: 0.6),
-                  base.withValues(alpha: 0.2),
-                  base.withValues(alpha: 0.0),
-                ],
-              ),
-            ),
-          ),
-        ),
+    final scrolledUnder = this.scrolledUnder;
+    if (scrolledUnder == null) return child;
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      child: child,
+      // At 0 the blur below is not drawn at all.
+      builder: (context, scrolled, child) => AnimatedOpacity(
+        opacity: scrolled ? 1 : 0,
+        duration: _fade,
+        curve: Curves.easeOut,
+        child: child,
+      ),
+    );
+  }
+}
+
+/// The scroll edge effect of the bar, from the top of the screen to a little
+/// below the bar.
+class _Backdrop extends StatelessWidget {
+  const _Backdrop({this.color});
+
+  /// The page's background; the system background when null.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return OverflowBox(
+      alignment: Alignment.topCenter,
+      maxHeight: double.infinity,
+      child: ScrollEdgeBlur(
+        height: MediaQuery.viewPaddingOf(context).top + kHostedToolbarHeight,
+        color: color ?? CupertinoColors.systemBackground.resolveFrom(context),
       ),
     );
   }

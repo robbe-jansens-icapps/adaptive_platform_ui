@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/cupertino.dart';
 import 'package:foldable/foldable.dart';
 
@@ -7,6 +5,7 @@ import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_scaffold.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
+import 'scroll_edge_blur.dart';
 
 /// Fallback width of the trailing vertical control bar on the iPhone Duo inner
 /// display, used only if the system reports no trailing safe-area inset. The
@@ -151,32 +150,20 @@ const double kDuoTitleBandHeight = 70.0;
 /// blurred and faded out towards the top, like the system's scroll edge
 /// effect, so the leading-aligned title never reads on top of a list row.
 class DuoTitleBackdrop extends StatelessWidget {
-  const DuoTitleBackdrop({super.key});
+  const DuoTitleBackdrop({super.key, this.color});
+
+  /// The page's background, which content under the band fades into; the
+  /// system background when null.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final base = CupertinoColors.systemBackground.resolveFrom(context);
-    return IgnorePointer(
-      child: OverflowBox(
-        alignment: Alignment.topCenter,
-        maxHeight: kDuoTitleBandHeight + 24,
-        minHeight: kDuoTitleBandHeight + 24,
-        child: ShaderMask(
-          blendMode: BlendMode.dstIn,
-          // Solid behind the title, gone just below the band.
-          shaderCallback: (rect) => const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: [0.0, 0.62, 1.0],
-            colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-          ).createShader(rect),
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: ColoredBox(color: base.withValues(alpha: 0.82)),
-            ),
-          ),
-        ),
+    return OverflowBox(
+      alignment: Alignment.topCenter,
+      maxHeight: double.infinity,
+      child: ScrollEdgeBlur(
+        height: kDuoTitleBandHeight,
+        color: color ?? CupertinoColors.systemBackground.resolveFrom(context),
       ),
     );
   }

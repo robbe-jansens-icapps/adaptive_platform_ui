@@ -38,6 +38,7 @@ class AdaptiveAppBar {
     this.onBack,
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
     this.automaticallyImplyLeading = true,
+    this.scrollEdgeColor,
   });
 
   /// Title for the app bar
@@ -110,6 +111,15 @@ class AdaptiveAppBar {
   /// pop. Turn it off for pages that show one only through [onBack].
   final bool automaticallyImplyLeading;
 
+  /// The page's background, which content fades into as it scrolls under the
+  /// fixed iOS 26 toolbar (see `AdaptiveToolbarHost`).
+  ///
+  /// Like the system bars of iOS 26, that toolbar has no background of its
+  /// own. Only while content is underneath it does it show the scroll edge
+  /// effect: the content blurs and fades into this color, so the title and
+  /// the controls stay legible. Defaults to the system background.
+  final Color? scrollEdgeColor;
+
   /// Creates a copy of this app bar with the given fields replaced
   AdaptiveAppBar copyWith({
     String? title,
@@ -124,6 +134,7 @@ class AdaptiveAppBar {
     VoidCallback? onBack,
     AdaptiveBackButtonStyle? backButtonStyle,
     bool? automaticallyImplyLeading,
+    Color? scrollEdgeColor,
   }) {
     return AdaptiveAppBar(
       title: title ?? this.title,
@@ -140,6 +151,7 @@ class AdaptiveAppBar {
       backButtonStyle: backButtonStyle ?? this.backButtonStyle,
       automaticallyImplyLeading:
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
+      scrollEdgeColor: scrollEdgeColor ?? this.scrollEdgeColor,
     );
   }
 }
