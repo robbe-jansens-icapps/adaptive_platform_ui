@@ -38,6 +38,7 @@ class AdaptiveAppBar {
     this.onBack,
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
     this.automaticallyImplyLeading = true,
+    this.showsBackdrop = true,
   });
 
   /// Title for the app bar
@@ -110,6 +111,11 @@ class AdaptiveAppBar {
   /// pop. Turn it off for pages that show one only through [onBack].
   final bool automaticallyImplyLeading;
 
+  /// Whether the fixed iOS 26 toolbar draws its soft backdrop behind this
+  /// page's bar. Turn it off for a page whose controls float over content
+  /// that should stay clear, such as a map.
+  final bool showsBackdrop;
+
   /// Creates a copy of this app bar with the given fields replaced
   AdaptiveAppBar copyWith({
     String? title,
@@ -124,6 +130,7 @@ class AdaptiveAppBar {
     VoidCallback? onBack,
     AdaptiveBackButtonStyle? backButtonStyle,
     bool? automaticallyImplyLeading,
+    bool? showsBackdrop,
   }) {
     return AdaptiveAppBar(
       title: title ?? this.title,
@@ -140,6 +147,7 @@ class AdaptiveAppBar {
       backButtonStyle: backButtonStyle ?? this.backButtonStyle,
       automaticallyImplyLeading:
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
+      showsBackdrop: showsBackdrop ?? this.showsBackdrop,
     );
   }
 }

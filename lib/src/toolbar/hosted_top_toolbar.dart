@@ -26,6 +26,7 @@ class TopToolbarContent {
     this.navigator,
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
+    this.backdrop = true,
   });
 
   /// No page owns the chrome, the page has no toolbar, or it draws a
@@ -50,6 +51,7 @@ class TopToolbarContent {
       navigator: entry.navigator,
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
+      backdrop: appBar.showsBackdrop,
     );
   }
 
@@ -67,6 +69,9 @@ class TopToolbarContent {
   /// Performed by the back button instead of popping [navigator].
   final VoidCallback? onBack;
   final AdaptiveBackButtonStyle backStyle;
+
+  /// Whether the page wants the bar's backdrop behind its controls.
+  final bool backdrop;
 
   bool get isEmpty =>
       title == null &&
@@ -122,10 +127,11 @@ class HostedTopToolbar extends StatelessWidget {
     };
 
     // The bar's backdrop belongs to the chrome, not to a page: it only fades
-    // when the toolbar as a whole comes or goes.
+    // when the toolbar as a whole comes or goes, or between a page that wants
+    // it and one that does not.
     final Animation<double> backdropOpacity = switch ((
-      upper.isEmpty,
-      lower.isEmpty,
+      upper.isEmpty || !upper.backdrop,
+      lower.isEmpty || !lower.backdrop,
     )) {
       (false, false) => kAlwaysCompleteAnimation,
       (false, true) =>
