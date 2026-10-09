@@ -17,6 +17,7 @@ Changes on top of the vendored 1.0.1 release.
 * **FIX**: Tab bar titles in the app font (`AdaptiveNativeFonts`), now in its regular weight, are no longer truncated: they were measured in the system font. Bars created before the app font was registered switch to it as soon as it is
 * **NEW**: `AdaptiveFixedToolbar` shows an app bar in the fixed toolbar, and its actions in the iPhone Duo vertical bar, for a page that lays itself out without an `AdaptiveScaffold`, such as a full-screen map
 * **NEW**: `AdaptiveAppBar.showsBackdrop`, to leave out the toolbar's backdrop behind a page whose controls float over content that should stay clear
+* **NEW**: `AdaptiveSheet.showsGrabber`, `scrollable` and `onDismissed`: a sheet without a grabber, one whose content never scrolls (a drag anywhere on it moves the sheet instead), and one that can be dragged down out of view
 
 ## [1.0.1]
 * **FIX**: 📱 **iPhone Duo: the tab bar now lives in the vertical bar**, at the bottom of it, the way the system lays it out. In 1.0.0 it stayed at the bottom of the screen. The strip now reads, from the top: status cluster, back button, toolbar items, tab bar. Measured against a native UIKit app on the iPhone Duo simulator

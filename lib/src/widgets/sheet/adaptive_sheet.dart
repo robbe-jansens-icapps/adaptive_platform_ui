@@ -78,6 +78,9 @@ class AdaptiveSheet extends StatefulWidget {
     this.sidePanelWidth = 380,
     this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 16),
     this.grabberSemanticsLabel = 'Sheet grabber',
+    this.showsGrabber = true,
+    this.scrollable = true,
+    this.onDismissed,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -113,6 +116,19 @@ class AdaptiveSheet extends StatefulWidget {
   final EdgeInsets padding;
 
   final String grabberSemanticsLabel;
+
+  /// Whether to show the grabber. Without it, the iOS sheet keeps the margin
+  /// the grabber sits in, so its content stays in place; the Material sheet
+  /// gives up the room of its drag handle.
+  final bool showsGrabber;
+
+  /// Whether [child] scrolls inside the sheet when it does not fit. When
+  /// false it never scrolls, and a drag anywhere on the sheet moves the sheet.
+  final bool scrollable;
+
+  /// Lets the sheet be dragged down out of view, after which it calls this.
+  /// Without it, a drag below the lowest detent springs back.
+  final VoidCallback? onDismissed;
 
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
@@ -195,7 +211,8 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   bool _dragging = false;
   EdgeInsets? _reportedObstruction;
 
-  double get _grabberHeight => (_metrics?.material ?? false) ? 36 : 16;
+  double get _grabberHeight =>
+      widget.showsGrabber && (_metrics?.material ?? false) ? 36 : 16;
 
   @override
   void initState() {
@@ -357,6 +374,18 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     final points = _restingPoints(m);
     if (points.isEmpty) return;
     final extent = _extent.value;
+    final lowest = points.first.$2;
+    final onDismissed = widget.onDismissed;
+    // Flung down with no detent below to stop at, or dragged down past a third
+    // of the lowest detent.
+    if (onDismissed != null &&
+        !m.sidePanel &&
+        ((velocity <= -_flingVelocity && extent <= lowest + 1) ||
+            extent < lowest * 2 / 3)) {
+      _settleTo(AdaptiveSheetDetent.hidden, velocity: velocity);
+      onDismissed();
+      return;
+    }
     var target = points.first;
     if (velocity.abs() >= _flingVelocity) {
       target = velocity > 0
@@ -414,9 +443,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   void _dragBy(double delta) {
     _dragging = true;
     final extent = _extent.value;
+    // A sheet that can be dismissed follows the finger down.
     final beyond =
         (delta > 0 && extent >= _maxExtent) ||
-        (delta < 0 && extent <= _minExtent);
+        (delta < 0 && extent <= _minExtent && widget.onDismissed == null);
     _extent.value = extent + (beyond ? delta * _rubberBand : delta);
   }
 
@@ -424,6 +454,15 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _dragging = false;
     _settle(velocity: velocity);
   }
+
+  /// [child], with vertical drags on it moving the sheet.
+  Widget _dragsSheet(Widget child) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onVerticalDragStart: (_) => _onDragStart(),
+    onVerticalDragUpdate: (details) => _dragBy(-details.primaryDelta!),
+    onVerticalDragEnd: (details) => _onDragEnd(-(details.primaryVelocity ?? 0)),
+    child: child,
+  );
 
   /// Whether a drag on the content moves the sheet rather than scrolling:
   /// only while the content is at its top, and only when the sheet can move
@@ -574,27 +613,35 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   Widget _buildBody(BuildContext context, _Metrics metrics) {
     final material = metrics.material;
     final header = widget.header;
+    final contentPadding = EdgeInsets.only(
+      left: widget.padding.left,
+      top: widget.padding.top,
+      right: widget.padding.right,
+      bottom: _bottomSpace(metrics),
+    );
+    final measuredChild = SizeReporter(
+      onSizeChanged: _onContentMeasured,
+      child: widget.child,
+    );
     final content = CustomMultiChildLayout(
       delegate: _SheetBodyLayout(),
       children: [
         LayoutId(
           id: _SheetSlot.top,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onVerticalDragStart: (_) => _onDragStart(),
-            onVerticalDragUpdate: (details) => _dragBy(-details.primaryDelta!),
-            onVerticalDragEnd: (details) =>
-                _onDragEnd(-(details.primaryVelocity ?? 0)),
-            child: Column(
+          child: _dragsSheet(
+            Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _Grabber(
-                  material: material,
-                  label: widget.grabberSemanticsLabel,
-                  onIncrease: () => _step(1),
-                  onDecrease: () => _step(-1),
-                ),
+                if (widget.showsGrabber)
+                  _Grabber(
+                    material: material,
+                    label: widget.grabberSemanticsLabel,
+                    onIncrease: () => _step(1),
+                    onDecrease: () => _step(-1),
+                  )
+                else
+                  SizedBox(height: _grabberHeight),
                 if (header != null)
                   SizeReporter(onSizeChanged: _onHeaderMeasured, child: header),
               ],
@@ -603,23 +650,29 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         ),
         LayoutId(
           id: _SheetSlot.content,
-          child: _ScrollEdgeFade(
-            scrolled: _scrolled,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.only(
-                left: widget.padding.left,
-                top: widget.padding.top,
-                right: widget.padding.right,
-                bottom: _bottomSpace(metrics),
-              ),
-              child: SizeReporter(
-                onSizeChanged: _onContentMeasured,
-                child: widget.child,
-              ),
-            ),
-          ),
+          child: widget.scrollable
+              ? _ScrollEdgeFade(
+                  scrolled: _scrolled,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: contentPadding,
+                    child: measuredChild,
+                  ),
+                )
+              // Laid out at its natural height, never scrolled: a drag on it
+              // moves the sheet.
+              : _dragsSheet(
+                  OverflowBox(
+                    alignment: Alignment.topCenter,
+                    minHeight: 0,
+                    maxHeight: double.infinity,
+                    child: Padding(
+                      padding: contentPadding,
+                      child: measuredChild,
+                    ),
+                  ),
+                ),
         ),
       ],
     );
