@@ -68,6 +68,10 @@ class ToolbarBlend extends ChangeNotifier {
   /// must not react.
   bool get ownerIsCovered => owner?.isCovered ?? false;
 
+  /// 0 while the owner is in front, 1 while a dialog or sheet covers it,
+  /// following the cover as it comes and goes.
+  Animation<double> get cover => _cover;
+
   /// Opacity of the whole chrome: full in front, dimmed while covered.
   late final Animation<double> chromeOpacity = _cover.drive(
     Tween<double>(begin: 1, end: kToolbarCoveredOpacity),

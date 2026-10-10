@@ -151,11 +151,16 @@ const double kDuoTitleBandHeight = 70.0;
 /// blurred and faded out towards the top, like the system's scroll edge
 /// effect, so the leading-aligned title never reads on top of a list row.
 class DuoTitleBackdrop extends StatelessWidget {
-  const DuoTitleBackdrop({super.key});
+  const DuoTitleBackdrop({super.key, this.color});
+
+  /// The color of the page behind the band; the system background if null.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final base = CupertinoColors.systemBackground.resolveFrom(context);
+    final base =
+        color?.withValues(alpha: 1) ??
+        CupertinoColors.systemBackground.resolveFrom(context);
     return IgnorePointer(
       child: OverflowBox(
         alignment: Alignment.topCenter,
@@ -163,11 +168,12 @@ class DuoTitleBackdrop extends StatelessWidget {
         minHeight: kDuoTitleBandHeight + 24,
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
-          // Solid behind the title, gone just below the band.
+          // Solid at the top, fading out from behind the title to just below
+          // the band.
           shaderCallback: (rect) => const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            stops: [0.0, 0.62, 1.0],
+            stops: [0.0, 0.45, 1.0],
             colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
           ).createShader(rect),
           child: ClipRect(

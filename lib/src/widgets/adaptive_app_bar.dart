@@ -39,6 +39,7 @@ class AdaptiveAppBar {
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
     this.automaticallyImplyLeading = true,
     this.showsBackdrop = true,
+    this.backdropColor,
   });
 
   /// Title for the app bar
@@ -116,6 +117,13 @@ class AdaptiveAppBar {
   /// that should stay clear, such as a map.
   final bool showsBackdrop;
 
+  /// The color of the page behind the fixed iOS 26 toolbar. Its backdrop
+  /// takes it, so the bar blends into the page at rest and only fades out
+  /// what scrolls underneath, like the system's scroll edge effect. Defaults
+  /// to the system background, which suits a white page; a page with another
+  /// background (the grey of grouped lists) would otherwise show a band.
+  final Color? backdropColor;
+
   /// Creates a copy of this app bar with the given fields replaced
   AdaptiveAppBar copyWith({
     String? title,
@@ -131,6 +139,7 @@ class AdaptiveAppBar {
     AdaptiveBackButtonStyle? backButtonStyle,
     bool? automaticallyImplyLeading,
     bool? showsBackdrop,
+    Color? backdropColor,
   }) {
     return AdaptiveAppBar(
       title: title ?? this.title,
@@ -148,6 +157,7 @@ class AdaptiveAppBar {
       automaticallyImplyLeading:
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
       showsBackdrop: showsBackdrop ?? this.showsBackdrop,
+      backdropColor: backdropColor ?? this.backdropColor,
     );
   }
 }

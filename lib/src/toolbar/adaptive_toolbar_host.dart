@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
@@ -55,6 +56,10 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   void initState() {
     super.initState();
     _blend = ToolbarBlend(registry: _registry, vsync: this);
+    // Whether windows have window controls to keep clear of (iPad).
+    PlatformInfo.loadDevice().then((_) {
+      if (mounted) setState(() {});
+    });
     // Fold readings are only needed for the camera clearance of the bar.
     if (widget.debugFold == null && PlatformInfo.isIOS26OrHigher()) {
       Foldable.snapshot.then(_onFoldChanged).catchError((Object _) {});
@@ -92,36 +97,60 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     final barOnLeft =
         DuoLayout.barSide(MediaQuery.viewPaddingOf(context)) == DuoBarSide.left;
 
-    return ToolbarRegistryScope(
-      registry: _registry,
-      child: ToolbarChromeScope(
-        hostsToolbar: hostsToolbar,
-        hostsDuoControls: hostsDuoControls,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Always the first child at a stable position, so toggling the
-            // chrome never rebuilds the navigator from scratch.
-            widget.child,
-            if (hostsToolbar)
-              HostedTopToolbar(blend: _blend, titleOnly: hostsDuoControls),
-            if (hostsDuoControls)
-              // The bar follows the hardware: the strip is on the right in
-              // most poses and on the left in one landscape rotation.
-              Positioned(
-                top: 0,
-                bottom: 0,
-                left: barOnLeft ? 0 : null,
-                right: barOnLeft ? null : 0,
-                width: DuoLayout.bandWidth(MediaQuery.viewPaddingOf(context)),
-                child: HostedDuoBar(
-                  blend: _blend,
-                  regions: fold?.regions ?? const <ReservedRegion>[],
-                ),
+    // A window that is only part of the display (iPhone Duo split view, an
+    // iPad window) can come without any room at the top: there is no status
+    // bar above it. The bar and the pages then still keep clear of the
+    // window's rounded top edge. Always in the tree, so the navigator below
+    // keeps its place when the window changes.
+    final mediaQuery = MediaQuery.of(context);
+    final noRoomAtTop =
+        hostsToolbar && !hostsDuoControls && mediaQuery.viewPadding.top == 0;
+
+    return MediaQuery(
+      data: noRoomAtTop
+          ? mediaQuery.copyWith(
+              padding: mediaQuery.padding.copyWith(
+                top: math.max(mediaQuery.padding.top, kWindowTopMargin),
               ),
-          ],
+              viewPadding: mediaQuery.viewPadding.copyWith(
+                top: kWindowTopMargin,
+              ),
+            )
+          : mediaQuery,
+      child: ToolbarRegistryScope(
+        registry: _registry,
+        child: ToolbarChromeScope(
+          hostsToolbar: hostsToolbar,
+          hostsDuoControls: hostsDuoControls,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Always the first child at a stable position, so toggling the
+              // chrome never rebuilds the navigator from scratch.
+              widget.child,
+              if (hostsToolbar)
+                HostedTopToolbar(blend: _blend, titleOnly: hostsDuoControls),
+              if (hostsDuoControls)
+                // The bar follows the hardware: the strip is on the right in
+                // most poses and on the left in one landscape rotation.
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: barOnLeft ? 0 : null,
+                  right: barOnLeft ? null : 0,
+                  width: DuoLayout.bandWidth(MediaQuery.viewPaddingOf(context)),
+                  child: HostedDuoBar(
+                    blend: _blend,
+                    regions: fold?.regions ?? const <ReservedRegion>[],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+/// Room kept above the fixed toolbar in a window without any at its top.
+const double kWindowTopMargin = 12.0;

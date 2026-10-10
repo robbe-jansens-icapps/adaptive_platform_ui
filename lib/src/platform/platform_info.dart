@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 /// Provides platform detection and iOS version information
 ///
@@ -17,6 +18,35 @@ class PlatformInfo {
   /// Replaces the detected iOS major version while [isIOS] is true.
   @visibleForTesting
   static int? debugIOSVersionOverride;
+
+  /// Replaces [isIPad] in tests.
+  @visibleForTesting
+  static bool? debugIPadOverride;
+
+  static bool _isIPad = false;
+  static Future<void>? _deviceLoad;
+
+  /// Whether the app runs on an iPad, whose windows have window controls in
+  /// their top leading corner. An iPhone (the iPhone Duo too, in split view)
+  /// has none. Read from the device once [loadDevice] completes; false until
+  /// then, and off iOS.
+  static bool get isIPad => debugIPadOverride ?? (isIOS && _isIPad);
+
+  /// Asks the device what it is, once; [AdaptiveToolbarHost] does this.
+  static Future<void> loadDevice() => _deviceLoad ??= _loadDevice();
+
+  static Future<void> _loadDevice() async {
+    if (!isIOS || debugPlatformOverride != null) return;
+    try {
+      _isIPad =
+          await const MethodChannel(
+            'adaptive_platform_ui/device',
+          ).invokeMethod<bool>('isPad') ??
+          false;
+    } catch (_) {
+      // Without the native side (tests, other hosts) it is no iPad.
+    }
+  }
 
   static bool _isPlatform(TargetPlatform platform, bool Function() detect) {
     final override = debugPlatformOverride;

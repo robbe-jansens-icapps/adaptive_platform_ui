@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:foldable/foldable.dart';
+import '../../platform/platform_info.dart';
 import '../../style/sf_symbol.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/toolbar_chrome_scope.dart';
@@ -183,7 +184,9 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
       if (isCurrent) {
         final backButton = Container(
           // 62px accounts for the iPadOS system window toolbar width in windowed mode
-          margin: EdgeInsets.only(left: _getIsWindowed() ? 62 : 0),
+          margin: EdgeInsets.only(
+            left: PlatformInfo.isIPad && _getIsWindowed() ? 62 : 0,
+          ),
           height: 38,
           width: 38,
           child: AdaptiveButton.sfSymbol(

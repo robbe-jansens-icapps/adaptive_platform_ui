@@ -21,6 +21,20 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             result(nil)
         }
 
+        // What the device is (Dart: PlatformInfo.isIPad): iPad windows have
+        // window controls that the fixed toolbar keeps clear of.
+        let deviceChannel = FlutterMethodChannel(
+            name: "adaptive_platform_ui/device",
+            binaryMessenger: registrar.messenger()
+        )
+        deviceChannel.setMethodCallHandler { call, result in
+            guard call.method == "isPad" else {
+                result(FlutterMethodNotImplemented)
+                return
+            }
+            result(UIDevice.current.userInterfaceIdiom == .pad)
+        }
+
         // Initialize iOS 26+ Native Tab Bar Manager
         if #available(iOS 26.0, *) {
             iOS26NativeTabBarManager.shared.setup(messenger: registrar.messenger())

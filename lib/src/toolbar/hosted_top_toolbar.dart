@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
+import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
@@ -27,6 +28,7 @@ class TopToolbarContent {
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
     this.backdrop = true,
+    this.backdropColor,
   });
 
   /// No page owns the chrome, the page has no toolbar, or it draws a
@@ -52,6 +54,7 @@ class TopToolbarContent {
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
       backdrop: appBar.showsBackdrop,
+      backdropColor: appBar.backdropColor,
     );
   }
 
@@ -72,6 +75,10 @@ class TopToolbarContent {
 
   /// Whether the page wants the bar's backdrop behind its controls.
   final bool backdrop;
+
+  /// The page's color, which the backdrop takes; null for the system
+  /// background.
+  final Color? backdropColor;
 
   bool get isEmpty =>
       title == null &&
@@ -156,6 +163,21 @@ class HostedTopToolbar extends StatelessWidget {
       (false, false) => kAlwaysDismissedAnimation,
     };
     final backdropSlide = upperBackdrop && !lowerBackdrop ? upperSlide : null;
+    // In the color of the page it sits on: blended from one page's to the
+    // next as the pages are.
+    final systemBackground = CupertinoColors.systemBackground.resolveFrom(
+      context,
+    );
+    final upperColor = upper.backdropColor ?? systemBackground;
+    final lowerColor = lower.backdropColor ?? systemBackground;
+    final driver = blend.driver;
+    final backdrop = upperBackdrop && lowerBackdrop && driver != null
+        ? AnimatedBuilder(
+            animation: driver,
+            builder: (context, _) =>
+                _backdrop(Color.lerp(lowerColor, upperColor, driver.value)!),
+          )
+        : _backdrop(upperBackdrop ? upperColor : lowerColor);
 
     return Align(
       alignment: Alignment.topCenter,
@@ -176,11 +198,11 @@ class HostedTopToolbar extends StatelessWidget {
                 FadeTransition(
                   key: const ValueKey<String>('adaptive_toolbar_backdrop'),
                   opacity: backdropOpacity,
-                  child: _DialogSlide(
-                    driver: backdropSlide,
-                    child: titleOnly
-                        ? const DuoTitleBackdrop()
-                        : const _Backdrop(),
+                  // Gone while a dialog or a sheet covers the page: over the
+                  // page's dimmed barrier it would show as a lighter band.
+                  child: FadeTransition(
+                    opacity: ReverseAnimation(blend.cover),
+                    child: _DialogSlide(driver: backdropSlide, child: backdrop),
                   ),
                 ),
                 if (lowerEntry != null && !lower.isEmpty)
@@ -206,7 +228,7 @@ class HostedTopToolbar extends StatelessWidget {
                       'adaptive_toolbar_back',
                       content.backStyle,
                     )),
-                    left: 16 + (_isWindowed(context) ? 62 : 0),
+                    left: 16 + (_hasWindowControls(context) ? 62 : 0),
                     bottom: 3,
                     child: FadeTransition(
                       key: const ValueKey<String>('adaptive_toolbar_back_fade'),
@@ -227,6 +249,9 @@ class HostedTopToolbar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _backdrop(Color color) =>
+      titleOnly ? DuoTitleBackdrop(color: color) : _Backdrop(color: color);
 
   /// While [entry] is a page shown like a dialog that comes up or goes down:
   /// its route's animation, which the blend follows. Null otherwise.
@@ -282,8 +307,13 @@ class HostedTopToolbar extends StatelessWidget {
     );
   }
 
-  /// Whether the app runs in a window smaller than the display (iPadOS),
-  /// where the system's window controls take the bar's leading corner.
+  /// Whether the system's window controls take the bar's leading corner: in
+  /// an iPad window smaller than the display. An iPhone Duo window in split
+  /// view has none.
+  static bool _hasWindowControls(BuildContext context) =>
+      PlatformInfo.isIPad && _isWindowed(context);
+
+  /// Whether the app runs in a window smaller than the display.
   static bool _isWindowed(BuildContext context) {
     final display = View.of(context).display.size;
     final viewport =
@@ -328,14 +358,17 @@ class _DialogSlide extends StatelessWidget {
   }
 }
 
-/// The soft gradient that keeps the bar readable over scrolling content.
+/// The soft gradient that keeps the bar readable over scrolling content, in
+/// the page's [color]: invisible at rest, it fades out what scrolls under the
+/// bar.
 class _Backdrop extends StatelessWidget {
-  const _Backdrop();
+  const _Backdrop({required this.color});
+
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final base = dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+    final base = color.withValues(alpha: 1);
     return IgnorePointer(
       child: OverflowBox(
         alignment: Alignment.topCenter,
