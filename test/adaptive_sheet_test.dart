@@ -247,6 +247,31 @@ void main() {
     expect(settled.last, const EdgeInsets.only(left: 16 + 380 + 8));
   });
 
+  testWidgets('a side panel comes in at its size, then follows its content', (
+    tester,
+  ) async {
+    usePhone(tester, size: const Size(951, 669));
+    // Grabber 16, header 60, content and the bottom padding 16.
+    double panelHeight() =>
+        tester.getRect(find.byType(IOS26GlassSurface)).height;
+    await tester.pumpWidget(sheetApp());
+    // Measured: it slides in as tall as it needs to be.
+    await tester.pump();
+    expect(panelHeight(), 16 + 60 + 200 + 16);
+    await tester.pumpAndSettle();
+
+    // Content that loads: it grows to fit it, on screen.
+    await tester.pumpWidget(sheetApp(contentHeight: 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      panelHeight(),
+      inExclusiveRange(16 + 60 + 200 + 16, 16 + 60 + 300 + 16),
+    );
+    await tester.pumpAndSettle();
+    expect(panelHeight(), 16 + 60 + 300 + 16);
+  });
+
   group('on Android', () {
     setUp(() => PlatformInfo.debugPlatformOverride = TargetPlatform.android);
     tearDown(() => PlatformInfo.debugPlatformOverride = null);

@@ -304,23 +304,34 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
           : duoVerticalPose
           ? kDuoTitleBandHeight
           : kToolbarContentHeight;
+      final page = bodyContent;
       bodyContent = Padding(
         padding: EdgeInsets.only(
           left: barOnLeft ? trailingInset : 0,
           right: barOnLeft ? 0 : trailingInset,
         ),
-        child: MediaQuery(
-          data: mq.copyWith(
-            padding: mq.padding.copyWith(
-              top: mq.padding.top + topInset,
-              left: mq.padding.left - (barOnLeft ? trailingInset : 0),
-              right: mq.padding.right - (barOnLeft ? 0 : trailingInset),
-            ),
-            viewPadding: mq.viewPadding.copyWith(
-              top: mq.viewPadding.top + topInset,
-            ),
-          ),
-          child: bodyContent,
+        // Built on the MediaQuery that the CupertinoPageScaffold below hands
+        // its content, not on this one: with the keyboard up, that one no
+        // longer has the keyboard's inset, which the scaffold has made room
+        // for already. A copy of this one would bring the inset back, and a
+        // Scaffold in the page would make room for the keyboard a second time.
+        child: Builder(
+          builder: (context) {
+            final inner = MediaQuery.of(context);
+            return MediaQuery(
+              data: inner.copyWith(
+                padding: inner.padding.copyWith(
+                  top: inner.padding.top + topInset,
+                  left: inner.padding.left - (barOnLeft ? trailingInset : 0),
+                  right: inner.padding.right - (barOnLeft ? 0 : trailingInset),
+                ),
+                viewPadding: inner.viewPadding.copyWith(
+                  top: inner.viewPadding.top + topInset,
+                ),
+              ),
+              child: page,
+            );
+          },
         ),
       );
     }

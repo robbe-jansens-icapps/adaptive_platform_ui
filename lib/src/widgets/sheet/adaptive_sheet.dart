@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
@@ -77,6 +79,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.sidePanel,
     this.sidePanelWidth = 380,
     this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    this.floatingMargin,
     this.grabberSemanticsLabel = 'Sheet grabber',
     this.showsGrabber = true,
     this.scrollable = true,
@@ -115,11 +118,20 @@ class AdaptiveSheet extends StatefulWidget {
   /// Around [child].
   final EdgeInsets padding;
 
+  /// Where the floating iOS sheet sits in its area: how far it keeps from the
+  /// left, the right and the bottom, to line it up with the page's own
+  /// controls (the top is not used). The sheet then keeps no further room for
+  /// the bottom padding of the area: its content ends [padding] above its
+  /// bottom edge, as it does [padding] from its sides. By default the sheet
+  /// floats 8 points from the sides, beyond the iPhone Duo vertical bar, and
+  /// from the bottom, and its content stays clear of the bottom padding. It
+  /// still grows edge to edge at the large detent.
+  final EdgeInsets? floatingMargin;
+
   final String grabberSemanticsLabel;
 
-  /// Whether to show the grabber. Without it, the iOS sheet keeps the margin
-  /// the grabber sits in, so its content stays in place; the Material sheet
-  /// gives up the room of its drag handle.
+  /// Whether to show the grabber. Without it the sheet keeps no room above
+  /// its content either: the content's own padding decides where it starts.
   final bool showsGrabber;
 
   /// Whether [child] scrolls inside the sheet when it does not fit. When
@@ -211,8 +223,19 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   bool _dragging = false;
   EdgeInsets? _reportedObstruction;
 
-  double get _grabberHeight =>
-      widget.showsGrabber && (_metrics?.material ?? false) ? 36 : 16;
+  /// The spring the sheet settles on, and when it gets there.
+  _RetargetableSpring? _spring;
+  TickerFuture? _settling;
+
+  /// Whether the side panel was in view as it last built.
+  bool _panelInView = false;
+  static const _panelResizeDuration = Duration(milliseconds: 300);
+
+  double get _grabberHeight => !widget.showsGrabber
+      ? 0
+      : (_metrics?.material ?? false)
+      ? 36
+      : 16;
 
   @override
   void initState() {
@@ -231,6 +254,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     }
     if (widget.header == null) _headerHeight = 0;
     if (!listEquals(oldWidget.detents, widget.detents)) _onExtentsChanged();
+    if (oldWidget.floatingMargin != widget.floatingMargin ||
+        oldWidget.padding != widget.padding ||
+        oldWidget.showsGrabber != widget.showsGrabber) {
+      // The sheet's own room changed: it settles again once laid out anew.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onExtentsChanged());
+    }
   }
 
   @override
@@ -251,25 +280,34 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   bool get _measured => _headerHeight != null && _contentHeight != null;
 
+  /// The gap below a floating sheet: the bottom of
+  /// [AdaptiveSheet.floatingMargin] when there is one, 8 points otherwise.
+  /// The Material sheet sits on the bottom edge.
+  double _bottomGap(_Metrics m) =>
+      m.material ? 0 : widget.floatingMargin?.bottom ?? _floatingGap;
+
+  /// Room the content keeps for the bottom padding of the area (a floating
+  /// tab bar, the home indicator) beyond the gap below the sheet. None for a
+  /// floating sheet placed by [AdaptiveSheet.floatingMargin].
+  double _safeBottom(_Metrics m) => !m.material && widget.floatingMargin != null
+      ? 0
+      : math.max(m.padding.bottom - _bottomGap(m), 0);
+
   /// Visible height of the content area that the bottom padding takes, inside
   /// the sheet's frame.
   double _bottomSpace(_Metrics m) {
     if (m.sidePanel) return widget.padding.bottom;
-    final gap = m.material ? 0.0 : _floatingGap;
-    return math.max(m.padding.bottom - gap, 0) + widget.padding.bottom;
+    return _safeBottom(m) + widget.padding.bottom;
   }
 
   double _collapsedExtent(_Metrics m) =>
-      _grabberHeight +
-      (_headerHeight ?? 0) +
-      (m.material ? 0 : _floatingGap) +
-      math.max(m.padding.bottom - (m.material ? 0 : _floatingGap), 0);
+      _grabberHeight + (_headerHeight ?? 0) + _bottomGap(m) + _safeBottom(m);
 
   double _largeExtent(_Metrics m) =>
       m.size.height - m.padding.top - (m.material ? 0 : _floatingGap);
 
   double _fitExtent(_Metrics m) =>
-      (m.material ? 0 : _floatingGap) +
+      _bottomGap(m) +
       _grabberHeight +
       (_headerHeight ?? 0) +
       widget.padding.top +
@@ -314,15 +352,17 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   // Settling ----------------------------------------------------------------
 
+  // A side panel takes its height from these as it builds.
+
   void _onHeaderMeasured(Size size) {
-    if (_headerHeight == size.height) return;
-    _headerHeight = size.height;
+    if (!mounted || _headerHeight == size.height) return;
+    setState(() => _headerHeight = size.height);
     _onExtentsChanged();
   }
 
   void _onContentMeasured(Size size) {
-    if (_contentHeight == size.height) return;
-    _contentHeight = size.height;
+    if (!mounted || _contentHeight == size.height) return;
+    setState(() => _contentHeight = size.height);
     _onExtentsChanged();
   }
 
@@ -360,10 +400,25 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       _extent.value = to;
       return Future<void>.value();
     }
-    final spring = m.material ? _materialSpring : _cupertinoSpring;
-    return _extent.animateWith(
-      SpringSimulation(spring, _extent.value, to, velocity),
+    // Already on its way, such as content that loads while the sheet comes
+    // up: it heads for the new extent from where it is, at the speed it has.
+    // A new animation would start from rest, after a frame standing still.
+    final spring = _spring;
+    final elapsed = _extent.lastElapsedDuration;
+    if (_extent.isAnimating && spring != null && elapsed != null) {
+      spring.retarget(
+        to,
+        at: elapsed.inMicroseconds / Duration.microsecondsPerSecond,
+      );
+      return _settling ?? Future<void>.value();
+    }
+    final simulation = _spring = _RetargetableSpring(
+      m.material ? _materialSpring : _cupertinoSpring,
+      start: _extent.value,
+      end: to,
+      velocity: velocity,
     );
+    return _settling = _extent.animateWith(simulation);
   }
 
   /// Comes to rest at the detent the release suggests: the next one in the
@@ -455,12 +510,25 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _settle(velocity: velocity);
   }
 
-  /// [child], with vertical drags on it moving the sheet.
-  Widget _dragsSheet(Widget child) => GestureDetector(
+  /// [child], with vertical drags on it moving the sheet. A touch only takes
+  /// the sheet once it moves: alone under a finger, a drag recognizer wins as
+  /// soon as the finger comes down, and a tap would stop a sheet on its way.
+  Widget _dragsSheet(Widget child) => RawGestureDetector(
     behavior: HitTestBehavior.opaque,
-    onVerticalDragStart: (_) => _onDragStart(),
-    onVerticalDragUpdate: (details) => _dragBy(-details.primaryDelta!),
-    onVerticalDragEnd: (details) => _onDragEnd(-(details.primaryVelocity ?? 0)),
+    gestures: {
+      VerticalDragGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+            () => VerticalDragGestureRecognizer(debugOwner: this),
+            (recognizer) {
+              recognizer.onlyAcceptDragOnThreshold = true;
+              recognizer.onStart = (_) => _onDragStart();
+              recognizer.onUpdate = (details) =>
+                  _dragBy(-details.primaryDelta!);
+              recognizer.onEnd = (details) =>
+                  _onDragEnd(-(details.primaryVelocity ?? 0));
+            },
+          ),
+    },
     child: child,
   );
 
@@ -524,11 +592,17 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         : math.min(points.last.$2, large - 1);
     final t = ((extent - morphStart) / (large - morphStart)).clamp(0.0, 1.0);
     final inset = _floatingGap * (1 - t);
-    final bottom = m.size.height - inset + _overhang * t;
+    final bottom = m.size.height - _bottomGap(m) * (1 - t) + _overhang * t;
     final top = m.size.height - extent;
     final height = math.max(bottom - top, minHeight);
-    final left = m.sides.left + inset;
-    final width = m.size.width - left - m.sides.right - inset;
+    final margin = widget.floatingMargin;
+    final left = margin == null
+        ? m.sides.left + inset
+        : lerpDouble(margin.left, m.sides.left, t)!;
+    final right = margin == null
+        ? m.sides.right + inset
+        : lerpDouble(margin.right, m.sides.right, t)!;
+    final width = m.size.width - left - right;
     return Rect.fromLTWH(left, top, width, height);
   }
 
@@ -577,11 +651,20 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         final body = _buildBody(context, metrics);
         if (sidePanel) {
           final hidden = _target?.isHidden ?? !_measured;
+          // In view, the panel grows and shrinks with its content. Coming
+          // into view, it slides in at its size.
+          final resizes =
+              _panelInView &&
+              !hidden &&
+              !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+          _panelInView = !hidden;
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              Positioned.fromRect(
+              AnimatedPositioned.fromRect(
                 rect: _sidePanelRect(metrics),
+                duration: resizes ? _panelResizeDuration : Duration.zero,
+                curve: Curves.easeOutCubic,
                 child: AnimatedSlide(
                   offset: hidden ? Offset(rtl ? 1.2 : -1.2, 0) : Offset.zero,
                   duration: const Duration(milliseconds: 350),
@@ -639,9 +722,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                     label: widget.grabberSemanticsLabel,
                     onIncrease: () => _step(1),
                     onDecrease: () => _step(-1),
-                  )
-                else
-                  SizedBox(height: _grabberHeight),
+                  ),
                 if (header != null)
                   SizeReporter(onSizeChanged: _onHeaderMeasured, child: header),
               ],
@@ -707,6 +788,38 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       ),
     );
   }
+}
+
+/// A spring that can head for another end while it runs: from where it is at
+/// that moment, at the speed it has, on the clock of the animation that runs
+/// it.
+class _RetargetableSpring extends Simulation {
+  _RetargetableSpring(
+    this._description, {
+    required double start,
+    required double end,
+    required double velocity,
+  }) : _spring = SpringSimulation(_description, start, end, velocity);
+
+  final SpringDescription _description;
+  SpringSimulation _spring;
+
+  /// When the spring headed for its end, in seconds.
+  double _since = 0;
+
+  void retarget(double end, {required double at}) {
+    _spring = SpringSimulation(_description, x(at), end, dx(at));
+    _since = at;
+  }
+
+  @override
+  double x(double time) => _spring.x(time - _since);
+
+  @override
+  double dx(double time) => _spring.dx(time - _since);
+
+  @override
+  bool isDone(double time) => _spring.isDone(time - _since);
 }
 
 enum _SheetSlot { top, content }
@@ -843,11 +956,8 @@ class _SheetScrollPosition extends ScrollPositionWithSingleContext {
 
   bool get _atTop => pixels <= minScrollExtent;
 
-  @override
-  ScrollHoldController hold(VoidCallback holdCancelCallback) {
-    sheet._interrupt();
-    return super.hold(holdCancelCallback);
-  }
+  // A touch leaves a sheet on its way alone until it drags (which takes the
+  // sheet over): stopped here, a tap would leave it halfway.
 
   @override
   void applyUserOffset(double delta) {
