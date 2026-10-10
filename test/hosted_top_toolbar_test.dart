@@ -1,4 +1,5 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/toolbar_chrome_scope.dart';
@@ -178,6 +179,95 @@ void main() {
       expect(tester.getRect(backButton), backRect);
       expect(opacityOf(tester, find.text('B')), lessThan(1));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+      'a page shown like a dialog keeps its cross and travels with the page',
+      (tester) async {
+        usePhone(tester);
+        final nav = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          hostedApp(navigatorKey: nav, home: page('Map')),
+        );
+        await tester.pump();
+        nav.currentState!.push(
+          MaterialPageRoute<void>(
+            fullscreenDialog: true,
+            builder: (_) => const AdaptiveScaffold(
+              appBar: AdaptiveAppBar(
+                title: 'Bikes',
+                useNativeToolbar: true,
+                backButtonStyle: AdaptiveBackButtonStyle.close,
+              ),
+              body: SizedBox.shrink(),
+            ),
+          ),
+        );
+        double titleTop() => tester.getTopLeft(inBar(find.text('Bikes'))).dy;
+        String backSymbol() =>
+            tester.widget<AdaptiveButton>(backButton).sfSymbol!.name;
+
+        // It comes up with the page, as it is, rather than fading in place.
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final rising = titleTop();
+        expect(opacityOf(tester, find.text('Bikes')), 1);
+        await tester.pumpAndSettle();
+        final top = titleTop();
+        expect(rising, greaterThan(top));
+        expect(backSymbol(), 'xmark');
+
+        // Closing it, it goes down with the page, its cross still a cross
+        // while the page below owns the bar.
+        nav.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(titleTop(), greaterThan(top));
+        expect(opacityOf(tester, find.text('Bikes')), 1);
+        expect(backSymbol(), 'xmark');
+        await tester.pumpAndSettle();
+        expect(backButton, findsNothing);
+        expect(inBar(find.text('Map')), findsOneWidget);
+      },
+    );
+
+    testWidgets('on iPhone Duo a closing dialog page keeps its cross', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(right: 84, bottom: 34);
+      tester.view.viewPadding = const FakeViewPadding(right: 84, bottom: 34);
+      addTearDown(tester.view.reset);
+      final nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(hostedApp(navigatorKey: nav, home: page('Map')));
+      await tester.pump();
+      nav.currentState!.push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => const AdaptiveScaffold(
+            appBar: AdaptiveAppBar(
+              title: 'Bikes',
+              useNativeToolbar: true,
+              backButtonStyle: AdaptiveBackButtonStyle.close,
+            ),
+            body: SizedBox.shrink(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Iterable<bool> crosses() => tester
+          .widgetList<DuoBarBackButton>(find.byType(DuoBarBackButton))
+          .map((button) => button.close);
+      expect(crosses(), [true]);
+
+      nav.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(crosses(), [true]);
+      await tester.pumpAndSettle();
+      expect(crosses(), isEmpty);
     });
 
     testWidgets('pages are told the host draws their toolbar', (tester) async {

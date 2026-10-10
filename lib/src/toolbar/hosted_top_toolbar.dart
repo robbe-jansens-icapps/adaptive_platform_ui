@@ -114,33 +114,48 @@ class HostedTopToolbar extends StatelessWidget {
     final upper = TopToolbarContent.of(upperEntry, titleOnly: titleOnly);
     final lower = TopToolbarContent.of(lowerEntry, titleOnly: titleOnly);
     final upperOwns = blend.upperOwns;
-    final upperOpacity = blend.upperOpacity;
+    // A page shown like a dialog slides up over the screen and back down. Its
+    // part of the bar travels with it, as a modal's own navigation bar does,
+    // instead of fading in place.
+    final upperSlide = _dialogSlide(upperEntry);
+    final upperOpacity = upperSlide != null
+        ? kAlwaysCompleteAnimation
+        : blend.upperOpacity;
     final lowerOpacity = blend.lowerOpacity;
 
     final upperBack = upper.impliesBack && upper.customLeading == null;
     final lowerBack = lower.impliesBack && lower.customLeading == null;
-    final Animation<double>? backOpacity = switch ((upperBack, lowerBack)) {
-      (true, true) => kAlwaysCompleteAnimation,
-      (true, false) => upperOpacity,
-      (false, true) => lowerOpacity,
-      (false, false) => null,
-    };
+    // A back button that both pages show the same way is one control that
+    // stays put. Otherwise each page's own comes and goes with the page and
+    // keeps its look: a cross does not turn into a chevron on its way out.
+    final backs =
+        <(TopToolbarContent, Animation<double>, bool, Animation<double>?)>[
+          if (upperBack && lowerBack && upper.backStyle == lower.backStyle)
+            (upperOwns ? upper : lower, kAlwaysCompleteAnimation, true, null)
+          else ...[
+            if (lowerBack) (lower, lowerOpacity, !upperOwns, null),
+            if (upperBack) (upper, upperOpacity, upperOwns, upperSlide),
+          ],
+        ];
 
     // The bar's backdrop belongs to the chrome, not to a page: it only fades
     // when the toolbar as a whole comes or goes, or between a page that wants
-    // it and one that does not.
+    // it and one that does not. Only one page's, it travels with that page.
+    final upperBackdrop = !upper.isEmpty && upper.backdrop;
+    final lowerBackdrop = !lower.isEmpty && lower.backdrop;
     final Animation<double> backdropOpacity = switch ((
-      upper.isEmpty || !upper.backdrop,
-      lower.isEmpty || !lower.backdrop,
+      upperBackdrop,
+      lowerBackdrop,
     )) {
-      (false, false) => kAlwaysCompleteAnimation,
-      (false, true) =>
+      (true, true) => kAlwaysCompleteAnimation,
+      (true, false) =>
         blend.isBlending && lowerEntry != null
             ? upperOpacity
             : kAlwaysCompleteAnimation,
-      (true, false) => lowerOpacity,
-      (true, true) => kAlwaysDismissedAnimation,
+      (false, true) => lowerOpacity,
+      (false, false) => kAlwaysDismissedAnimation,
     };
+    final backdropSlide = upperBackdrop && !lowerBackdrop ? upperSlide : null;
 
     return Align(
       alignment: Alignment.topCenter,
@@ -161,9 +176,12 @@ class HostedTopToolbar extends StatelessWidget {
                 FadeTransition(
                   key: const ValueKey<String>('adaptive_toolbar_backdrop'),
                   opacity: backdropOpacity,
-                  child: titleOnly
-                      ? const DuoTitleBackdrop()
-                      : const _Backdrop(),
+                  child: _DialogSlide(
+                    driver: backdropSlide,
+                    child: titleOnly
+                        ? const DuoTitleBackdrop()
+                        : const _Backdrop(),
+                  ),
                 ),
                 if (lowerEntry != null && !lower.isEmpty)
                   _layer(
@@ -178,16 +196,28 @@ class HostedTopToolbar extends StatelessWidget {
                     content: upper,
                     opacity: upperOpacity,
                     interactive: upperOwns,
+                    slide: upperSlide,
                   ),
-                if (backOpacity != null)
+                for (final (content, opacity, interactive, slide) in backs)
                   Positioned(
-                    key: const ValueKey<String>('adaptive_toolbar_back'),
+                    // Keyed by its look, so a back button carries on as the
+                    // same control from one page to the next.
+                    key: ValueKey<Object>((
+                      'adaptive_toolbar_back',
+                      content.backStyle,
+                    )),
                     left: 16 + (_isWindowed(context) ? 62 : 0),
                     bottom: 3,
                     child: FadeTransition(
                       key: const ValueKey<String>('adaptive_toolbar_back_fade'),
-                      opacity: backOpacity,
-                      child: _BackButton(content: upperOwns ? upper : lower),
+                      opacity: opacity,
+                      child: _DialogSlide(
+                        driver: slide,
+                        child: IgnorePointer(
+                          ignoring: !interactive,
+                          child: _BackButton(content: content),
+                        ),
+                      ),
                     ),
                   ),
               ],
@@ -198,6 +228,17 @@ class HostedTopToolbar extends StatelessWidget {
     );
   }
 
+  /// While [entry] is a page shown like a dialog that comes up or goes down:
+  /// its route's animation, which the blend follows. Null otherwise.
+  Animation<double>? _dialogSlide(ToolbarEntry? entry) {
+    final driver = blend.driver;
+    final route = entry?.route;
+    if (driver == null || route is! PageRoute || !route.fullscreenDialog) {
+      return null;
+    }
+    return identical(driver, route.animation) ? driver : null;
+  }
+
   /// One page's bar. The back button is not part of it: the shared one is
   /// drawn on top of all page layers.
   Widget _layer({
@@ -205,34 +246,38 @@ class HostedTopToolbar extends StatelessWidget {
     required TopToolbarContent content,
     required Animation<double> opacity,
     required bool interactive,
+    Animation<double>? slide,
   }) {
     return FadeTransition(
       key: key,
       opacity: opacity,
-      child: IgnorePointer(
-        ignoring: !interactive,
-        child: titleOnly
-            // On iPhone Duo the title sits at the leading edge and the
-            // controls are in the trailing bar, so there is no bar to draw.
-            ? DuoToolbarTitle(
-                title: content.title,
-                titleWidget: content.titleOverlay,
-              )
-            : defaultTargetPlatform == TargetPlatform.iOS
-            ? IOS26NativeToolbar(
-                title: content.title,
-                titleWidget: content.titleOverlay,
-                leading: content.customLeading,
-                actions: content.actions,
-                tintColor: content.tint,
-                showsGradient: false,
-                onActionTap: (index) {
-                  if (index >= 0 && index < content.actions.length) {
-                    content.actions[index].onPressed();
-                  }
-                },
-              )
-            : _FallbackBar(content: content),
+      child: _DialogSlide(
+        driver: slide,
+        child: IgnorePointer(
+          ignoring: !interactive,
+          child: titleOnly
+              // On iPhone Duo the title sits at the leading edge and the
+              // controls are in the trailing bar, so there is no bar to draw.
+              ? DuoToolbarTitle(
+                  title: content.title,
+                  titleWidget: content.titleOverlay,
+                )
+              : defaultTargetPlatform == TargetPlatform.iOS
+              ? IOS26NativeToolbar(
+                  title: content.title,
+                  titleWidget: content.titleOverlay,
+                  leading: content.customLeading,
+                  actions: content.actions,
+                  tintColor: content.tint,
+                  showsGradient: false,
+                  onActionTap: (index) {
+                    if (index >= 0 && index < content.actions.length) {
+                      content.actions[index].onPressed();
+                    }
+                  },
+                )
+              : _FallbackBar(content: content),
+        ),
       ),
     );
   }
@@ -245,6 +290,41 @@ class HostedTopToolbar extends StatelessWidget {
         MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
     return (display.longestSide - viewport.longestSide).abs() > 1 ||
         (display.shortestSide - viewport.shortestSide).abs() > 1;
+  }
+}
+
+/// Moves its part of the bar with a page shown like a dialog, which slides up
+/// from below the screen and back down ([driver] is that page's route
+/// animation, eased as `CupertinoFullscreenDialogTransition` eases it). It
+/// stays in place without a [driver], and is built the same either way, so a
+/// native bar inside lives on when a transition starts or ends.
+class _DialogSlide extends StatelessWidget {
+  const _DialogSlide({required this.driver, required this.child});
+
+  final Animation<double>? driver;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final driver = this.driver;
+    final height = MediaQuery.sizeOf(context).height;
+    return AnimatedBuilder(
+      animation: driver ?? kAlwaysCompleteAnimation,
+      builder: (context, child) {
+        var below = 0.0;
+        if (driver != null) {
+          final curve = driver.status == AnimationStatus.reverse
+              ? Curves.linearToEaseOut.flipped
+              : Curves.linearToEaseOut;
+          below = 1 - curve.transform(driver.value);
+        }
+        return Transform.translate(
+          offset: Offset(0, below * height),
+          child: child,
+        );
+      },
+      child: child,
+    );
   }
 }
 

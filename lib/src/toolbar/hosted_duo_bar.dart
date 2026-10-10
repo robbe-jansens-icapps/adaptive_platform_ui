@@ -48,18 +48,20 @@ class HostedDuoBar extends StatelessWidget {
         ),
     ];
 
-    // The back button is one control shared by every page, drawn in a layer
-    // of its own: it stays still when both pages have it, and fades with the
-    // only page that has it otherwise. Page layers just keep its slot free.
-    final Animation<double>? backOpacity = switch ((
-      upper.impliesBack,
-      lower.impliesBack,
-    )) {
-      (true, true) => kAlwaysCompleteAnimation,
-      (true, false) => upperOpacity,
-      (false, true) => lowerOpacity,
-      (false, false) => null,
-    };
+    // The back button is drawn in a layer of its own: one control that stays
+    // still when both pages show it the same way. Otherwise each page's own
+    // fades with the page and keeps its look: a cross does not turn into a
+    // chevron on its way out. Page layers just keep its slot free.
+    final backs = <(_BarContent, Animation<double>, bool)>[
+      if (upper.impliesBack &&
+          lower.impliesBack &&
+          upper.backStyle == lower.backStyle)
+        (upperOwns ? upper : lower, kAlwaysCompleteAnimation, true)
+      else ...[
+        if (lower.impliesBack) (lower, lowerOpacity, !upperOwns),
+        if (upper.impliesBack) (upper, upperOpacity, upperOwns),
+      ],
+    ];
 
     // Dimmed and inert while a dialog or sheet covers the owner. Every layer
     // is keyed, so a page's native buttons survive the start and the end of a
@@ -87,18 +89,24 @@ class HostedDuoBar extends StatelessWidget {
                 interactive: upperOwns,
                 reservedTabs: upperTabs?.tabBar?.items?.length ?? 0,
               ),
-            if (backOpacity != null)
+            for (final (content, opacity, interactive) in backs)
               FadeTransition(
-                key: const ValueKey<String>('adaptive_toolbar_back'),
-                opacity: backOpacity,
-                child: DuoVerticalBar(
-                  leading: DuoBarBackButton(
-                    onPressed: () => (upperOwns ? upper : lower).back(),
-                    close:
-                        (upperOwns ? upper : lower).backStyle ==
-                        AdaptiveBackButtonStyle.close,
+                // Keyed by its look, so a back button carries on as the same
+                // control from one page to the next.
+                key: ValueKey<Object>((
+                  'adaptive_toolbar_back',
+                  content.backStyle,
+                )),
+                opacity: opacity,
+                child: IgnorePointer(
+                  ignoring: !interactive,
+                  child: DuoVerticalBar(
+                    leading: DuoBarBackButton(
+                      onPressed: content.back,
+                      close: content.backStyle == AdaptiveBackButtonStyle.close,
+                    ),
+                    regions: regions,
                   ),
-                  regions: regions,
                 ),
               ),
             for (final (tabs, opacity) in tabLayers)
