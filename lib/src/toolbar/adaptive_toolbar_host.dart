@@ -117,34 +117,39 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
               ),
             )
           : mediaQuery,
-      child: ToolbarRegistryScope(
-        registry: _registry,
-        child: ToolbarChromeScope(
-          hostsToolbar: hostsToolbar,
-          hostsDuoControls: hostsDuoControls,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Always the first child at a stable position, so toggling the
-              // chrome never rebuilds the navigator from scratch.
-              widget.child,
-              if (hostsToolbar)
-                HostedTopToolbar(blend: _blend, titleOnly: hostsDuoControls),
-              if (hostsDuoControls)
-                // The bar follows the hardware: the strip is on the right in
-                // most poses and on the left in one landscape rotation.
-                Positioned(
-                  top: 0,
-                  bottom: 0,
-                  left: barOnLeft ? 0 : null,
-                  right: barOnLeft ? null : 0,
-                  width: DuoLayout.bandWidth(MediaQuery.viewPaddingOf(context)),
-                  child: HostedDuoBar(
-                    blend: _blend,
-                    regions: fold?.regions ?? const <ReservedRegion>[],
+      child: RouteTransitionScope(
+        routeTransition: _blend.routeTransition,
+        child: ToolbarRegistryScope(
+          registry: _registry,
+          child: ToolbarChromeScope(
+            hostsToolbar: hostsToolbar,
+            hostsDuoControls: hostsDuoControls,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Always the first child at a stable position, so toggling the
+                // chrome never rebuilds the navigator from scratch.
+                widget.child,
+                if (hostsToolbar)
+                  HostedTopToolbar(blend: _blend, titleOnly: hostsDuoControls),
+                if (hostsDuoControls)
+                  // The bar follows the hardware: the strip is on the right in
+                  // most poses and on the left in one landscape rotation.
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    left: barOnLeft ? 0 : null,
+                    right: barOnLeft ? null : 0,
+                    width: DuoLayout.bandWidth(
+                      MediaQuery.viewPaddingOf(context),
+                    ),
+                    child: HostedDuoBar(
+                      blend: _blend,
+                      regions: fold?.regions ?? const <ReservedRegion>[],
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

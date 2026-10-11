@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -67,6 +68,17 @@ class ToolbarBlend extends ChangeNotifier {
   /// Whether a dialog or sheet is on top of [owner]: its controls stay, but
   /// must not react.
   bool get ownerIsCovered => owner?.isCovered ?? false;
+
+  /// Whether a page is being pushed, popped or dragged back right now: a
+  /// route transition, not a swap between tabs. Pages with native views
+  /// underneath the moving one hide them meanwhile (see `IOS26GlassSurface`).
+  ValueListenable<bool> get routeTransition => _routeTransition;
+  final ValueNotifier<bool> _routeTransition = ValueNotifier<bool>(false);
+
+  void _publishRouteTransition() {
+    final driver = _driver;
+    _routeTransition.value = driver != null && !identical(driver, _swap);
+  }
 
   /// 0 while the owner is in front, 1 while a dialog or sheet covers it,
   /// following the cover as it comes and goes.
@@ -238,6 +250,7 @@ class ToolbarBlend extends ChangeNotifier {
     _upperId = upper?.id;
     _lowerId = lower?.id;
     driver.addStatusListener(_onDriverStatus);
+    _publishRouteTransition();
   }
 
   void _stopBlend() {
@@ -258,6 +271,7 @@ class ToolbarBlend extends ChangeNotifier {
     if (_gesture?.value ?? false) return;
     if (driver.status.isAnimating) return;
     _stopBlend();
+    _publishRouteTransition();
     _forgetUnused();
     notifyListeners();
   }
@@ -279,8 +293,29 @@ class ToolbarBlend extends ChangeNotifier {
     FocusManager.instance.removeListener(_onFocusChanged);
     _gesture?.removeListener(_onGestureChanged);
     _stopBlend();
+    _routeTransition.dispose();
     _swap.dispose();
     _cover.dispose();
     super.dispose();
   }
+}
+
+/// Hands [ToolbarBlend.routeTransition] to the pages below the toolbar host.
+class RouteTransitionScope extends InheritedWidget {
+  const RouteTransitionScope({
+    super.key,
+    required this.routeTransition,
+    required super.child,
+  });
+
+  final ValueListenable<bool> routeTransition;
+
+  /// Whether pages are moving right now, if a toolbar host above follows it.
+  static ValueListenable<bool>? maybeOf(BuildContext context) => context
+      .getInheritedWidgetOfExactType<RouteTransitionScope>()
+      ?.routeTransition;
+
+  @override
+  bool updateShouldNotify(RouteTransitionScope oldWidget) =>
+      routeTransition != oldWidget.routeTransition;
 }
