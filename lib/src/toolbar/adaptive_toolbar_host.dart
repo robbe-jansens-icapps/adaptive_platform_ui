@@ -70,6 +70,21 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     }
   }
 
+  Size? _windowSize;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A window that changes size may have moved to another display (the
+    // iPhone Duo, folded or unfolded), with rounder corners or less round
+    // ones.
+    final size = MediaQuery.sizeOf(context);
+    if (_windowSize != null && size != _windowSize) {
+      PlatformInfo.loadDisplayCornerRadius();
+    }
+    _windowSize = size;
+  }
+
   void _onFoldChanged(FoldableData data) {
     if (!mounted) return;
     setState(() => _fold = data);

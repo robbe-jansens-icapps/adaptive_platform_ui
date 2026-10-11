@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 
@@ -128,6 +128,62 @@ void main() {
         expect(PlatformInfo.isLinux, platform == TargetPlatform.linux);
         expect(PlatformInfo.isFuchsia, platform == TargetPlatform.fuchsia);
       }
+    });
+  });
+
+  group('PlatformInfo.displayCornerRadius', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const device = MethodChannel('adaptive_platform_ui/device');
+    Object? measured;
+
+    setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            device,
+            (call) async =>
+                call.method == 'displayCornerRadius' ? measured : null,
+          );
+    });
+
+    tearDown(() async {
+      // Back to square corners for the tests after these.
+      measured = 0.0;
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      await PlatformInfo.loadDisplayCornerRadius();
+      PlatformInfo.debugPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(device, null);
+    });
+
+    test('is measured on iOS, and measured again on request', () async {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      expect(PlatformInfo.displayCornerRadius, 0);
+
+      measured = 55.0;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(PlatformInfo.displayCornerRadius, 55);
+
+      // The iPhone Duo, unfolded: the window is on the other display.
+      measured = 38.0;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(PlatformInfo.displayCornerRadius, 38);
+    });
+
+    test('is square elsewhere', () async {
+      measured = 55.0;
+      PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(PlatformInfo.displayCornerRadius, 0);
+    });
+
+    test('concentric glass follows it, never below its own radius', () {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugDisplayCornerRadiusOverride = 60;
+      addTearDown(() => PlatformInfo.debugDisplayCornerRadiusOverride = null);
+      expect(IOS26GlassSurface.concentricRadius(inset: 8, minimum: 34), 52);
+
+      PlatformInfo.debugDisplayCornerRadiusOverride = 30;
+      expect(IOS26GlassSurface.concentricRadius(inset: 8, minimum: 34), 34);
     });
   });
 }

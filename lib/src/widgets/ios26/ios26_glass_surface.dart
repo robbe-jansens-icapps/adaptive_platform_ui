@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../platform/platform_info.dart';
 import '../../toolbar/toolbar_blend.dart';
 
 /// How the corners of an [IOS26GlassSurface] are rounded.
@@ -62,6 +64,16 @@ class IOS26GlassSurface extends StatefulWidget {
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
   static bool? debugHasUIKitOverride;
+
+  /// The radius of [GlassSurfaceCorners.concentric] corners [inset] from the
+  /// display's edges, like the bottom ones of a sheet floating [inset] above
+  /// the bottom: the display's radius less [inset], never below [minimum]
+  /// (the surface's [cornerRadius]). Content near such corners needs more
+  /// room from them the rounder they are.
+  static double concentricRadius({
+    required double inset,
+    required double minimum,
+  }) => math.max(minimum, PlatformInfo.displayCornerRadius - inset);
 
   @override
   State<IOS26GlassSurface> createState() => _IOS26GlassSurfaceState();

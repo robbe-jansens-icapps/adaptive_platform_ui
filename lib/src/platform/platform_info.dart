@@ -23,7 +23,12 @@ class PlatformInfo {
   @visibleForTesting
   static bool? debugIPadOverride;
 
+  /// Replaces [displayCornerRadius] in tests.
+  @visibleForTesting
+  static double? debugDisplayCornerRadiusOverride;
+
   static bool _isIPad = false;
+  static double _displayCornerRadius = 0;
   static Future<void>? _deviceLoad;
 
   /// Whether the app runs on an iPad, whose windows have window controls in
@@ -32,19 +37,39 @@ class PlatformInfo {
   /// then, and off iOS.
   static bool get isIPad => debugIPadOverride ?? (isIOS && _isIPad);
 
+  /// The radius of the corners of the display the app is on, in logical
+  /// pixels: what glass with concentric corners follows, less its distance
+  /// from the display's edges. Read from the device once [loadDevice]
+  /// completes, and again by [loadDisplayCornerRadius]; 0 until then, before
+  /// iOS 26 and off iOS.
+  static double get displayCornerRadius =>
+      debugDisplayCornerRadiusOverride ?? (isIOS ? _displayCornerRadius : 0);
+
+  static const _device = MethodChannel('adaptive_platform_ui/device');
+
   /// Asks the device what it is, once; [AdaptiveToolbarHost] does this.
   static Future<void> loadDevice() => _deviceLoad ??= _loadDevice();
 
   static Future<void> _loadDevice() async {
     if (!isIOS || debugPlatformOverride != null) return;
     try {
-      _isIPad =
-          await const MethodChannel(
-            'adaptive_platform_ui/device',
-          ).invokeMethod<bool>('isPad') ??
-          false;
+      _isIPad = await _device.invokeMethod<bool>('isPad') ?? false;
     } catch (_) {
       // Without the native side (tests, other hosts) it is no iPad.
+    }
+    await loadDisplayCornerRadius();
+  }
+
+  /// Measures [displayCornerRadius] again, for a window that moved to another
+  /// display (the iPhone Duo, folded or unfolded); [AdaptiveToolbarHost] does
+  /// this when the window changes size.
+  static Future<void> loadDisplayCornerRadius() async {
+    if (!isIOS) return;
+    try {
+      _displayCornerRadius =
+          await _device.invokeMethod<double>('displayCornerRadius') ?? 0;
+    } catch (_) {
+      // Without the native side (tests, other hosts) the corners are square.
     }
   }
 
