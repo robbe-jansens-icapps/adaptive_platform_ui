@@ -297,15 +297,17 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
     // run underneath both. The inset is taken from `padding` and consumed, so
     // a scaffold nested in this one (a tab inside a shell) does not inset a
     // second time, and a SafeArea further down has nothing left to add.
-    final mq = MediaQuery.of(context);
+    // Only the paddings: the keyboard sliding in does not rebuild the page.
+    final padding = MediaQuery.paddingOf(context);
     // The strip is on the right in most poses and on the left in one
     // landscape rotation; the controls stay aligned with the hardware.
-    final barOnLeft = DuoLayout.barSide(mq.viewPadding) == DuoBarSide.left;
+    final barOnLeft =
+        DuoLayout.barSide(MediaQuery.viewPaddingOf(context)) == DuoBarSide.left;
     final trailingInset = !duoVerticalPose
         ? 0.0
         : barOnLeft
-        ? mq.padding.left
-        : mq.padding.right;
+        ? padding.left
+        : padding.right;
     if (showTopToolbar || trailingInset > 0) {
       final topInset = !showTopToolbar
           ? 0.0

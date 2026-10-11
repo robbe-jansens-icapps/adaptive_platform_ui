@@ -257,20 +257,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// the bar, so a map or a list can show through its glass.
   Widget _withBottomBarInset(Widget body, {required bool barShown}) {
     final height = barShown && !widget.tabBarHidden ? _tabBarHeight : 0.0;
-    final mediaQuery = MediaQuery.of(context);
     return AdaptiveBottomBarInset(
       height: height,
-      child: MediaQuery(
-        data: mediaQuery.copyWith(
-          padding: mediaQuery.padding.copyWith(
-            bottom: math.max(mediaQuery.padding.bottom, height),
-          ),
-          viewPadding: mediaQuery.viewPadding.copyWith(
-            bottom: math.max(mediaQuery.viewPadding.bottom, height),
-          ),
-        ),
-        child: body,
-      ),
+      child: _BottomBarPadding(height: height, child: body),
     );
   }
 
@@ -1287,6 +1276,33 @@ class _AnimatedBackButtonState extends State<_AnimatedBackButton>
           sfSymbol: SFSymbol("chevron.left", size: 20),
         ),
       ),
+    );
+  }
+}
+
+/// Raises the bottom padding of the media query to [height]. Only this
+/// follows every change of the media query, such as each frame of the
+/// keyboard sliding in, so the scaffold around it is not rebuilt for them and
+/// does not publish its app bar again.
+class _BottomBarPadding extends StatelessWidget {
+  const _BottomBarPadding({required this.height, required this.child});
+
+  final double height;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return MediaQuery(
+      data: mediaQuery.copyWith(
+        padding: mediaQuery.padding.copyWith(
+          bottom: math.max(mediaQuery.padding.bottom, height),
+        ),
+        viewPadding: mediaQuery.viewPadding.copyWith(
+          bottom: math.max(mediaQuery.viewPadding.bottom, height),
+        ),
+      ),
+      child: child,
     );
   }
 }

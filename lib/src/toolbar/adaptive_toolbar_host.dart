@@ -100,23 +100,14 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     // A window that is only part of the display (iPhone Duo split view, an
     // iPad window) can come without any room at the top: there is no status
     // bar above it. The bar and the pages then still keep clear of the
-    // window's rounded top edge. Always in the tree, so the navigator below
-    // keeps its place when the window changes.
-    final mediaQuery = MediaQuery.of(context);
+    // window's rounded top edge.
     final noRoomAtTop =
-        hostsToolbar && !hostsDuoControls && mediaQuery.viewPadding.top == 0;
+        hostsToolbar &&
+        !hostsDuoControls &&
+        MediaQuery.viewPaddingOf(context).top == 0;
 
-    return MediaQuery(
-      data: noRoomAtTop
-          ? mediaQuery.copyWith(
-              padding: mediaQuery.padding.copyWith(
-                top: math.max(mediaQuery.padding.top, kWindowTopMargin),
-              ),
-              viewPadding: mediaQuery.viewPadding.copyWith(
-                top: kWindowTopMargin,
-              ),
-            )
-          : mediaQuery,
+    return _WindowTopMargin(
+      enabled: noRoomAtTop,
       child: RouteTransitionScope(
         routeTransition: _blend.routeTransition,
         child: ToolbarRegistryScope(
@@ -159,3 +150,35 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
 
 /// Room kept above the fixed toolbar in a window without any at its top.
 const double kWindowTopMargin = 12.0;
+
+/// Hands the pages the window's media query, with [kWindowTopMargin] at the
+/// top when [enabled]. Always in the tree, so the navigator below keeps its
+/// place when the window changes.
+///
+/// Only this follows every change of the media query, such as each frame of
+/// the keyboard sliding in: the bars beside the navigator are built by the
+/// host, which only reads what it needs.
+class _WindowTopMargin extends StatelessWidget {
+  const _WindowTopMargin({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return MediaQuery(
+      data: enabled
+          ? mediaQuery.copyWith(
+              padding: mediaQuery.padding.copyWith(
+                top: math.max(mediaQuery.padding.top, kWindowTopMargin),
+              ),
+              viewPadding: mediaQuery.viewPadding.copyWith(
+                top: kWindowTopMargin,
+              ),
+            )
+          : mediaQuery,
+      child: child,
+    );
+  }
+}

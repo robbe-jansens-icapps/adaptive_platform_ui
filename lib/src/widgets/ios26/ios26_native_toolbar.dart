@@ -157,7 +157,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
       return _buildFallbackToolbar();
     }
 
-    final safePadding = MediaQuery.of(context).padding.top;
+    final safePadding = MediaQuery.paddingOf(context).top;
 
     final creationParams = <String, dynamic>{
       // Hide native title when a titleWidget overlay is provided
