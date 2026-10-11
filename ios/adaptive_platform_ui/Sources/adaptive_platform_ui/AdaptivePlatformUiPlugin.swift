@@ -72,6 +72,12 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             withId: "adaptive_platform_ui/ios26_button"
         )
 
+        // The system's date picker (Dart: IOS26DatePicker)
+        registrar.register(
+            iOS26DatePickerViewFactory(messenger: registrar.messenger()),
+            withId: "adaptive_platform_ui/ios26_date_picker"
+        )
+
         // Register iOS 26 Switch platform view factory
         let ios26SwitchFactory = iOS26SwitchViewFactory(messenger: registrar.messenger())
         registrar.register(

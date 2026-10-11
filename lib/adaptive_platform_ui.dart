@@ -82,6 +82,7 @@ export 'src/widgets/sheet/adaptive_sheet_detent.dart';
 // iOS 26 specific widgets (for advanced usage)
 export 'src/widgets/ios26/ios26_button.dart';
 export 'src/widgets/ios26/ios26_glass_capsule.dart';
+export 'src/widgets/ios26/ios26_date_picker.dart';
 export 'src/widgets/ios26/ios26_glass_surface.dart';
 export 'src/widgets/ios26/ios26_switch.dart';
 export 'src/widgets/ios26/ios26_slider.dart';

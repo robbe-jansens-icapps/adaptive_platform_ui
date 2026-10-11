@@ -1,12 +1,19 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
+import '../style/sf_symbol.dart';
+import 'adaptive_button.dart';
 import 'adaptive_time_picker.dart';
+import 'ios26/ios26_date_picker.dart';
+import 'ios26/ios26_glass_surface.dart';
 import 'minute_interval.dart';
 
 /// An adaptive date picker that renders platform-specific styles
 ///
-/// On iOS: Shows CupertinoDatePicker in a modal bottom sheet
+/// On iOS 26+: Shows the system's date picker (its calendar by default) in a
+/// sheet floating on Liquid Glass, with a close button and a checkmark that
+/// confirms, as iOS 26 sheets do
+/// On older iOS: Shows CupertinoDatePicker in a modal bottom sheet
 /// On Android: Shows Material DatePickerDialog
 class AdaptiveDatePicker {
   AdaptiveDatePicker._();
@@ -23,9 +30,29 @@ class AdaptiveDatePicker {
     DatePickerMode initialDatePickerMode = DatePickerMode.day,
     bool use24HourFormat = false,
     int minuteInterval = 1,
+    String? title,
+    Color? tintColor,
+    IOS26DatePickerStyle iosStyle = IOS26DatePickerStyle.inline,
   }) async {
     final effectiveFirstDate = firstDate ?? DateTime(1900);
     final effectiveLastDate = lastDate ?? DateTime(2100);
+
+    if (PlatformInfo.isIOS26OrHigher()) {
+      return showCupertinoModalPopup<DateTime>(
+        context: context,
+        builder: (context) => _IOS26DatePickerSheet(
+          initialDate: initialDate,
+          firstDate: effectiveFirstDate,
+          lastDate: effectiveLastDate,
+          mode: mode,
+          style: iosStyle,
+          title: title,
+          tint: tintColor,
+          minuteInterval: minuteInterval,
+          use24HourFormat: use24HourFormat,
+        ),
+      );
+    }
 
     if (PlatformInfo.isIOS) {
       return _showCupertinoDatePicker(
@@ -220,6 +247,194 @@ class _CupertinoDatePickerContentState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The date picker of iOS 26 in a sheet floating 8 points from the edges on
+/// Liquid Glass, its corners concentric with the display's: a close button on
+/// one side, a checkmark that confirms on the other.
+class _IOS26DatePickerSheet extends StatefulWidget {
+  const _IOS26DatePickerSheet({
+    required this.initialDate,
+    required this.firstDate,
+    required this.lastDate,
+    required this.mode,
+    required this.style,
+    required this.title,
+    required this.tint,
+    required this.minuteInterval,
+    required this.use24HourFormat,
+  });
+
+  final DateTime initialDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+  final CupertinoDatePickerMode mode;
+  final IOS26DatePickerStyle style;
+  final String? title;
+  final Color? tint;
+  final int minuteInterval;
+  final bool use24HourFormat;
+
+  @override
+  State<_IOS26DatePickerSheet> createState() => _IOS26DatePickerSheetState();
+}
+
+class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
+  static const _inset = 8.0;
+  static const _cornerRadius = 34.0;
+
+  late DateTime _selected = alignDateTimeToInterval(
+    widget.initialDate,
+    widget.minuteInterval,
+  );
+
+  DateTime get _result => switch (widget.mode) {
+    CupertinoDatePickerMode.date => DateTime(
+      _selected.year,
+      _selected.month,
+      _selected.day,
+    ),
+    CupertinoDatePickerMode.monthYear => DateTime(
+      _selected.year,
+      _selected.month,
+    ),
+    _ => _selected,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
+    final tint = widget.tint ?? CupertinoTheme.of(context).primaryColor;
+    final title = widget.title;
+    final localizations = MaterialLocalizations.of(context);
+    // The rounder the display's corners, the rounder the sheet's bottom ones,
+    // and the more room the picker keeps above them.
+    final cornerRoom =
+        (IOS26GlassSurface.concentricRadius(
+              inset: _inset,
+              minimum: _cornerRadius,
+            ) -
+            _cornerRadius) *
+        0.4;
+    return SafeArea(
+      top: false,
+      bottom: false,
+      minimum: const EdgeInsets.symmetric(horizontal: _inset),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: _inset),
+        child: IOS26GlassSurface(
+          cornerRadius: _cornerRadius,
+          corners: GlassSurfaceCorners.concentric,
+          tint: dark
+              ? Colors.black.withValues(alpha: 0.6)
+              : Colors.white.withValues(alpha: 0.9),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+                child: Row(
+                  children: [
+                    _SheetButton(
+                      label: localizations.closeButtonTooltip,
+                      symbol: const SFSymbol(
+                        'xmark',
+                        size: 17,
+                        weight: FontWeight.w600,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    Expanded(
+                      child: title == null
+                          ? const SizedBox.shrink()
+                          : Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: CupertinoTheme.of(
+                                context,
+                              ).textTheme.navTitleTextStyle,
+                            ),
+                    ),
+                    _SheetButton(
+                      label: localizations.okButtonLabel,
+                      symbol: const SFSymbol(
+                        'checkmark',
+                        size: 17,
+                        weight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                      color: tint,
+                      prominent: true,
+                      onPressed: () => Navigator.of(context).pop(_result),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  0,
+                  12,
+                  12 + (cornerRoom > 0 ? cornerRoom : 0),
+                ),
+                child: IOS26DatePicker(
+                  initialDate: _selected,
+                  firstDate: widget.firstDate,
+                  lastDate: widget.lastDate,
+                  mode: widget.mode,
+                  style: widget.style,
+                  tint: tint,
+                  minuteInterval: widget.minuteInterval,
+                  use24HourFormat: widget.use24HourFormat,
+                  onChanged: (date) => _selected = date,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A round button of the sheet, as tall as a toolbar button.
+class _SheetButton extends StatelessWidget {
+  const _SheetButton({
+    required this.label,
+    required this.symbol,
+    required this.onPressed,
+    this.color,
+    this.prominent = false,
+  });
+
+  final String label;
+  final SFSymbol symbol;
+  final VoidCallback onPressed;
+  final Color? color;
+  final bool prominent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: SizedBox.square(
+        dimension: 44,
+        child: AdaptiveButton.sfSymbol(
+          onPressed: onPressed,
+          sfSymbol: symbol,
+          color: color,
+          style: prominent
+              ? AdaptiveButtonStyle.prominentGlass
+              : AdaptiveButtonStyle.glass,
+          // A capsule, which is a circle at this size.
+          useSmoothRectangleBorder: false,
+        ),
       ),
     );
   }
