@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
 import '../platform/platform_info.dart';
+import '../widgets/adaptive_toast.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_duo_bar.dart';
 import 'hosted_top_toolbar.dart';
@@ -130,31 +131,37 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
           child: ToolbarChromeScope(
             hostsToolbar: hostsToolbar,
             hostsDuoControls: hostsDuoControls,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Always the first child at a stable position, so toggling the
-                // chrome never rebuilds the navigator from scratch.
-                widget.child,
-                if (hostsToolbar)
-                  HostedTopToolbar(blend: _blend, titleOnly: hostsDuoControls),
-                if (hostsDuoControls)
-                  // The bar follows the hardware: the strip is on the right in
-                  // most poses and on the left in one landscape rotation.
-                  Positioned(
-                    top: 0,
-                    bottom: 0,
-                    left: barOnLeft ? 0 : null,
-                    right: barOnLeft ? null : 0,
-                    width: DuoLayout.bandWidth(
-                      MediaQuery.viewPaddingOf(context),
-                    ),
-                    child: HostedDuoBar(
+            // Toasts show above the bars.
+            child: AdaptiveToastLayer(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Always the first child at a stable position, so toggling the
+                  // chrome never rebuilds the navigator from scratch.
+                  widget.child,
+                  if (hostsToolbar)
+                    HostedTopToolbar(
                       blend: _blend,
-                      regions: fold?.regions ?? const <ReservedRegion>[],
+                      titleOnly: hostsDuoControls,
                     ),
-                  ),
-              ],
+                  if (hostsDuoControls)
+                    // The bar follows the hardware: the strip is on the right in
+                    // most poses and on the left in one landscape rotation.
+                    Positioned(
+                      top: 0,
+                      bottom: 0,
+                      left: barOnLeft ? 0 : null,
+                      right: barOnLeft ? null : 0,
+                      width: DuoLayout.bandWidth(
+                        MediaQuery.viewPaddingOf(context),
+                      ),
+                      child: HostedDuoBar(
+                        blend: _blend,
+                        regions: fold?.regions ?? const <ReservedRegion>[],
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

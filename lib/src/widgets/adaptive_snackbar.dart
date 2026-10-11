@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
+import 'adaptive_toast.dart';
 
 /// Snackbar type for different visual styles
 enum AdaptiveSnackBarType {
@@ -67,7 +68,8 @@ class AdaptiveSnackBar {
     String? action,
     VoidCallback? onActionPressed,
   }) {
-    final overlay = Overlay.of(context);
+    // Above the fixed toolbar, which an overlay inside the navigator is not.
+    final overlay = AdaptiveToast.overlayOf(context);
     late OverlayEntry overlayEntry;
 
     overlayEntry = OverlayEntry(
