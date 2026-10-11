@@ -244,11 +244,14 @@ class _IOS26ButtonState extends State<IOS26Button> {
     // Update SF Symbol if changed
     if (oldWidget.sfSymbol?.name != widget.sfSymbol?.name ||
         oldWidget.sfSymbol?.size != widget.sfSymbol?.size ||
-        oldWidget.sfSymbol?.color != widget.sfSymbol?.color) {
+        oldWidget.sfSymbol?.color != widget.sfSymbol?.color ||
+        oldWidget.sfSymbol?.weight != widget.sfSymbol?.weight) {
       if (widget.sfSymbol != null) {
         _channel.invokeMethod('setIcon', {
           'iconName': widget.sfSymbol!.name,
           'iconSize': widget.sfSymbol!.size,
+          if (widget.sfSymbol!.weight != null)
+            'iconWeight': widget.sfSymbol!.weight!.value,
           if (widget.sfSymbol!.color != null)
             'iconColor': _colorToARGB(widget.sfSymbol!.color!),
         });
@@ -271,6 +274,8 @@ class _IOS26ButtonState extends State<IOS26Button> {
       'useSmoothRectangleBorder': widget.useSmoothRectangleBorder,
       if (widget.sfSymbol != null) 'iconName': widget.sfSymbol!.name,
       if (widget.sfSymbol != null) 'iconSize': widget.sfSymbol!.size,
+      if (widget.sfSymbol?.weight != null)
+        'iconWeight': widget.sfSymbol!.weight!.value,
       if (widget.sfSymbol?.color != null)
         'iconColor': _colorToARGB(widget.sfSymbol!.color!),
     };

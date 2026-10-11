@@ -45,6 +45,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
     private var isDark: Bool = false
     private var iconName: String?
     private var iconSize: CGFloat?
+    private var iconWeight: UIImage.SymbolWeight = .unspecified
     private var iconColor: UIColor?
     private var useSmoothRectangleBorder: Bool = true
 
@@ -78,6 +79,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
             if let size = config["iconSize"] as? Double {
                 iconSize = CGFloat(size)
             }
+            iconWeight = Self.symbolWeight(config["iconWeight"] as? Int)
             if let argb = config["iconColor"] as? Int {
                 iconColor = UIColor(argb: argb)
             }
@@ -207,7 +209,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
                     // Apply icon size
                     let symbolSize = iconSize ?? 24.0
                     finalImage = image.applyingSymbolConfiguration(
-                        UIImage.SymbolConfiguration(pointSize: symbolSize)
+                        UIImage.SymbolConfiguration(pointSize: symbolSize, weight: iconWeight)
                     ) ?? image
 
                     // Apply icon color
@@ -380,6 +382,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
                 if let size = args["iconSize"] as? Double {
                     iconSize = CGFloat(size)
                 }
+                iconWeight = Self.symbolWeight(args["iconWeight"] as? Int)
                 if let argb = args["iconColor"] as? Int {
                     iconColor = UIColor(argb: argb)
                 }
@@ -407,6 +410,22 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
 
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    /// A Flutter FontWeight value (100 to 900) as a symbol weight.
+    private static func symbolWeight(_ value: Int?) -> UIImage.SymbolWeight {
+        switch value {
+        case 100: return .ultraLight
+        case 200: return .thin
+        case 300: return .light
+        case 400: return .regular
+        case 500: return .medium
+        case 600: return .semibold
+        case 700: return .bold
+        case 800: return .heavy
+        case 900: return .black
+        default: return .unspecified
         }
     }
 

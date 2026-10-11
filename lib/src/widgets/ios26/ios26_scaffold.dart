@@ -187,11 +187,16 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
           margin: EdgeInsets.only(
             left: PlatformInfo.isIPad && _getIsWindowed() ? 62 : 0,
           ),
-          height: 38,
-          width: 38,
+          height: kToolbarContentHeight,
+          width: kToolbarContentHeight,
           child: AdaptiveButton.sfSymbol(
+            useSmoothRectangleBorder: false,
             onPressed: () => Navigator.of(context).pop(),
-            sfSymbol: SFSymbol("chevron.left", size: 20),
+            sfSymbol: const SFSymbol(
+              'chevron.left',
+              size: 19,
+              weight: FontWeight.w600,
+            ),
           ),
         );
         heroLeading = widget.useHeroBackButton

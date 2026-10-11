@@ -80,6 +80,11 @@ class TopToolbarContent {
   /// background.
   final Color? backdropColor;
 
+  /// Whether the native bar has anything to show: a title it draws itself
+  /// or bar buttons.
+  bool get hasNativeItems =>
+      (title != null && titleOverlay == null) || actions.isNotEmpty;
+
   bool get isEmpty =>
       title == null &&
       titleOverlay == null &&
@@ -220,29 +225,57 @@ class HostedTopToolbar extends StatelessWidget {
                     interactive: upperOwns,
                     slide: upperSlide,
                   ),
-                for (final (content, opacity, interactive, slide) in backs)
-                  Positioned(
-                    // Keyed by its look, so a back button carries on as the
-                    // same control from one page to the next.
-                    key: ValueKey<Object>((
-                      'adaptive_toolbar_back',
-                      content.backStyle,
-                    )),
-                    left: 16 + (_hasWindowControls(context) ? 62 : 0),
-                    bottom: 3,
-                    child: FadeTransition(
-                      key: const ValueKey<String>('adaptive_toolbar_back_fade'),
-                      opacity: opacity,
-                      child: _DialogSlide(
-                        driver: slide,
-                        child: IgnorePointer(
-                          ignoring: !interactive,
-                          child: _BackButton(content: content),
-                        ),
-                      ),
+                // One back button of each look, always in place: shown when a
+                // page has one, kept alive but off stage otherwise, so its
+                // native view is not created anew on every transition.
+                if (!titleOnly)
+                  for (final style in AdaptiveBackButtonStyle.values)
+                    _backSlot(
+                      context,
+                      style: style,
+                      back: backs
+                          .where((b) => b.$1.backStyle == style)
+                          .firstOrNull,
+                      topInset: topInset,
                     ),
-                  ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _backSlot(
+    BuildContext context, {
+    required AdaptiveBackButtonStyle style,
+    required (TopToolbarContent, Animation<double>, bool, Animation<double>?)?
+    back,
+    required double topInset,
+  }) {
+    return Positioned(
+      // Keyed by its look, so a back button carries on as the same control
+      // from one page to the next.
+      key: ValueKey<Object>(('adaptive_toolbar_back', style)),
+      left: 16 + (_hasWindowControls(context) ? 62 : 0),
+      top: topInset,
+      bottom: 0,
+      child: Offstage(
+        offstage: back == null,
+        child: FadeTransition(
+          key: const ValueKey<String>('adaptive_toolbar_back_fade'),
+          opacity: back?.$2 ?? kAlwaysDismissedAnimation,
+          child: _DialogSlide(
+            driver: back?.$4,
+            child: IgnorePointer(
+              ignoring: !(back?.$3 ?? false),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                widthFactor: 1,
+                child: _BackButton(
+                  content: back?.$1 ?? TopToolbarContent(backStyle: style),
+                ),
+              ),
             ),
           ),
         ),
@@ -295,6 +328,11 @@ class HostedTopToolbar extends StatelessWidget {
                   actions: content.actions,
                   tintColor: content.tint,
                   showsGradient: false,
+                  // A native bar only for what only it can show: its own
+                  // title or bar buttons. Most pages have a Flutter title and
+                  // no buttons, and a platform view per page and transition
+                  // costs frames.
+                  showNativeView: content.hasNativeItems,
                   onActionTap: (index) {
                     if (index >= 0 && index < content.actions.length) {
                       content.actions[index].onPressed();
@@ -411,17 +449,16 @@ class _BackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onBack = content.onBack;
-    return SizedBox(
-      height: 38,
-      width: 38,
+    // A circle as tall as the bar, as the system's back button.
+    return SizedBox.square(
+      dimension: kHostedToolbarHeight,
       child: AdaptiveButton.sfSymbol(
+        useSmoothRectangleBorder: false,
         onPressed: onBack ?? () => content.navigator?.maybePop(),
-        sfSymbol: SFSymbol(
-          content.backStyle == AdaptiveBackButtonStyle.close
-              ? 'xmark'
-              : 'chevron.left',
-          size: 20,
-        ),
+        // As the system draws them.
+        sfSymbol: content.backStyle == AdaptiveBackButtonStyle.close
+            ? const SFSymbol('xmark', size: 17, weight: FontWeight.w600)
+            : const SFSymbol('chevron.left', size: 19, weight: FontWeight.w600),
       ),
     );
   }

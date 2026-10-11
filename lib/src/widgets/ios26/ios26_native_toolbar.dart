@@ -187,11 +187,14 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
               hitTestBehavior: PlatformViewHitTestBehavior.translucent,
             ),
           if (widget.leading != null)
+            // Centred in the bar, below the status bar.
             Positioned(
               left: 16,
-              bottom: 3,
+              top: safePadding,
+              bottom: 0,
               child: Align(
                 alignment: Alignment.centerLeft,
+                widthFactor: 1,
                 child: widget.leading!,
               ),
             ),
