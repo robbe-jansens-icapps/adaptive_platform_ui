@@ -34,6 +34,7 @@ export 'src/platform/platform_info.dart';
 // Animation utilities
 export 'src/utils/animation.dart';
 export 'src/utils/size_reporter.dart';
+export 'src/widgets/scroll/adaptive_scroll_insets.dart';
 
 // Styles
 export 'src/style/sf_symbol.dart';
