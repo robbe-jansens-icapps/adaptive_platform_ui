@@ -291,6 +291,16 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
     widget.minuteInterval,
   );
 
+  final _picker = IOS26DatePickerController();
+
+  /// Confirms the date, or, while the calendar shows its month and year
+  /// wheels, goes back to its days first: a month and a year are not a date
+  /// yet, and the checkmark is where one would confirm them.
+  Future<void> _onConfirm() async {
+    if (await _picker.showDays()) return;
+    if (mounted) Navigator.of(context).pop(_result);
+  }
+
   DateTime get _result => switch (widget.mode) {
     CupertinoDatePickerMode.date => DateTime(
       _selected.year,
@@ -370,7 +380,7 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                       ),
                       color: tint,
                       prominent: true,
-                      onPressed: () => Navigator.of(context).pop(_result),
+                      onPressed: _onConfirm,
                     ),
                   ],
                 ),
@@ -391,6 +401,7 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                   tint: tint,
                   minuteInterval: widget.minuteInterval,
                   use24HourFormat: widget.use24HourFormat,
+                  controller: _picker,
                   onChanged: (date) => _selected = date,
                 ),
               ),

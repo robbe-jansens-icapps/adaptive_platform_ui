@@ -15,6 +15,17 @@ enum IOS26DatePickerStyle {
   wheels,
 }
 
+/// Drives an [IOS26DatePicker] from outside it.
+class IOS26DatePickerController {
+  _IOS26DatePickerState? _state;
+
+  /// While the picker's calendar shows its month and year wheels, goes back to
+  /// its days, as a tap on its header does, and completes with true. False
+  /// when it shows its days already, has no calendar, or has no UIKit: a
+  /// button that confirms can then confirm.
+  Future<bool> showDays() async => await _state?._showDays() ?? false;
+}
+
 /// The system's date picker (`UIDatePicker`), as iOS 26 draws it. Where there
 /// is no UIKit (other platforms, widget tests), a [CupertinoDatePicker] stands
 /// in.
@@ -30,6 +41,7 @@ class IOS26DatePicker extends StatefulWidget {
     this.tint,
     this.minuteInterval = 1,
     this.use24HourFormat = false,
+    this.controller,
   });
 
   final DateTime initialDate;
@@ -45,6 +57,8 @@ class IOS26DatePicker extends StatefulWidget {
 
   /// Only for the stand-in: the system follows the device's setting.
   final bool use24HourFormat;
+
+  final IOS26DatePickerController? controller;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -64,9 +78,41 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
       IOS26DatePicker.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._state = this;
+  }
+
+  @override
+  void didUpdateWidget(IOS26DatePicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      if (oldWidget.controller?._state == this) {
+        oldWidget.controller?._state = null;
+      }
+      widget.controller?._state = this;
+    }
+  }
+
+  @override
   void dispose() {
+    if (widget.controller?._state == this) widget.controller?._state = null;
     _channel?.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  Future<bool> _showDays() async {
+    final channel = _channel;
+    if (channel == null || widget.style != IOS26DatePickerStyle.inline) {
+      return false;
+    }
+    try {
+      return await channel.invokeMethod<bool>('showDays') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 
   String get _mode => switch (widget.mode) {

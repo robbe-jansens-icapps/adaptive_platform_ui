@@ -85,6 +85,13 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
             picker.topAnchor.constraint(equalTo: container.topAnchor),
         ])
         container.onLayout = { [weak self] width in self?.reportHeight(for: width) }
+        channel.setMethodCallHandler { [weak self] call, result in
+            guard let self, call.method == "showDays" else {
+                result(FlutterMethodNotImplemented)
+                return
+            }
+            result(self.showDays())
+        }
     }
 
     func view() -> UIView {
@@ -96,6 +103,75 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
             "changed",
             arguments: ["date": picker.date.timeIntervalSince1970 * 1000]
         )
+    }
+
+    /// While the calendar shows its month and year wheels, goes back to its
+    /// days, as a tap on its header does, and says so. The calendar has no
+    /// API for this: the wheels are a date picker of their own inside it, and
+    /// the header's title is the control that holds a label. Should either
+    /// not be found, nothing happens and the answer is false.
+    private func showDays() -> Bool {
+        guard !showDaysFails,
+              picker.preferredDatePickerStyle == .inline,
+              monthYearWheels(in: picker) != nil,
+              let title = headerTitle(in: picker)
+        else { return false }
+        title.sendActions(
+            for: title.allControlEvents.contains(.primaryActionTriggered)
+                ? .primaryActionTriggered
+                : .touchUpInside
+        )
+        // Should the wheels stay, confirming takes over from then on, rather
+        // than a checkmark that does nothing.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            if self.monthYearWheels(in: self.picker) != nil {
+                self.showDaysFails = true
+            }
+        }
+        return true
+    }
+
+    private var showDaysFails = false
+
+    /// The month and year wheels inside [view], if they are on screen.
+    private func monthYearWheels(in view: UIView) -> UIDatePicker? {
+        for subview in view.subviews {
+            if let wheels = subview as? UIDatePicker, wheels !== picker {
+                if isShown(wheels) { return wheels }
+                continue
+            }
+            if let wheels = monthYearWheels(in: subview) { return wheels }
+        }
+        return nil
+    }
+
+    /// Whether [view] shows: neither it nor any view up to the picker is
+    /// hidden or faded out.
+    private func isShown(_ view: UIView) -> Bool {
+        var current: UIView? = view
+        while let candidate = current, candidate !== picker {
+            if candidate.isHidden || candidate.alpha < 0.01 { return false }
+            current = candidate.superview
+        }
+        return view.bounds.height > 0
+    }
+
+    /// The header's title (month and year), the control that toggles the
+    /// wheels: the one control of the calendar that holds a label.
+    private func headerTitle(in view: UIView) -> UIControl? {
+        for subview in view.subviews {
+            if subview is UIDatePicker { continue }
+            if let control = subview as? UIControl, holdsLabel(control) {
+                return control
+            }
+            if let title = headerTitle(in: subview) { return title }
+        }
+        return nil
+    }
+
+    private func holdsLabel(_ view: UIView) -> Bool {
+        view.subviews.contains { $0 is UILabel || holdsLabel($0) }
     }
 
     private func reportHeight(for width: CGFloat) {

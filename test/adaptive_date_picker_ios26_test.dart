@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -145,6 +147,37 @@ void main() {
       await tester.tap(find.bySemanticsLabel('OK'));
       await tester.pumpAndSettle();
 
+      expect(await result, DateTime(1990, 5, 17));
+    });
+
+    testWidgets('on the month and year wheels, the checkmark goes back to '
+        'the days first; on the days it confirms', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      final result = await open(tester);
+      var done = false;
+      unawaited(result.then((_) => done = true));
+      final (id, _) = created.single;
+      var wheels = true;
+      final asked = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            MethodChannel('adaptive_platform_ui/ios26_date_picker_$id'),
+            (call) async {
+              asked.add(call.method);
+              final shown = wheels;
+              wheels = false;
+              return shown;
+            },
+          );
+
+      await tester.tap(find.bySemanticsLabel('OK'));
+      await tester.pumpAndSettle();
+      expect(asked, ['showDays']);
+      expect(done, isFalse);
+      expect(find.byType(IOS26DatePicker), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('OK'));
+      await tester.pumpAndSettle();
       expect(await result, DateTime(1990, 5, 17));
     });
 
