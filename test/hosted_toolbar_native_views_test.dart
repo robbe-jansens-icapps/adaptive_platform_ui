@@ -156,4 +156,55 @@ void main() {
     await tester.pumpAndSettle();
     expect(createdOf('adaptive_platform_ui/ios26_toolbar'), hasLength(1));
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('a long title keeps clear of the back button and the bar '
+      'buttons, centred between them', (tester) async {
+    usePhone(tester);
+    const long =
+        'Rate formulas and account management, a title far too long to fit';
+    Widget titled({List<AdaptiveAppBarAction>? actions}) => AdaptiveScaffold(
+      appBar: AdaptiveAppBar(
+        useNativeToolbar: true,
+        titleWidget: const Text(
+          long,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: actions,
+      ),
+      body: const SizedBox.expand(),
+    );
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(hostedApp(navigator, page('Home')));
+    await tester.pumpAndSettle();
+
+    // Back button: 16 points in, 44 wide, then 8 points of room.
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => titled()),
+    );
+    await tester.pumpAndSettle();
+    var title = tester.getRect(find.text(long));
+    expect(title.left, greaterThanOrEqualTo(16 + 44 + 8));
+    expect(title.right, lessThanOrEqualTo(402 - (16 + 44 + 8)));
+    expect(title.center.dx, closeTo(201, 0.5));
+
+    // Two bar buttons take more room on the right: the left keeps as much.
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => titled(
+          actions: [
+            AdaptiveAppBarAction(
+              iosSymbol: 'square.and.arrow.up',
+              onPressed: () {},
+            ),
+            AdaptiveAppBarAction(iosSymbol: 'ellipsis', onPressed: () {}),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    title = tester.getRect(find.text(long));
+    expect(title.right, lessThanOrEqualTo(402 - (16 + 88 + 8)));
+    expect(title.left, greaterThanOrEqualTo(16 + 88 + 8));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -21,6 +23,8 @@ class IOS26NativeToolbar extends StatefulWidget {
     this.height = 44.0,
     this.showNativeView = true,
     this.showsGradient = true,
+    this.reservesLeading,
+    this.leadingInset = 0,
   });
 
   final String? title;
@@ -31,7 +35,9 @@ class IOS26NativeToolbar extends StatefulWidget {
   final ValueChanged<int>? onActionTap;
 
   /// Custom widget overlaid at the title position.
-  /// When set, the native title is hidden and this widget is centered instead.
+  /// When set, the native title is hidden and this widget is centered instead,
+  /// clear of the controls on both sides, as the system's title: a long title
+  /// ends in an ellipsis before it reaches them.
   final Widget? titleWidget;
 
   /// Tint color for bar button items (action buttons and back button)
@@ -48,6 +54,15 @@ class IOS26NativeToolbar extends StatefulWidget {
   /// The fixed toolbar host turns it off and draws one gradient of its own
   /// behind all page layers.
   final bool showsGradient;
+
+  /// Whether a control sits at the leading edge of the bar, which
+  /// [titleWidget] keeps clear of, such as a back button the host draws over
+  /// the bar. Null: whether there is a [leading] or a [leadingText].
+  final bool? reservesLeading;
+
+  /// How much further in than usual the leading control sits, such as clear
+  /// of the window controls of an iPad window.
+  final double leadingInset;
 
   @override
   State<IOS26NativeToolbar> createState() => _IOS26NativeToolbarState();
@@ -200,8 +215,8 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
             ),
           if (widget.titleWidget != null)
             Positioned(
-              left: 0,
-              right: 0,
+              left: _titleInset,
+              right: _titleInset,
               top: safePadding,
               bottom: 0,
               child: Center(child: widget.titleWidget!),
@@ -209,6 +224,58 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
         ],
       ),
     );
+  }
+
+  /// How far [IOS26NativeToolbar.titleWidget] keeps from both sides of the
+  /// bar: 16 points from its edges and 8 from the controls on either side, the
+  /// same on both sides so it stays centred.
+  double get _titleInset {
+    const margin = 16.0;
+    const gap = 8.0;
+    final leadingText = widget.leadingText;
+    final reservesLeading =
+        widget.reservesLeading ??
+        (widget.leading != null || leadingText != null);
+    final leadingWidth = !reservesLeading
+        ? 0.0
+        : widget.leading == null && leadingText != null
+        ? _textButtonWidth(leadingText)
+        : _controlSize;
+    final leading =
+        margin +
+        widget.leadingInset +
+        (reservesLeading ? leadingWidth + gap : 0);
+    final actions = widget.actions ?? const <AdaptiveAppBarAction>[];
+    var actionsWidth = 0.0;
+    for (final action in actions) {
+      final title = action.title;
+      final iconOnly =
+          action.iosSymbol != null ||
+          action.icon != null ||
+          action.iconWidget != null ||
+          title == null;
+      actionsWidth += iconOnly ? _controlSize : _textButtonWidth(title);
+      if (action.spacerAfter != ToolbarSpacerType.none) actionsWidth += 12;
+    }
+    final trailing = margin + (actions.isEmpty ? 0 : actionsWidth + gap);
+    return math.max(leading, trailing);
+  }
+
+  static const _controlSize = 44.0;
+
+  /// About as wide as the system draws a bar button with [text].
+  static double _textButtonWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return math.max(_controlSize, width + 28);
   }
 
   void _onPlatformViewCreated(int id) {

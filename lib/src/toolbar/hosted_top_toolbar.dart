@@ -212,6 +212,7 @@ class HostedTopToolbar extends StatelessWidget {
                 ),
                 if (lowerEntry != null && !lower.isEmpty)
                   _layer(
+                    context,
                     key: ValueKey<Object>(lowerEntry.id),
                     content: lower,
                     opacity: lowerOpacity,
@@ -219,6 +220,7 @@ class HostedTopToolbar extends StatelessWidget {
                   ),
                 if (upperEntry != null && !upper.isEmpty)
                   _layer(
+                    context,
                     key: ValueKey<Object>(upperEntry.id),
                     content: upper,
                     opacity: upperOpacity,
@@ -299,7 +301,8 @@ class HostedTopToolbar extends StatelessWidget {
 
   /// One page's bar. The back button is not part of it: the shared one is
   /// drawn on top of all page layers.
-  Widget _layer({
+  Widget _layer(
+    BuildContext context, {
     required Key key,
     required TopToolbarContent content,
     required Animation<double> opacity,
@@ -325,6 +328,11 @@ class HostedTopToolbar extends StatelessWidget {
                   title: content.title,
                   titleWidget: content.titleOverlay,
                   leading: content.customLeading,
+                  // The shared back button is drawn over the bar: the title
+                  // keeps clear of it all the same.
+                  reservesLeading:
+                      content.impliesBack || content.customLeading != null,
+                  leadingInset: _hasWindowControls(context) ? 62 : 0,
                   actions: content.actions,
                   tintColor: content.tint,
                   showsGradient: false,
