@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import 'adaptive_app_bar.dart';
+import 'adaptive_app_bar_action.dart';
 import 'adaptive_badge.dart';
 import 'adaptive_bottom_navigation_bar.dart';
 import 'adaptive_button.dart';
@@ -333,7 +334,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   void _syncToolbarEntry() {
     final registry = ToolbarRegistry.maybeOf(context);
     if (registry == null) return;
-    if (!_usesFixedToolbar(context)) {
+    final inColumn = AdaptiveSplitView.isInColumn(context);
+    final appBar = inColumn ? _controlsForBar() : widget.appBar;
+    if (inColumn ? appBar == null : !_usesFixedToolbar(context)) {
       _toolbarRegistry?.remove(this);
       _toolbarRegistry = null;
       return;
@@ -354,11 +357,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     registry.upsert(
       ToolbarEntry(
         id: this,
-        appBar: widget.appBar,
+        appBar: appBar,
         route: ModalRoute.of(context),
         navigator: navigator,
         enclosingRoutes: enclosingRoutes,
-        titleOverlay: _buildIOS26TitleOverlay(),
+        titleOverlay: inColumn ? null : _buildIOS26TitleOverlay(),
         // `TickerMode.valuesOf` replaces this, but only exists in Flutter
         // releases after 3.35; `of` works on every supported version.
         // ignore: deprecated_member_use
@@ -366,6 +369,32 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         selected: Visibility.of(context),
         tabBar: _tabBarForChrome,
       ),
+    );
+  }
+
+  /// A page in a column of a split view keeps its title in its column. In
+  /// the iPhone Duo vertical bar pose its back button and actions go to the
+  /// vertical bar, as every page's do: an app bar with only those. Null when
+  /// it has none to hand over, or in any other pose.
+  AdaptiveAppBar? _controlsForBar() {
+    final appBar = widget.appBar;
+    if (appBar == null || !AdaptiveSplitView.handsControlsToBar(context)) {
+      return null;
+    }
+    final canPop = Navigator.maybeOf(context)?.canPop() ?? false;
+    final back =
+        appBar.leading == null &&
+        !AdaptiveSplitView.hidesBackButton(context) &&
+        (appBar.onBack != null || (appBar.automaticallyImplyLeading && canPop));
+    final actions = appBar.actions ?? const <AdaptiveAppBarAction>[];
+    if (!back && actions.isEmpty && appBar.leading == null) return null;
+    return AdaptiveAppBar(
+      actions: actions,
+      leading: appBar.leading,
+      tintColor: appBar.tintColor,
+      onBack: back ? appBar.onBack : null,
+      backButtonStyle: appBar.backButtonStyle,
+      automaticallyImplyLeading: back,
     );
   }
 
@@ -511,7 +540,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           minimizeBehavior: widget.minimizeBehavior,
           enableBlur: widget.enableBlur,
           useHeroBackButton: widget.useHeroBackButton,
-          useFixedToolbar: _usesFixedToolbar(context),
+          // In a column of a split view the page draws its own bar, as told
+          // by the column's chrome.
+          useFixedToolbar:
+              _usesFixedToolbar(context) ||
+              AdaptiveSplitView.isInColumn(context),
           tabBarHidden: widget.tabBarHidden,
           resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
           children: childrenList,

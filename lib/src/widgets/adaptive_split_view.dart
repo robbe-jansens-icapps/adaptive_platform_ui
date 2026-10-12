@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../platform/platform_info.dart';
 import '../toolbar/duo_vertical_bar.dart';
+import '../toolbar/toolbar_chrome_scope.dart';
 
 /// A list and the page picked from it side by side, as `UISplitViewController`
 /// shows them on iPad and on the iPhone Duo inner display, and as the
@@ -90,6 +91,14 @@ class AdaptiveSplitView extends StatefulWidget {
   /// fixed toolbar that spans the window.
   static bool isInColumn(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_ColumnScope>() != null;
+
+  /// Whether the page at [context], in a column of a split view, hands its
+  /// back button and actions to the iPhone Duo vertical bar of the fixed
+  /// toolbar, as every page does in that pose, and keeps only its title in
+  /// its column.
+  static bool handsControlsToBar(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ColumnScope>()?.duoControls ??
+      false;
 
   /// Whether the page at [context] goes without a back button: it is the
   /// first page of the column beside the list, which has nothing to go back
@@ -363,6 +372,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     final width = constraints.maxWidth - left - right;
     final masterWidth = (width * 0.38).clamp(320.0, 420.0);
     final android = PlatformInfo.isAndroid;
+    // In the iPhone Duo vertical bar pose, the fixed toolbar holds the
+    // controls of every page, those in the columns included: each column
+    // keeps its title.
+    final duoControls =
+        ToolbarChromeScope.maybeOf(context)?.hostsDuoControls ?? false;
     final divider = android ? 1.0 : 1 / MediaQuery.devicePixelRatioOf(context);
     final dividerColor = android
         ? Theme.of(context).colorScheme.outlineVariant
@@ -380,6 +394,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
               bottom: 0,
               child: _column(
                 context,
+                duoControls: duoControls,
                 isDetail: true,
                 removeLeft: true,
                 removeRight: bar == DuoBarSide.right,
@@ -402,6 +417,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
               width: masterWidth,
               child: _column(
                 context,
+                duoControls: duoControls,
                 isDetail: false,
                 removeLeft: bar == DuoBarSide.left,
                 removeRight: true,
@@ -423,6 +439,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
 
   Widget _column(
     BuildContext context, {
+    required bool duoControls,
     required bool isDetail,
     required bool removeLeft,
     required bool removeRight,
@@ -434,11 +451,18 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
       child: _ColumnScope(
         state: this,
         isDetail: isDetail,
-        child: MediaQuery.removePadding(
-          context: context,
-          removeLeft: removeLeft,
-          removeRight: removeRight,
-          child: child,
+        duoControls: duoControls,
+        // The pages draw their own bars, or only their titles while the
+        // vertical bar holds their controls.
+        child: ToolbarChromeScope(
+          hostsToolbar: false,
+          hostsDuoControls: duoControls,
+          child: MediaQuery.removePadding(
+            context: context,
+            removeLeft: removeLeft,
+            removeRight: removeRight,
+            child: child,
+          ),
         ),
       ),
     );
@@ -495,6 +519,7 @@ class _ColumnScope extends InheritedWidget {
   const _ColumnScope({
     required this.state,
     required this.isDetail,
+    required this.duoControls,
     required super.child,
   });
 
@@ -503,7 +528,12 @@ class _ColumnScope extends InheritedWidget {
   /// The column beside the list, rather than the list's.
   final bool isDetail;
 
+  /// Whether the iPhone Duo vertical bar holds the controls of its pages.
+  final bool duoControls;
+
   @override
   bool updateShouldNotify(_ColumnScope oldWidget) =>
-      isDetail != oldWidget.isDetail || state != oldWidget.state;
+      isDetail != oldWidget.isDetail ||
+      duoControls != oldWidget.duoControls ||
+      state != oldWidget.state;
 }

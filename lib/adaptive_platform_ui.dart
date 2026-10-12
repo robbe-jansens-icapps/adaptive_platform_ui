@@ -47,6 +47,7 @@ export 'src/widgets/adaptive_app.dart';
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
 export 'src/toolbar/duo_vertical_bar.dart' show DuoBarSide, DuoLayout;
+export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
 export 'src/widgets/adaptive_app_bar.dart';
 export 'src/widgets/adaptive_bottom_navigation_bar.dart';
