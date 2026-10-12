@@ -565,8 +565,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     );
     final top = m.padding.top + _floatingGap;
     final maxHeight = m.size.height - top - m.padding.bottom - _floatingGap;
+    // As tall as its content: what fits a bottom sheet, less the gap below a
+    // bottom sheet, which a side panel keeps at its top instead.
     final height = _measured
-        ? math.min(_fitExtent(m) - _floatingGap, maxHeight)
+        ? math.min(_fitExtent(m) - _bottomGap(m), maxHeight)
         : maxHeight;
     final left = m.rtl
         ? m.size.width - m.padding.right - _sidePanelInset(m) - width
@@ -667,12 +669,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                         : -(rect.right + _floatingGap)) /
                     rect.width
               : 0.0;
-          return Stack(
-            // A clip around the native glass would break it. Material has no
-            // glass, and the area may not start at the edge of the screen,
-            // with a navigation rail beside it: the panel slides out of the
-            // area, under the rail, not over it.
-            clipBehavior: material ? Clip.hardEdge : Clip.none,
+          final panel = Stack(
+            // A clip around the native glass would break it.
+            clipBehavior: Clip.none,
             children: [
               AnimatedPositioned.fromRect(
                 rect: rect,
@@ -687,6 +686,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
               ),
             ],
           );
+          // Material has no glass to break, and its area may not start at the
+          // edge of the screen, with a navigation rail beside it: the panel
+          // slides out of the area under the rail, not over it. The slide is
+          // painted, not laid out, so only a clip of its own cuts it off.
+          return material ? ClipRect(child: panel) : panel;
         }
         return AnimatedBuilder(
           animation: _extent,

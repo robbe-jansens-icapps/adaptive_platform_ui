@@ -293,9 +293,67 @@ void main() {
     );
   });
 
+  testWidgets('a side panel floating as far from the bottom as from the sides '
+      'keeps the same room below its content', (tester) async {
+    usePhone(tester, size: const Size(951, 669));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            Positioned.fill(
+              child: AdaptiveSheet(
+                detents: const [AdaptiveSheetDetent.fitContent],
+                floatingMargin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: EdgeInsets.zero,
+                header: const SizedBox(height: 60, child: Text('header')),
+                child: const SizedBox(height: 200, key: ValueKey('content')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final panel = tester.getRect(find.byType(IOS26GlassSurface));
+    final content = tester.getRect(find.byKey(const ValueKey('content')));
+    expect(panel.bottom, content.bottom);
+  });
+
   group('on Android', () {
     setUp(() => PlatformInfo.debugPlatformOverride = TargetPlatform.android);
     tearDown(() => PlatformInfo.debugPlatformOverride = null);
+
+    testWidgets('a side panel is as tall as its content', (tester) async {
+      usePhone(tester, size: const Size(951, 669));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: [
+              Positioned.fill(
+                child: AdaptiveSheet(
+                  detents: const [AdaptiveSheetDetent.fitContent],
+                  padding: EdgeInsets.zero,
+                  showsGrabber: false,
+                  header: const SizedBox(height: 60, child: Text('header')),
+                  child: const SizedBox(height: 200, key: ValueKey('content')),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final panel = tester.getRect(
+        find
+            .ancestor(of: find.text('header'), matching: find.byType(Material))
+            .first,
+      );
+      final content = tester.getRect(find.byKey(const ValueKey('content')));
+      expect(panel.height, 60 + 200);
+      expect(panel.bottom, content.bottom);
+    });
 
     testWidgets('a hidden side panel goes out of sight beside a navigation '
         'rail, not over it', (tester) async {
@@ -340,15 +398,20 @@ void main() {
 
       // Out of the sheet's area, and cut off at its edge.
       expect(panel().right, lessThanOrEqualTo(80));
-      final area = tester.renderObject<RenderStack>(
+      final clip = tester.renderObject<RenderClipRect>(
         find
             .descendant(
               of: find.byType(AdaptiveSheet),
-              matching: find.byType(Stack),
+              matching: find.byType(ClipRect),
             )
             .first,
       );
-      expect(area.clipBehavior, Clip.hardEdge);
+      expect(clip.size.width, 951 - 80);
+      expect(
+        clip.localToGlobal(Offset.zero).dx,
+        80,
+        reason: 'the clip starts where the area does',
+      );
     });
 
     testWidgets('is a Material 3 sheet with a drag handle', (tester) async {
