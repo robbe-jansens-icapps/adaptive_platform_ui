@@ -7,7 +7,8 @@ import 'ios26/ios26_segmented_control.dart';
 ///
 /// On iOS 26+: Uses native iOS 26 UISegmentedControl with Liquid Glass
 /// On iOS <26 (iOS 18 and below): Uses CupertinoSlidingSegmentedControl
-/// On Android: Uses Material SegmentedButton
+/// On Android: a Material 3 Expressive pill: the selected segment a filled
+/// pill that slides from one segment to the next, without a checkmark
 class AdaptiveSegmentedControl extends StatelessWidget {
   /// Creates an adaptive segmented control
   const AdaptiveSegmentedControl({
@@ -87,9 +88,9 @@ class AdaptiveSegmentedControl extends StatelessWidget {
       return _buildCupertinoSegmentedControl(context);
     }
 
-    // Android - Use Material SegmentedButton
+    // Android - a Material 3 Expressive pill
     if (PlatformInfo.isAndroid) {
-      return _buildMaterialSegmentedButton(context);
+      return _MaterialSegmentedPill(control: this);
     }
 
     // Fallback
@@ -175,76 +176,130 @@ class AdaptiveSegmentedControl extends StatelessWidget {
 
     return control;
   }
+}
 
-  Widget _buildMaterialSegmentedButton(BuildContext context) {
+/// The segmented control of Android: a pill-shaped track with the selected
+/// segment a filled pill on it, in [AdaptiveSegmentedControl.color], that
+/// slides to the segment picked, the way Material 3 Expressive draws a
+/// connected button group. No outline and no checkmark: the fill says which
+/// segment is selected.
+class _MaterialSegmentedPill extends StatelessWidget {
+  const _MaterialSegmentedPill({required this.control});
+
+  final AdaptiveSegmentedControl control;
+
+  static const _inset = 4.0;
+  static const _duration = Duration(milliseconds: 250);
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final effectiveTextColor = textColor ?? theme.colorScheme.onSurface;
-    final effectiveSelectedTextColor =
-        selectedTextColor ??
-        (color != null ? Colors.white : effectiveTextColor);
-    final segments = <ButtonSegment<int>>[];
+    final scheme = theme.colorScheme;
+    final c = control;
+    final icons = c.sfSymbols;
+    final useIcons = icons != null && icons.isNotEmpty;
+    final count = useIcons ? icons.length : c.labels.length;
+    final thumbColor = c.color ?? scheme.primary;
+    final selectedColor =
+        c.selectedTextColor ??
+        (c.color != null ? Colors.white : scheme.onPrimary);
+    final color = c.textColor ?? scheme.onSurface;
+    // Never lower than Material's smallest touch target.
+    final height = c.height < 40 ? 40.0 : c.height;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final duration = reduceMotion ? Duration.zero : _duration;
+    final selected = c.selectedIndex.clamp(0, count < 1 ? 0 : count - 1);
 
-    // Check if using icons
-    final useIcons = sfSymbols != null && sfSymbols!.isNotEmpty;
-    final itemCount = useIcons ? sfSymbols!.length : labels.length;
-
-    for (int i = 0; i < itemCount; i++) {
+    Widget segment(int index) {
+      final isSelected = index == selected;
+      final foreground = isSelected ? selectedColor : color;
+      final Widget content;
       if (useIcons) {
-        // Icon mode
-        final dynamic icon = sfSymbols![i];
-        segments.add(
-          ButtonSegment<int>(
-            value: i,
-            icon: icon is IconData
-                ? Icon(icon, size: iconSize ?? 20, color: iconColor)
-                : Icon(Icons.circle, size: iconSize ?? 20, color: iconColor),
-          ),
+        final icon = icons[index];
+        content = Icon(
+          icon is IconData ? icon : Icons.circle,
+          size: c.iconSize ?? 20,
+          color: isSelected ? foreground : (c.iconColor ?? foreground),
         );
       } else {
-        // Text mode
-        segments.add(
-          ButtonSegment<int>(
-            value: i,
-            label: Text(
-              labels[i],
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: selectedIndex == i
-                    ? effectiveSelectedTextColor
-                    : effectiveTextColor,
-              ),
-            ),
+        content = AnimatedDefaultTextStyle(
+          duration: duration,
+          style: (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
+            color: foreground,
+            fontWeight: FontWeight.w600,
+          ),
+          child: Text(
+            c.labels[index],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         );
       }
+      return Semantics(
+        button: true,
+        selected: isSelected,
+        inMutuallyExclusiveGroup: true,
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: c.enabled && !isSelected
+              ? () => c.onValueChanged(index)
+              : null,
+          child: SizedBox(
+            height: height - 2 * _inset,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(child: content),
+            ),
+          ),
+        ),
+      );
     }
 
-    final buttonStyle = SegmentedButton.styleFrom(
-      minimumSize: Size.fromHeight(height),
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      selectedBackgroundColor: color,
-      selectedForegroundColor: selectedTextColor,
-      foregroundColor: textColor,
+    Widget pill = DecoratedBox(
+      decoration: ShapeDecoration(
+        color: scheme.surfaceContainerHigh,
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(_inset),
+        child: Stack(
+          children: [
+            if (count > 0)
+              Positioned.fill(
+                child: AnimatedAlign(
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment(
+                    count < 2 ? 0 : -1 + 2 * selected / (count - 1),
+                    0,
+                  ),
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / count,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: thumbColor,
+                        shape: const StadiumBorder(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Material(
+              type: MaterialType.transparency,
+              child: Row(
+                children: [
+                  for (var i = 0; i < count; i++) Expanded(child: segment(i)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-
-    Widget control = SegmentedButton<int>(
-      segments: segments,
-      selected: {selectedIndex},
-      onSelectionChanged: enabled
-          ? (Set<int> newSelection) {
-              if (newSelection.isNotEmpty) {
-                onValueChanged(newSelection.first);
-              }
-            }
-          : null,
-      style: buttonStyle,
-    );
-
-    if (shrinkWrap) {
-      control = Center(child: IntrinsicWidth(child: control));
-    }
-
-    return control;
+    if (!c.enabled) pill = Opacity(opacity: 0.38, child: pill);
+    if (c.shrinkWrap) pill = Center(child: IntrinsicWidth(child: pill));
+    return pill;
   }
 }
