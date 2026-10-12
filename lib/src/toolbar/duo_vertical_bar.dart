@@ -60,6 +60,12 @@ class DuoPose {
   /// [kDuoVerticalBarBezelInset].
   double get bandWidth => stripWidth + kDuoVerticalBarBezelInset;
 
+  /// Distance from the window's top to the centre of the bar's first control,
+  /// with no camera or status cluster above it. The title is centred on it.
+  double get firstControlCenter =>
+      (reservedBySystem ? kDuoBarEdgeMargin : kDuoBarOnlyTopMargin) +
+      IOS26GlassCapsule.width / 2;
+
   /// [insets] with the strip added on the bar's side: the inset UIKit would
   /// have reserved for a vertical bar it draws itself.
   EdgeInsets addStrip(EdgeInsets insets) => onLeft
@@ -312,11 +318,15 @@ class DuoToolbarTitle extends StatelessWidget {
     final pose = DuoPoseScope.of(context);
     final strip = pose?.stripWidth ?? 0;
     final onLeft = pose?.onLeft ?? false;
+    final center =
+        pose?.firstControlCenter ??
+        kDuoBarEdgeMargin + IOS26GlassCapsule.width / 2;
     return Padding(
       padding: EdgeInsets.only(
         left: 20 + (onLeft ? strip : 0),
         right: onLeft ? 20 : strip + 8,
-        top: 26,
+        // Centres the rest of the band on the first control.
+        top: 2 * center - kDuoTitleBandHeight,
       ),
       child: Align(
         alignment: Alignment.centerLeft,

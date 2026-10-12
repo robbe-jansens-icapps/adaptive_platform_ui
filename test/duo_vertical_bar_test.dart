@@ -552,5 +552,48 @@ void main() {
       expect(rect.left, 20);
       expect(rect.center.dy, closeTo(48, 0.5));
     });
+
+    testWidgets(
+      'in the leading Split View pane the title is level with the back button',
+      (tester) async {
+        tester.view.physicalSize = duoLandscape;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: DuoPoseScope(
+              pose: const DuoPose(
+                side: DuoBarSide.left,
+                stripWidth: kDuoVerticalBarWidth,
+                reservedBySystem: false,
+              ),
+              child: Stack(
+                children: [
+                  const SizedBox(
+                    height: kDuoTitleBandHeight,
+                    child: DuoToolbarTitle(title: 'Inbox'),
+                  ),
+                  SizedBox(
+                    width: kDuoVerticalBarWidth + kDuoVerticalBarBezelInset,
+                    child: DuoVerticalBar(
+                      leading: DuoBarBackButton(onPressed: () {}),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        final back = tester.getRect(find.byType(DuoBarBackButton));
+        expect(
+          back.center.dy,
+          kDuoBarOnlyTopMargin + IOS26GlassCapsule.width / 2,
+        );
+        expect(
+          tester.getRect(find.text('Inbox')).center.dy,
+          closeTo(back.center.dy, 0.5),
+        );
+      },
+    );
   });
 }
