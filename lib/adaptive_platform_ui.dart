@@ -66,6 +66,7 @@ export 'src/widgets/adaptive_scaffold.dart';
 export 'src/widgets/adaptive_app_bar_action.dart';
 export 'src/widgets/adaptive_snackbar.dart';
 export 'src/widgets/adaptive_toast.dart';
+export 'src/widgets/adaptive_keyboard_dismissal.dart';
 export 'src/widgets/adaptive_date_picker.dart';
 export 'src/widgets/adaptive_time_picker.dart';
 export 'src/widgets/adaptive_list_tile.dart';
