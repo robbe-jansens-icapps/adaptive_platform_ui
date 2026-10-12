@@ -220,8 +220,15 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
               creationParams: creationParams,
               creationParamsCodec: const StandardMessageCodec(),
               onPlatformViewCreated: _onCreated,
+              // Every touch on the bar is the bar's, at once: with a tap
+              // recognizer it only got them when the finger lifted, so a
+              // finger held on a tab (the large content viewer of the
+              // accessibility text sizes) or sliding across the tabs did
+              // nothing.
               gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
+                Factory<OneSequenceGestureRecognizer>(
+                  EagerGestureRecognizer.new,
+                ),
               },
             )
           : const SizedBox.shrink();

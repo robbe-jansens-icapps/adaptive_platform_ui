@@ -115,6 +115,15 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             applyAppFont(to: bar)
         }
         bar.delegate = self
+        // Its labels keep one size whatever the text size, as the system's do.
+        // At the accessibility text sizes, a finger held on a tab shows it
+        // large in the middle of the screen instead, as in the system's apps
+        // (see TabLargeContentHUD).
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(onTabHeld(_:)))
+        press.minimumPressDuration = 0.4
+        press.cancelsTouchesInView = false
+        press.delegate = self
+        bar.addGestureRecognizer(press)
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.semanticContentAttribute = isRtl ? .forceRightToLeft : .forceLeftToRight
         container.semanticContentAttribute = isRtl ? .forceRightToLeft : .forceLeftToRight
@@ -751,6 +760,53 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         if let fontObserver { NotificationCenter.default.removeObserver(fontObserver) }
     }
 
+    /// The tab under [point]: the one whose button, found by its title,
+    /// holds the point, or else the one nearest to it.
+    private func item(at point: CGPoint) -> UITabBarItem? {
+        guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return nil }
+        var buttons: [(UITabBarItem, CGRect)] = []
+        func collect(_ view: UIView) {
+            for subview in view.subviews {
+                if let label = subview.accessibilityLabel,
+                   let item = items.first(where: { $0.title == label }),
+                   !buttons.contains(where: { $0.0 === item }) {
+                    buttons.append((item, subview.convert(subview.bounds, to: bar)))
+                    continue
+                }
+                collect(subview)
+            }
+        }
+        collect(bar)
+        if let hit = buttons.first(where: { $0.1.contains(point) }) { return hit.0 }
+        return buttons.min(by: { abs($0.1.midX - point.x) < abs($1.1.midX - point.x) })?.0
+    }
+
+    private var largeContentHUD: TabLargeContentHUD?
+
+    /// Shows the tab under the finger large while it is held there, at the
+    /// accessibility text sizes; the bar itself selects the tab where the
+    /// finger lifts.
+    @objc private func onTabHeld(_ recognizer: UILongPressGestureRecognizer) {
+        guard let bar = tabBar else { return }
+        switch recognizer.state {
+        case .began, .changed:
+            guard UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory,
+                  let window = bar.window,
+                  let item = item(at: recognizer.location(in: bar))
+            else {
+                largeContentHUD?.dismiss()
+                largeContentHUD = nil
+                return
+            }
+            let hud = largeContentHUD ?? TabLargeContentHUD(in: window)
+            largeContentHUD = hud
+            hud.show(title: item.title, image: item.image)
+        default:
+            largeContentHUD?.dismiss()
+            largeContentHUD = nil
+        }
+    }
+
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
         if let bar = self.tabBar, bar === tabBar, let items = bar.items, let idx = items.firstIndex(of: item) {
             channel.invokeMethod("valueChanged", arguments: ["index": idx])
@@ -958,4 +1014,76 @@ func tabBadgeText(_ count: Int?) -> String? {
     if count == -1 { return "" }
     if count <= 0 { return nil }
     return count > 99 ? "99+" : String(count)
+}
+
+extension iOS26TabBarPlatformView: UIGestureRecognizerDelegate {
+    /// Alongside the bar's own gestures (selecting, sliding across the tabs):
+    /// the bar keeps doing what it does.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        return true
+    }
+}
+
+/// The large view of a tab that a finger is held on, as the system's tab bars
+/// show it at the accessibility text sizes: its icon and title on a
+/// translucent panel in the middle of the screen. A standalone tab bar does
+/// not get the system's large content viewer: the bar's own selection
+/// gesture keeps it from starting.
+private final class TabLargeContentHUD {
+    private let panel = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+    private let imageView = UIImageView()
+    private let titleLabel = UILabel()
+
+    init(in window: UIWindow) {
+        panel.layer.cornerRadius = 20
+        panel.layer.cornerCurve = .continuous
+        panel.clipsToBounds = true
+        panel.alpha = 0
+        panel.isUserInteractionEnabled = false
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = .secondaryLabel
+        titleLabel.font = .systemFont(ofSize: 32)
+        titleLabel.textColor = .secondaryLabel
+        titleLabel.textAlignment = .center
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.5
+        let stack = UIStackView(arrangedSubviews: [imageView, titleLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView.addSubview(stack)
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        window.addSubview(panel)
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: 56),
+            imageView.heightAnchor.constraint(equalToConstant: 56),
+            stack.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor, constant: -24),
+            stack.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor, constant: -24),
+            panel.centerXAnchor.constraint(equalTo: window.centerXAnchor),
+            panel.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+            panel.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            panel.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, constant: -64),
+        ])
+    }
+
+    func show(title: String?, image: UIImage?) {
+        titleLabel.text = title
+        imageView.image = image?.withRenderingMode(.alwaysTemplate)
+        imageView.isHidden = image == nil
+        guard panel.alpha < 1 else { return }
+        UIView.animate(withDuration: 0.15) { self.panel.alpha = 1 }
+    }
+
+    func dismiss() {
+        let panel = self.panel
+        UIView.animate(withDuration: 0.15, animations: { panel.alpha = 0 }) { _ in
+            panel.removeFromSuperview()
+        }
+    }
 }
