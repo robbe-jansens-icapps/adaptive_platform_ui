@@ -359,6 +359,54 @@ void main() {
     expect(AdaptiveSplitView.showDetail(detail('C')), isFalse);
   });
 
+  testWidgets('folding on another tab leaves that tab in view; the pages wait '
+      'over the list until its tab is selected again', (tester) async {
+    tester.view.physicalSize = wide;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tab = ValueNotifier(1);
+    addTearDown(tab.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: ValueListenableBuilder<int>(
+          valueListenable: tab,
+          builder: (context, index, _) => IndexedStack(
+            index: index,
+            children: [
+              const Center(child: Text('Map')),
+              AdaptiveSplitView(
+                onGenerateDetailRoute: onGenerateRoute,
+                initialDetail: detail('A'),
+                master: master(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More A'));
+    await tester.pumpAndSettle();
+
+    tab.value = 0;
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = narrow;
+    await tester.pumpAndSettle();
+    expect(navigatorKey.currentState!.canPop(), isFalse);
+    expect(find.text('Map'), findsOneWidget);
+
+    tab.value = 1;
+    await tester.pumpAndSettle();
+    expect(find.text('Detail A+'), findsOneWidget);
+    goBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Detail A'), findsOneWidget);
+    goBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Item A'), findsOneWidget);
+  });
+
   testWidgets('going back from the list closes its page, also with a page '
       'open on top in the column', (tester) async {
     tester.view.physicalSize = wide;

@@ -470,20 +470,26 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _syncHistory();
-      // A column that came back in the meantime took the pages.
-      final pages = _restored;
-      if (_wide || pages == null) return;
-      _restored = null;
-      final navigator = _route?.navigator;
-      // Not over another page that covers the list.
-      if (navigator == null || !(_route?.isCurrent ?? false)) return;
-      for (final settings in pages) {
-        final route = _arrivedAt(widget.onGenerateDetailRoute(settings));
-        if (route == null) continue;
-        _pagesOver.add(route);
-        navigator.push(route);
-      }
+      _restoreOver();
     });
+  }
+
+  /// Puts the pages waiting for a place over the list. On a tab out of sight
+  /// they wait until it is selected again, rather than cover the tab in view.
+  void _restoreOver() {
+    // A column that came back in the meantime took the pages.
+    final pages = _restored;
+    if (!mounted || _wide || pages == null || !Visibility.of(context)) return;
+    _restored = null;
+    final navigator = _route?.navigator;
+    // Not over another page that covers the list.
+    if (navigator == null || !(_route?.isCurrent ?? false)) return;
+    for (final settings in pages) {
+      final route = _arrivedAt(widget.onGenerateDetailRoute(settings));
+      if (route == null) continue;
+      _pagesOver.add(route);
+      navigator.push(route);
+    }
   }
 
   /// The window got wide enough for the columns: the pages open over the
@@ -548,6 +554,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     if (!_wide && _pagesOver.isNotEmpty && window - _inset >= widget.minWidth) {
       _wide = true;
       _expand();
+    }
+    // Its tab, selected again, shows the pages that waited for it.
+    final visible = Visibility.of(context);
+    if (!_wide && _restored != null && visible) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _restoreOver());
     }
     return LayoutBuilder(
       builder: (context, constraints) {
