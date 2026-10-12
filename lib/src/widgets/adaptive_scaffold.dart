@@ -10,6 +10,7 @@ import 'adaptive_app_bar.dart';
 import 'adaptive_badge.dart';
 import 'adaptive_bottom_navigation_bar.dart';
 import 'adaptive_button.dart';
+import 'adaptive_split_view.dart';
 import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
 import '../toolbar/toolbar_registry.dart';
@@ -304,6 +305,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// screen, so a scaffold inside one keeps its own toolbar.
   bool _usesFixedToolbar(BuildContext context) {
     if (!widget.useFixedToolbar) return false;
+    // A column of a split view has its own bar, as a column of a
+    // UISplitViewController has its own navigation bar.
+    if (AdaptiveSplitView.isInColumn(context)) return false;
     final route = ModalRoute.of(context);
     return route == null || route is PageRoute;
   }
@@ -497,6 +501,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           title: widget.appBar?.title,
           actions: widget.appBar?.actions,
           leading: widget.appBar?.leading,
+          onBack: widget.appBar?.onBack,
+          backButtonStyle:
+              widget.appBar?.backButtonStyle ?? AdaptiveBackButtonStyle.back,
+          automaticallyImplyLeading:
+              widget.appBar?.automaticallyImplyLeading ?? true,
           tintColor: widget.appBar?.tintColor,
           titleWidget: _buildIOS26TitleOverlay(),
           minimizeBehavior: widget.minimizeBehavior,

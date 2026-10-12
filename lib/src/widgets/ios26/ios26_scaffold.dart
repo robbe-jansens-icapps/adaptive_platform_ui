@@ -6,10 +6,12 @@ import '../../platform/platform_info.dart';
 import '../../style/sf_symbol.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/toolbar_chrome_scope.dart';
+import '../adaptive_app_bar.dart';
 import '../adaptive_app_bar_action.dart';
 import '../adaptive_bottom_navigation_bar.dart';
 import '../adaptive_button.dart';
 import '../adaptive_scaffold.dart';
+import '../adaptive_split_view.dart';
 import 'ios26_native_tab_bar.dart';
 import 'ios26_native_toolbar.dart';
 
@@ -26,6 +28,9 @@ class IOS26Scaffold extends StatefulWidget {
     this.title,
     this.actions,
     this.leading,
+    this.onBack,
+    this.backButtonStyle = AdaptiveBackButtonStyle.back,
+    this.automaticallyImplyLeading = true,
     this.tintColor,
     this.titleWidget,
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
@@ -41,6 +46,16 @@ class IOS26Scaffold extends StatefulWidget {
   final String? title;
   final List<AdaptiveAppBarAction>? actions;
   final Widget? leading;
+
+  /// What the back button does, when the page has its own toolbar. Pops the
+  /// navigator by default.
+  final VoidCallback? onBack;
+
+  /// A chevron, or a cross for a page shown like a dialog.
+  final AdaptiveBackButtonStyle backButtonStyle;
+
+  /// Whether a page that can go back gets a back button without an [onBack].
+  final bool automaticallyImplyLeading;
   final Color? tintColor;
 
   /// Custom widget overlaid at the toolbar's title position.
@@ -174,12 +189,20 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
     Widget? heroLeading;
 
     final canPop = Navigator.of(context).canPop();
+    // A page with a back handler has a back button, as in the fixed toolbar,
+    // except the first page beside the list of a split view, which has
+    // nothing to go back to.
+    final impliesBack =
+        (widget.onBack != null ||
+            (widget.automaticallyImplyLeading && canPop)) &&
+        !AdaptiveSplitView.hidesBackButton(context);
+    final close = widget.backButtonStyle == AdaptiveBackButtonStyle.close;
 
     // Only show auto back button if no custom leading widget
     if (widget.leading == null &&
         (widget.bottomNavigationBar?.items == null ||
             widget.bottomNavigationBar!.items!.isEmpty) &&
-        canPop) {
+        impliesBack) {
       final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
       if (isCurrent) {
         final backButton = Container(
@@ -191,12 +214,23 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
           width: kToolbarContentHeight,
           child: AdaptiveButton.sfSymbol(
             useSmoothRectangleBorder: false,
-            onPressed: () => Navigator.of(context).pop(),
-            sfSymbol: const SFSymbol(
-              'chevron.left',
-              size: 19,
-              weight: FontWeight.w600,
-            ),
+            onPressed: () {
+              AdaptiveSplitView.willGoBackFrom(context);
+              final onBack = widget.onBack;
+              if (onBack != null) {
+                onBack();
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
+            // As the system draws them.
+            sfSymbol: close
+                ? const SFSymbol('xmark', size: 17, weight: FontWeight.w600)
+                : const SFSymbol(
+                    'chevron.left',
+                    size: 19,
+                    weight: FontWeight.w600,
+                  ),
           ),
         );
         heroLeading = widget.useHeroBackButton
