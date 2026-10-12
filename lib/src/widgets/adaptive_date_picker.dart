@@ -329,8 +329,9 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
             ) -
             _cornerRadius) *
         0.4;
+    // Below the status bar, whatever its height: with the largest text sizes
+    // on a small display the picker can take more room than there is.
     return SafeArea(
-      top: false,
       bottom: false,
       minimum: const EdgeInsets.symmetric(horizontal: _inset),
       child: Padding(
@@ -385,24 +386,27 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                   ],
                 ),
               ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  0,
-                  12,
-                  12 + (cornerRoom > 0 ? cornerRoom : 0),
-                ),
-                child: IOS26DatePicker(
-                  initialDate: _selected,
-                  firstDate: widget.firstDate,
-                  lastDate: widget.lastDate,
-                  mode: widget.mode,
-                  style: widget.style,
-                  tint: tint,
-                  minuteInterval: widget.minuteInterval,
-                  use24HourFormat: widget.use24HourFormat,
-                  controller: _picker,
-                  onChanged: (date) => _selected = date,
+              // The room the picker needs, or the room there is.
+              Flexible(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    0,
+                    12,
+                    12 + (cornerRoom > 0 ? cornerRoom : 0),
+                  ),
+                  child: IOS26DatePicker(
+                    initialDate: _selected,
+                    firstDate: widget.firstDate,
+                    lastDate: widget.lastDate,
+                    mode: widget.mode,
+                    style: widget.style,
+                    tint: tint,
+                    minuteInterval: widget.minuteInterval,
+                    use24HourFormat: widget.use24HourFormat,
+                    controller: _picker,
+                    onChanged: (date) => _selected = date,
+                  ),
                 ),
               ),
             ],

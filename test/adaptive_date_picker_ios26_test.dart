@@ -181,6 +181,33 @@ void main() {
       expect(await result, DateTime(1990, 5, 17));
     });
 
+    testWidgets('a picker taller than the screen gets the room there is, '
+        'below the status bar', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      tester.view.padding = const FakeViewPadding(top: 150);
+      tester.view.viewPadding = const FakeViewPadding(top: 150);
+      addTearDown(tester.view.reset);
+      await open(tester);
+      final (id, _) = created.single;
+
+      // The largest text sizes on a small display.
+      await fromNative(id, 'height', {'height': 2000.0});
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final sheet = tester.getRect(find.byType(IOS26GlassSurface));
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(
+        sheet.top,
+        greaterThanOrEqualTo(150 / tester.view.devicePixelRatio),
+      );
+      expect(sheet.bottom, lessThanOrEqualTo(screen.height));
+      expect(
+        tester.getSize(find.byType(IOS26DatePicker)).height,
+        lessThan(2000),
+      );
+    });
+
     testWidgets('the close button picks nothing', (tester) async {
       final result = await open(tester);
 

@@ -34,7 +34,10 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
     private let container: LayoutReportingView
     private let picker = UIDatePicker()
     private let channel: FlutterMethodChannel
-    private var reportedWidth: CGFloat = 0
+
+    /// The width and text size the height was last measured for.
+    private var measuredWidth: CGFloat = 0
+    private var measuredTextSize: UIContentSizeCategory?
 
     init(
         frame: CGRect,
@@ -83,6 +86,7 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
             picker.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             picker.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             picker.topAnchor.constraint(equalTo: container.topAnchor),
+            picker.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
         container.onLayout = { [weak self] width in self?.reportHeight(for: width) }
         channel.setMethodCallHandler { [weak self] call, result in
@@ -174,15 +178,24 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
         view.subviews.contains { $0 is UILabel || holdsLabel($0) }
     }
 
+    /// Measures the height the picker needs at [width] and the text size, once
+    /// for each, and hands it to Flutter, which sizes the view to it. The
+    /// picker fills the view on all sides: left to find its own height, at
+    /// some widths and text sizes the calendar never settled on one and laid
+    /// itself out again and again, which hung the app (the iPhone Duo cover
+    /// display, the largest text sizes).
     private func reportHeight(for width: CGFloat) {
-        guard width > 0, width != reportedWidth else { return }
-        reportedWidth = width
+        let textSize = container.traitCollection.preferredContentSizeCategory
+        guard width > 0, width != measuredWidth || textSize != measuredTextSize
+        else { return }
+        measuredWidth = width
+        measuredTextSize = textSize
         let size = picker.systemLayoutSizeFitting(
             CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel
         )
-        channel.invokeMethod("height", arguments: ["height": Double(size.height)])
+        channel.invokeMethod("height", arguments: ["height": Double(ceil(size.height))])
     }
 
     private static func date(_ millis: NSNumber) -> Date {
@@ -201,9 +214,24 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
     }
 }
 
-/// Tells its owner the width it is laid out at.
+/// Tells its owner the width it is laid out at, also again when the text size
+/// changes.
 private class LayoutReportingView: UIView {
     var onLayout: ((CGFloat) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        if #available(iOS 17.0, *) {
+            registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
+                (view: LayoutReportingView, _: UITraitCollection) in
+                view.setNeedsLayout()
+            }
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
