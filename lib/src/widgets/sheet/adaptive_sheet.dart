@@ -658,15 +658,28 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
               !hidden &&
               !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
           _panelInView = !hidden;
+          final rect = _sidePanelRect(metrics);
+          // Out of the area it floats in, with room to spare for a shadow,
+          // however far from its edge it floats (a vertical bar on that side).
+          final away = rect.width > 0
+              ? (rtl
+                        ? metrics.size.width - rect.left + _floatingGap
+                        : -(rect.right + _floatingGap)) /
+                    rect.width
+              : 0.0;
           return Stack(
-            clipBehavior: Clip.none,
+            // A clip around the native glass would break it. Material has no
+            // glass, and the area may not start at the edge of the screen,
+            // with a navigation rail beside it: the panel slides out of the
+            // area, under the rail, not over it.
+            clipBehavior: material ? Clip.hardEdge : Clip.none,
             children: [
               AnimatedPositioned.fromRect(
-                rect: _sidePanelRect(metrics),
+                rect: rect,
                 duration: resizes ? _panelResizeDuration : Duration.zero,
                 curve: Curves.easeOutCubic,
                 child: AnimatedSlide(
-                  offset: hidden ? Offset(rtl ? 1.2 : -1.2, 0) : Offset.zero,
+                  offset: hidden ? Offset(away, 0) : Offset.zero,
                   duration: const Duration(milliseconds: 350),
                   curve: Curves.easeOutCubic,
                   child: IgnorePointer(ignoring: hidden, child: body),

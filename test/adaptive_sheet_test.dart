@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _phone = Size(400, 800);
@@ -272,9 +273,83 @@ void main() {
     expect(panelHeight(), 16 + 60 + 300 + 16);
   });
 
+  testWidgets('a hidden side panel leaves the window, also from beside a '
+      'vertical bar on the left', (tester) async {
+    usePhone(tester, size: const Size(951, 669));
+    // The iPhone Duo vertical bar on the left.
+    tester.view.padding = const FakeViewPadding(left: 84, top: 24);
+    tester.view.viewPadding = const FakeViewPadding(left: 84, top: 24);
+    final controller = AdaptiveSheetController();
+    await tester.pumpWidget(sheetApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byType(IOS26GlassSurface)).left, 84 + 16);
+
+    unawaited(controller.animateTo(AdaptiveSheetDetent.hidden));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getRect(find.byType(IOS26GlassSurface)).right,
+      lessThanOrEqualTo(0),
+    );
+  });
+
   group('on Android', () {
     setUp(() => PlatformInfo.debugPlatformOverride = TargetPlatform.android);
     tearDown(() => PlatformInfo.debugPlatformOverride = null);
+
+    testWidgets('a hidden side panel goes out of sight beside a navigation '
+        'rail, not over it', (tester) async {
+      usePhone(tester, size: const Size(951, 669));
+      final controller = AdaptiveSheetController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Row(
+            children: [
+              const SizedBox(width: 80, child: ColoredBox(color: Colors.red)),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: AdaptiveSheet(
+                        controller: controller,
+                        detents: const [AdaptiveSheetDetent.fitContent],
+                        header: const SizedBox(
+                          height: 60,
+                          child: Text('header'),
+                        ),
+                        child: const SizedBox(height: 200),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Rect panel() => tester.getRect(
+        find
+            .ancestor(of: find.text('header'), matching: find.byType(Material))
+            .first,
+      );
+      expect(panel().left, 80 + 16);
+
+      unawaited(controller.animateTo(AdaptiveSheetDetent.hidden));
+      await tester.pumpAndSettle();
+
+      // Out of the sheet's area, and cut off at its edge.
+      expect(panel().right, lessThanOrEqualTo(80));
+      final area = tester.renderObject<RenderStack>(
+        find
+            .descendant(
+              of: find.byType(AdaptiveSheet),
+              matching: find.byType(Stack),
+            )
+            .first,
+      );
+      expect(area.clipBehavior, Clip.hardEdge);
+    });
 
     testWidgets('is a Material 3 sheet with a drag handle', (tester) async {
       usePhone(tester);
