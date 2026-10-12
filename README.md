@@ -1,8 +1,9 @@
 # Adaptive Platform UI
 
-> **Blue Bike fork.** Vendored from [adaptive_platform_ui 1.0.1](https://pub.dev/packages/adaptive_platform_ui/versions/1.0.1)
-> (MIT, see `LICENSE`). The upstream `img/`, `example/`, `CLAUDE.md` and `codecov.yml` were left out.
-> Changes made on top of 1.0.1 are listed under "Blue Bike fork" in `CHANGELOG.md`.
+> **Blue Bike fork.** Vendored from [adaptive_platform_ui 1.0.2](https://pub.dev/packages/adaptive_platform_ui/versions/1.0.2)
+> (MIT, see `LICENSE`), first forked from 1.0.1. The upstream `img/`, `example/`, `CLAUDE.md` and `codecov.yml` were left out.
+> Changes made on top of the release are listed under "Blue Bike fork" in `CHANGELOG.md`.
+> To take in a new release, commit it unmodified on the `vendor/adaptive_platform_ui` branch and merge that branch.
 
 [![CI](https://github.com/berkaycatak/adaptive_platform_ui/workflows/CI/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/actions)
 [![Release](https://github.com/berkaycatak/adaptive_platform_ui/workflows/Release/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/releases)
@@ -163,6 +164,32 @@ AdaptiveScaffold(
   body: YourContent(),
 )
 ```
+**Toolbar menu:**
+
+Give an action `menuItems` instead of `onPressed` and tapping it opens a menu,
+like the "more" button of a system app. On iOS 26+ it is a native `UIMenu`
+shown at the bar button; on iOS <26 an action sheet; on Android a popup menu
+at the button.
+
+```dart
+AdaptiveAppBarAction(
+  iosSymbol: 'ellipsis',
+  icon: Icons.more_horiz,
+  label: 'More',
+  menuItems: const [
+    AdaptivePopupMenuItem(label: 'Share', icon: 'square.and.arrow.up'),
+    AdaptivePopupMenuItem(label: 'Hide', icon: 'eye.slash'),
+    AdaptivePopupMenuDivider(),
+    AdaptivePopupMenuItem(label: 'Delete', icon: 'trash', isDestructive: true),
+  ],
+  onMenuItemSelected: (index, item) => handle(item.label),
+)
+```
+
+`index` is the entry's position in `menuItems`, dividers included. When an
+entry changes, e.g. "Hide" turning into "Show", the bar picks it up on the
+next build.
+
 **No AppBar or Bottom Navigation:**
 ```dart
 // If appBar and bottomNavigationBar are null, neither will be shown
@@ -213,8 +240,10 @@ slide underneath it, the bar stays where it is, and only its items change.
   The title moves to the leading edge and the page body stays clear of the
   strip. It follows the hardware through every rotation, including the one
   that puts the strip on the left, and keeps clear of the camera wherever
-  the rotation puts it. On the inner display in portrait the bars stay
-  horizontal, as they do in UIKit.
+  the rotation puts it. In Split View, an app in the left pane gets the bar
+  on its left edge, like native apps, even though the system reserves no
+  strip there; the page body and `SafeArea` stay clear of it. On the inner
+  display in portrait the bars stay horizontal, as they do in UIKit.
 - **Overflow.** When the strip runs out of room, toolbar items move, from the
   bottom up, into the system overflow menu, and the tab bar stays whole.
   Give every icon action a `label` so it has a name there:
@@ -271,6 +300,19 @@ AdaptiveButton.icon(
   onPressed: () {},
   icon: Icons.favorite,
 )
+
+// Fully circular icon button: a square box plus a capsule corner style
+// (useSmoothRectangleBorder: false) on iOS 26, borderRadius elsewhere
+SizedBox(
+  width: 44,
+  height: 44,
+  child: AdaptiveButton.sfSymbol(
+    onPressed: () {},
+    sfSymbol: const SFSymbol('plus', size: 20),
+    useSmoothRectangleBorder: false,
+    borderRadius: BorderRadius.circular(22),
+  ),
+)
 ```
 
 ### AdaptiveAlertDialog
@@ -301,7 +343,7 @@ AdaptiveAlertDialog.show(
 );
 
 // Alert dialog with text input
-final result = await AdaptiveAlertDialog.show(
+final result = await AdaptiveAlertDialog.inputShow(
   context: context,
   title: 'Enter Your Name',
   message: 'Please provide your name',
@@ -332,6 +374,12 @@ if (result != null) {
 ```
 
 ### AdaptiveContextMenu
+
+<p align="center">
+  <img src="img/context-menu-ios26.jpg" alt="iOS 26 Liquid Glass context menu" width="250"/>
+  <img src="img/context-menu-ios18.jpg" alt="iOS 18 Cupertino context menu" width="250"/>
+  <img src="img/context-menu-android.jpg" alt="Android Material context menu" width="250"/>
+</p>
 
 ```dart
 AdaptiveContextMenu(
@@ -366,6 +414,7 @@ AdaptiveContextMenu(
 )
 ```
 
+**iOS 26+**: Native context menu with Liquid Glass.
 **iOS**: Uses `CupertinoContextMenu` with preview and native animations.
 **Android**: Uses `PopupMenuButton` with Material Design styling.
 
@@ -405,6 +454,7 @@ AdaptivePopupMenuButton.text<String>(
 // Icon button with popup menu
 AdaptivePopupMenuButton.icon<String>(
   icon: 'ellipsis.circle',
+  iconSize: 28, // glyph size; the button stays `size` wide
   items: [...],
   onSelected: (index, item) { },
   buttonStyle: PopupButtonStyle.glass,
@@ -434,6 +484,22 @@ AdaptivePopupMenuButton.widget<String>(
       ],
     ),
   ),
+)
+
+// Single-select menu — mark the current value with `selected: true`.
+// iOS 14+ native menus show the system trailing checkmark; Material menus and
+// the iOS <26 action-sheet fallback show a leading checkmark.
+AdaptivePopupMenuButton.text<String>(
+  label: currentValue,
+  items: [
+    for (final option in options)
+      AdaptivePopupMenuItem(
+        label: option,
+        value: option,
+        selected: option == currentValue,
+      ),
+  ],
+  onSelected: (index, item) => setState(() => currentValue = item.value!),
 )
 ```
 
@@ -1378,7 +1444,7 @@ Currently available adaptive widgets:
 - ✅ **AdaptiveTooltip** - Platform-specific tooltips
 - ✅ **AdaptiveSnackBar** - Platform-specific notification snackbars
 - ✅ **AdaptiveAlertDialog** - Native alert dialogs with text input support
-- ✅ **AdaptiveContextMenu** - Long-press context menus with platform-specific styling
+- ✅ **AdaptiveContextMenu** - Long-press context menus, Liquid Glass `UIMenu` on iOS 26+
 - ✅ **AdaptivePopupMenuButton** - Native popup menus
 - ✅ **AdaptiveDatePicker** - Platform-specific date selection dialogs
 - ✅ **AdaptiveTimePicker** - Platform-specific time selection dialogs

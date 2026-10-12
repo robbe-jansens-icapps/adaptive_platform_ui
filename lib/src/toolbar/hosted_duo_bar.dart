@@ -98,14 +98,21 @@ class HostedDuoBar extends StatelessWidget {
                   content.backStyle,
                 )),
                 opacity: opacity,
-                child: IgnorePointer(
-                  ignoring: !interactive,
-                  child: DuoVerticalBar(
-                    leading: DuoBarBackButton(
-                      onPressed: content.back,
-                      close: content.backStyle == AdaptiveBackButtonStyle.close,
+                // See HostedTopToolbar._layer: in the semantics tree at every
+                // opacity, left out while it fades with the page leaving.
+                alwaysIncludeSemantics: true,
+                child: ExcludeSemantics(
+                  excluding: !interactive,
+                  child: IgnorePointer(
+                    ignoring: !interactive,
+                    child: DuoVerticalBar(
+                      leading: DuoBarBackButton(
+                        onPressed: content.back,
+                        close:
+                            content.backStyle == AdaptiveBackButtonStyle.close,
+                      ),
+                      regions: regions,
                     ),
-                    regions: regions,
                   ),
                 ),
               ),
@@ -113,7 +120,11 @@ class HostedDuoBar extends StatelessWidget {
               FadeTransition(
                 key: ValueKey<(String, Object)>(('adaptive_tabs', tabs.id)),
                 opacity: opacity,
-                child: DuoVerticalBar(tabBar: tabs.tabBar, regions: regions),
+                alwaysIncludeSemantics: true,
+                child: ExcludeSemantics(
+                  excluding: tabs.id != upperTabs?.id,
+                  child: DuoVerticalBar(tabBar: tabs.tabBar, regions: regions),
+                ),
               ),
           ],
         ),
@@ -130,21 +141,28 @@ class HostedDuoBar extends StatelessWidget {
     required bool interactive,
     required int reservedTabs,
   }) {
+    // See HostedTopToolbar._layer for why semantics are always included and
+    // the layer that is not in front is excluded explicitly.
     return FadeTransition(
       key: key,
       opacity: opacity,
-      child: IgnorePointer(
-        ignoring: !interactive,
-        child: DuoVerticalBar(
-          leading:
-              content.customLeading ??
-              (content.impliesBack
-                  ? const SizedBox.square(dimension: IOS26GlassCapsule.width)
-                  : null),
-          actions: content.actions,
-          reservedTabs: reservedTabs,
-          tint: content.tint,
-          regions: regions,
+      alwaysIncludeSemantics: true,
+      child: ExcludeSemantics(
+        excluding: !interactive,
+        child: IgnorePointer(
+          ignoring: !interactive,
+          child: DuoVerticalBar(
+            leading:
+                content.customLeading ??
+                (content.impliesBack
+                    ? const SizedBox.square(dimension: IOS26GlassCapsule.width)
+                    : null),
+            actions: content.actions,
+            reservedTabs: reservedTabs,
+            tint: content.tint,
+            regions: regions,
+            navigator: content.navigator,
+          ),
         ),
       ),
     );

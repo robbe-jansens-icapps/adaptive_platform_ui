@@ -608,21 +608,16 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     return Rect.fromLTWH(left, top, width, height);
   }
 
-  /// The band of the iPhone Duo vertical bar, on the side the system reserves
-  /// for it. Android has no such bar; its landscape cutouts are no reason to
-  /// move the sheet.
+  /// The band of the iPhone Duo vertical bar, on the side the pose puts it.
+  /// Android has no such bar; its landscape cutouts are no reason to move the
+  /// sheet.
   static EdgeInsets _sidesOf(BuildContext context, {required bool material}) {
     if (material) return EdgeInsets.zero;
-    final viewPadding = MediaQuery.viewPaddingOf(context);
-    return switch (DuoLayout.barSide(viewPadding)) {
-      DuoBarSide.left => EdgeInsets.only(
-        left: DuoLayout.bandWidth(viewPadding),
-      ),
-      DuoBarSide.right => EdgeInsets.only(
-        right: DuoLayout.bandWidth(viewPadding),
-      ),
-      null => EdgeInsets.zero,
-    };
+    final pose = DuoPoseScope.of(context);
+    if (pose == null) return EdgeInsets.zero;
+    return pose.onLeft
+        ? EdgeInsets.only(left: pose.bandWidth)
+        : EdgeInsets.only(right: pose.bandWidth);
   }
 
   @override

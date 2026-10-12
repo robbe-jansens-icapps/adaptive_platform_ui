@@ -17,7 +17,7 @@ class ToolbarEntry {
     required this.route,
     required this.navigator,
     required this.visible,
-    this.selected = true,
+    this.shownInPlace = true,
     this.tabBar,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
@@ -47,10 +47,12 @@ class ToolbarEntry {
   /// non-selected tab of an IndexedStack.
   final bool visible;
 
-  /// False while the page is a non-selected tab of an IndexedStack. Unlike
-  /// [visible] it stays true while the page's route is covered by another
-  /// page, so a back swipe can tell which tab it uncovers.
-  final bool selected;
+  /// False while the page is hidden in place by its parent, e.g. a
+  /// non-selected tab of an `IndexedStack`. Unlike [visible] this stays
+  /// false when a route covers the page too, which is what [ToolbarRegistry.below]
+  /// needs: a covered page has its tickers off as well, so [visible] cannot
+  /// tell the two apart.
+  final bool shownInPlace;
 
   /// The routes of the navigators this page's navigator is nested in, nearest
   /// first: for a page inside a tab or shell route, the route that hosts the
@@ -181,11 +183,13 @@ class ToolbarRegistry extends ChangeNotifier {
       final candidate = _entries[i];
       // Not filtered by [ToolbarEntry.visible]: a covered page is kept alive
       // with its tickers off until the page above starts to leave, and that
-      // is exactly the page being asked for. A tab that is not selected stays
-      // hidden when the page above leaves, so the selected one wins.
+      // is exactly the page being asked for.
+      // Tabs of an IndexedStack share one route and one navigator with the
+      // selected tab; only the one shown in place is the page underneath. A
+      // hidden tab is only the answer when no tab is shown in place.
       if (candidate.navigator == entry.navigator &&
           (candidate.route?.isActive ?? false)) {
-        if (candidate.selected) return candidate;
+        if (candidate.shownInPlace) return candidate;
         hiddenTab ??= candidate;
       }
     }

@@ -46,7 +46,8 @@ export 'src/widgets/adaptive_app.dart';
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
-export 'src/toolbar/duo_vertical_bar.dart' show DuoBarSide, DuoLayout;
+export 'src/toolbar/duo_vertical_bar.dart'
+    show DuoBarSide, DuoLayout, DuoPose, DuoPoseScope;
 export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
 export 'src/widgets/adaptive_app_bar.dart';
@@ -91,6 +92,7 @@ export 'src/widgets/ios26/ios26_switch.dart';
 export 'src/widgets/ios26/ios26_slider.dart';
 export 'src/widgets/ios26/ios26_segmented_control.dart';
 export 'src/widgets/ios26/ios26_alert_dialog.dart';
+export 'src/widgets/ios26/ios26_context_menu.dart';
 export 'src/widgets/ios26/ios26_native_search_tab_bar.dart';
 export 'src/widgets/ios26/ios26_native_tab_bar.dart';
 export 'src/widgets/ios26/ios26_scaffold_legacy.dart';

@@ -76,7 +76,7 @@ class _AdaptiveFixedToolbarState extends State<AdaptiveFixedToolbar> {
         // releases after 3.35; `of` works on every supported version.
         // ignore: deprecated_member_use
         visible: TickerMode.of(context) && Visibility.of(context),
-        selected: Visibility.of(context),
+        shownInPlace: Visibility.of(context),
       ),
     );
   }

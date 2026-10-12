@@ -94,7 +94,11 @@ void main() {
     await tester.pumpAndSettle();
 
     final glass = tester.getRect(find.byType(IOS26GlassSurface));
-    final band = DuoLayout.bandWidth(const EdgeInsets.only(right: 60));
+    final band = const DuoPose(
+      side: DuoBarSide.right,
+      stripWidth: 60,
+      reservedBySystem: true,
+    ).bandWidth;
     expect(glass.left, 8);
     expect(glass.right, _phone.width - band - 8);
   });
@@ -109,7 +113,11 @@ void main() {
     await tester.pumpAndSettle();
 
     final glass = tester.getRect(find.byType(IOS26GlassSurface));
-    final band = DuoLayout.bandWidth(const EdgeInsets.only(left: 60));
+    final band = const DuoPose(
+      side: DuoBarSide.left,
+      stripWidth: 60,
+      reservedBySystem: true,
+    ).bandWidth;
     expect(glass.left, band + 8);
     expect(glass.right, _phone.width - 8);
   });

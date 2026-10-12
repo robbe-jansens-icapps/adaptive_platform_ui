@@ -267,15 +267,21 @@ class HostedTopToolbar extends StatelessWidget {
         child: FadeTransition(
           key: const ValueKey<String>('adaptive_toolbar_back_fade'),
           opacity: back?.$2 ?? kAlwaysDismissedAnimation,
-          child: _DialogSlide(
-            driver: back?.$4,
-            child: IgnorePointer(
-              ignoring: !(back?.$3 ?? false),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: 1,
-                child: _BackButton(
-                  content: back?.$1 ?? TopToolbarContent(backStyle: style),
+          // See _layer: in the semantics tree at every opacity, left out
+          // while it fades with the page leaving.
+          alwaysIncludeSemantics: true,
+          child: ExcludeSemantics(
+            excluding: !(back?.$3 ?? false),
+            child: _DialogSlide(
+              driver: back?.$4,
+              child: IgnorePointer(
+                ignoring: !(back?.$3 ?? false),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 1,
+                  child: _BackButton(
+                    content: back?.$1 ?? TopToolbarContent(backStyle: style),
+                  ),
                 ),
               ),
             ),
@@ -309,45 +315,54 @@ class HostedTopToolbar extends StatelessWidget {
     required bool interactive,
     Animation<double>? slide,
   }) {
+    // alwaysIncludeSemantics: a layer that fades to zero during a back swipe
+    // must not drop its semantics and restore them when the swipe comes back;
+    // doing that mid gesture trips SemanticsNode._replaceChildren with the
+    // native bar inside. The layer that is not the page in front is excluded
+    // explicitly instead, so a screen reader never lands on invisible items.
     return FadeTransition(
       key: key,
       opacity: opacity,
-      child: _DialogSlide(
-        driver: slide,
-        child: IgnorePointer(
-          ignoring: !interactive,
-          child: titleOnly
-              // On iPhone Duo the title sits at the leading edge and the
-              // controls are in the trailing bar, so there is no bar to draw.
-              ? DuoToolbarTitle(
-                  title: content.title,
-                  titleWidget: content.titleOverlay,
-                )
-              : defaultTargetPlatform == TargetPlatform.iOS
-              ? IOS26NativeToolbar(
-                  title: content.title,
-                  titleWidget: content.titleOverlay,
-                  leading: content.customLeading,
-                  // The shared back button is drawn over the bar: the title
-                  // keeps clear of it all the same.
-                  reservesLeading:
-                      content.impliesBack || content.customLeading != null,
-                  leadingInset: _hasWindowControls(context) ? 62 : 0,
-                  actions: content.actions,
-                  tintColor: content.tint,
-                  showsGradient: false,
-                  // A native bar only for what only it can show: its own
-                  // title or bar buttons. Most pages have a Flutter title and
-                  // no buttons, and a platform view per page and transition
-                  // costs frames.
-                  showNativeView: content.hasNativeItems,
-                  onActionTap: (index) {
-                    if (index >= 0 && index < content.actions.length) {
-                      content.actions[index].onPressed();
-                    }
-                  },
-                )
-              : _FallbackBar(content: content),
+      alwaysIncludeSemantics: true,
+      child: ExcludeSemantics(
+        excluding: !interactive,
+        child: _DialogSlide(
+          driver: slide,
+          child: IgnorePointer(
+            ignoring: !interactive,
+            child: titleOnly
+                // On iPhone Duo the title sits at the leading edge and the
+                // controls are in the trailing bar, so there is no bar to draw.
+                ? DuoToolbarTitle(
+                    title: content.title,
+                    titleWidget: content.titleOverlay,
+                  )
+                : defaultTargetPlatform == TargetPlatform.iOS
+                ? IOS26NativeToolbar(
+                    title: content.title,
+                    titleWidget: content.titleOverlay,
+                    leading: content.customLeading,
+                    // The shared back button is drawn over the bar: the title
+                    // keeps clear of it all the same.
+                    reservesLeading:
+                        content.impliesBack || content.customLeading != null,
+                    leadingInset: _hasWindowControls(context) ? 62 : 0,
+                    actions: content.actions,
+                    tintColor: content.tint,
+                    showsGradient: false,
+                    // A native bar only for what only it can show: its own
+                    // title or bar buttons. Most pages have a Flutter title and
+                    // no buttons, and a platform view per page and transition
+                    // costs frames.
+                    showNativeView: content.hasNativeItems,
+                    onActionTap: (index) {
+                      if (index >= 0 && index < content.actions.length) {
+                        content.actions[index].onPressed();
+                      }
+                    },
+                  )
+                : _FallbackBar(content: content),
+          ),
         ),
       ),
     );
@@ -461,6 +476,7 @@ class _BackButton extends StatelessWidget {
     return SizedBox.square(
       dimension: kHostedToolbarHeight,
       child: AdaptiveButton.sfSymbol(
+        size: AdaptiveButtonSize.large,
         useSmoothRectangleBorder: false,
         onPressed: onBack ?? () => content.navigator?.maybePop(),
         // As the system draws them.
@@ -495,12 +511,15 @@ class _FallbackBar extends StatelessWidget {
               ),
             ),
             for (final action in content.actions)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: action.onPressed,
-                child: action.icon != null
-                    ? Icon(action.icon)
-                    : Text(action.title ?? ''),
+              Builder(
+                builder: (context) => CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () =>
+                      action.press(context, navigator: content.navigator),
+                  child: action.icon != null
+                      ? Icon(action.icon)
+                      : Text(action.title ?? ''),
+                ),
               ),
           ],
         ),
