@@ -7,6 +7,7 @@ import 'package:foldable/foldable.dart';
 import '../platform/platform_info.dart';
 import '../widgets/adaptive_toast.dart';
 import 'duo_vertical_bar.dart';
+import 'fold_scope.dart';
 import 'hosted_duo_bar.dart';
 import 'hosted_top_toolbar.dart';
 import 'toolbar_blend.dart';
@@ -61,7 +62,8 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     PlatformInfo.loadDevice().then((_) {
       if (mounted) setState(() {});
     });
-    // Fold readings are only needed for the camera clearance of the bar.
+    // Fold readings are only needed for the camera clearance of the bar, and
+    // for pages that lay themselves out around the fold.
     if (widget.debugFold == null && PlatformInfo.isIOS26OrHigher()) {
       Foldable.snapshot.then(_onFoldChanged).catchError((Object _) {});
       _foldSub = Foldable.changes.listen(
@@ -122,45 +124,48 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
         !hostsDuoControls &&
         MediaQuery.viewPaddingOf(context).top == 0;
 
-    return _WindowTopMargin(
-      enabled: noRoomAtTop,
-      child: RouteTransitionScope(
-        routeTransition: _blend.routeTransition,
-        child: ToolbarRegistryScope(
-          registry: _registry,
-          child: ToolbarChromeScope(
-            hostsToolbar: hostsToolbar,
-            hostsDuoControls: hostsDuoControls,
-            // Toasts show above the bars.
-            child: AdaptiveToastLayer(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Always the first child at a stable position, so toggling the
-                  // chrome never rebuilds the navigator from scratch.
-                  widget.child,
-                  if (hostsToolbar)
-                    HostedTopToolbar(
-                      blend: _blend,
-                      titleOnly: hostsDuoControls,
-                    ),
-                  if (hostsDuoControls)
-                    // The bar follows the hardware: the strip is on the right in
-                    // most poses and on the left in one landscape rotation.
-                    Positioned(
-                      top: 0,
-                      bottom: 0,
-                      left: barOnLeft ? 0 : null,
-                      right: barOnLeft ? null : 0,
-                      width: DuoLayout.bandWidth(
-                        MediaQuery.viewPaddingOf(context),
-                      ),
-                      child: HostedDuoBar(
+    return FoldScope(
+      hinge: FoldScope.hingeFrom(fold),
+      child: _WindowTopMargin(
+        enabled: noRoomAtTop,
+        child: RouteTransitionScope(
+          routeTransition: _blend.routeTransition,
+          child: ToolbarRegistryScope(
+            registry: _registry,
+            child: ToolbarChromeScope(
+              hostsToolbar: hostsToolbar,
+              hostsDuoControls: hostsDuoControls,
+              // Toasts show above the bars.
+              child: AdaptiveToastLayer(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Always the first child at a stable position, so toggling the
+                    // chrome never rebuilds the navigator from scratch.
+                    widget.child,
+                    if (hostsToolbar)
+                      HostedTopToolbar(
                         blend: _blend,
-                        regions: fold?.regions ?? const <ReservedRegion>[],
+                        titleOnly: hostsDuoControls,
                       ),
-                    ),
-                ],
+                    if (hostsDuoControls)
+                      // The bar follows the hardware: the strip is on the right in
+                      // most poses and on the left in one landscape rotation.
+                      Positioned(
+                        top: 0,
+                        bottom: 0,
+                        left: barOnLeft ? 0 : null,
+                        right: barOnLeft ? null : 0,
+                        width: DuoLayout.bandWidth(
+                          MediaQuery.viewPaddingOf(context),
+                        ),
+                        child: HostedDuoBar(
+                          blend: _blend,
+                          regions: fold?.regions ?? const <ReservedRegion>[],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

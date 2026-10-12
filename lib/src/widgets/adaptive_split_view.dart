@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../platform/platform_info.dart';
 import '../toolbar/duo_vertical_bar.dart';
+import '../toolbar/fold_scope.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
 
 /// A list and the page picked from it side by side, as `UISplitViewController`
@@ -134,8 +136,19 @@ class AdaptiveSplitView extends StatefulWidget {
   State<AdaptiveSplitView> createState() => _AdaptiveSplitViewState();
 }
 
-class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
+class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
+    with SingleTickerProviderStateMixin {
   static final _mounted = <_AdaptiveSplitViewState>[];
+
+  /// How far the divider has moved onto the fold of a half-opened foldable:
+  /// 0 where it stands on a flat window, 1 on the fold.
+  late final AnimationController _onFold;
+  late final CurvedAnimation _toFold;
+
+  /// The fold the divider is on or moving onto, and the one it moves off as
+  /// the foldable lies flat again, across the window.
+  double? _foldX;
+  bool _hasFold = false;
 
   final _masterKey = GlobalKey(debugLabel: 'AdaptiveSplitView master');
 
@@ -187,6 +200,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   void initState() {
     super.initState();
     _mounted.add(this);
+    _onFold = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _toFold = CurvedAnimation(parent: _onFold, curve: Curves.easeInOutCubic);
   }
 
   @override
@@ -199,7 +217,51 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   void dispose() {
     _mounted.remove(this);
     _forgetHistory();
+    _toFold.dispose();
+    _onFold.dispose();
     super.dispose();
+  }
+
+  /// The smallest a column gets as the divider moves onto a fold. A fold
+  /// closer to an edge than this is left alone.
+  static const _minColumnOnFold = 280.0;
+
+  /// Where a fold of a half-opened foldable runs down the window, from the
+  /// left of the window: the columns then meet on it, as on the iPhone Duo
+  /// and in the list-detail layout of Material 3. Null for a foldable that
+  /// lies flat and for a fold that runs across the window.
+  double? _foldAcross(BuildContext context) {
+    final folds = <Rect>[
+      for (final feature in MediaQuery.displayFeaturesOf(context))
+        if (feature.type == DisplayFeatureType.hinge ||
+            (feature.type == DisplayFeatureType.fold &&
+                feature.state == DisplayFeatureState.postureHalfOpened))
+          feature.bounds,
+      ?FoldScope.hingeOf(context),
+    ];
+    for (final fold in folds) {
+      if (fold.height > fold.width) return fold.center.dx;
+    }
+    return null;
+  }
+
+  /// Moves the divider onto the fold, or off it, after this frame: a fold
+  /// that comes or goes is noticed as the split view builds.
+  void _followFold(bool hasFold) {
+    if (hasFold == _hasFold) return;
+    _hasFold = hasFold;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _onFold.value = hasFold ? 1 : 0;
+      return;
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_hasFold) {
+        _onFold.forward();
+      } else {
+        _onFold.reverse();
+      }
+    });
   }
 
   /// Whether this split view shows a column beside its list right now, on the
@@ -526,7 +588,6 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     final left = bar == DuoBarSide.left ? padding.left : 0.0;
     final right = bar == DuoBarSide.right ? padding.right : 0.0;
     final width = constraints.maxWidth - left - right;
-    final masterWidth = (width * 0.38).clamp(320.0, 420.0);
     final android = PlatformInfo.isAndroid;
     // In the iPhone Duo vertical bar pose, the fixed toolbar holds the
     // controls of every page, those in the columns included: each column
@@ -537,57 +598,82 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     final dividerColor = android
         ? Theme.of(context).colorScheme.outlineVariant
         : CupertinoColors.separator.resolveFrom(context);
+    // The split view reaches the right edge of the window: beside a
+    // navigation rail, it leaves out room on the left.
+    final start =
+        MediaQuery.sizeOf(context).width - constraints.maxWidth + left;
+    final fold = _foldAcross(context);
+    final onFold =
+        fold != null &&
+        fold - start >= _minColumnOnFold &&
+        fold - start <= width - _minColumnOnFold;
+    if (onFold) _foldX = fold;
+    _followFold(onFold);
+    final detail = _column(
+      context,
+      duoControls: duoControls,
+      isDetail: true,
+      removeLeft: true,
+      removeRight: bar == DuoBarSide.right,
+      child: HeroControllerScope.none(
+        child: Navigator(
+          key: _detailKey,
+          observers: [_observer],
+          onGenerateInitialRoutes: _initialRoutes,
+          onGenerateRoute: widget.onGenerateDetailRoute,
+        ),
+      ),
+    );
+    final list = _column(
+      context,
+      duoControls: duoControls,
+      isDetail: false,
+      removeLeft: bar == DuoBarSide.left,
+      removeRight: true,
+      child: master,
+    );
+    final line = ColoredBox(color: dividerColor);
     return ColoredBox(
       color: _backgroundOf(context),
       child: Padding(
         padding: EdgeInsets.only(left: left, right: right),
-        child: Stack(
-          children: [
-            Positioned(
-              left: masterWidth + divider,
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: _column(
-                context,
-                duoControls: duoControls,
-                isDetail: true,
-                removeLeft: true,
-                removeRight: bar == DuoBarSide.right,
-                child: HeroControllerScope.none(
-                  child: Navigator(
-                    key: _detailKey,
-                    observers: [_observer],
-                    onGenerateInitialRoutes: _initialRoutes,
-                    onGenerateRoute: widget.onGenerateDetailRoute,
-                  ),
+        child: AnimatedBuilder(
+          animation: _toFold,
+          builder: (context, _) {
+            final flat = (width * 0.38).clamp(320.0, 420.0);
+            final foldX = _foldX;
+            // Centred on the fold.
+            final masterWidth = foldX == null
+                ? flat
+                : flat + (foldX - start - divider / 2 - flat) * _toFold.value;
+            return Stack(
+              children: [
+                Positioned(
+                  left: masterWidth + divider,
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: detail,
                 ),
-              ),
-            ),
-            // Over the column beside it: a page there that moves aside as
-            // another comes in goes under the list, not over it.
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: masterWidth,
-              child: _column(
-                context,
-                duoControls: duoControls,
-                isDetail: false,
-                removeLeft: bar == DuoBarSide.left,
-                removeRight: true,
-                child: master,
-              ),
-            ),
-            Positioned(
-              left: masterWidth,
-              top: 0,
-              bottom: 0,
-              width: divider,
-              child: ColoredBox(color: dividerColor),
-            ),
-          ],
+                // Over the column beside it: a page there that moves aside as
+                // another comes in goes under the list, not over it.
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: masterWidth,
+                  child: list,
+                ),
+                Positioned(
+                  left: masterWidth,
+                  top: 0,
+                  bottom: 0,
+                  width: divider,
+                  child: line,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
