@@ -20,12 +20,14 @@ import '../toolbar/toolbar_chrome_scope.dart';
 /// from the column's edge. Each column has its own bar. Until something is
 /// picked, the column shows [initialDetail], or else [placeholder].
 ///
-/// On a narrower window only [master] shows, and pages open over it as they
-/// always do. When the window narrows, such as when an iPhone Duo or an
-/// Android foldable is folded, the pages picked in the list stay on screen:
-/// they move onto the navigator the split view is on.
+/// On a narrower window only [master] shows, and the pages open over it, on
+/// the navigator the split view is on, as they always would. Folding or
+/// unfolding a foldable keeps the user where they were: as the window
+/// narrows, the pages beside the list move over it; as it widens, the pages
+/// open over the list move beside it, as deep as they were, with the list
+/// showing which one is open.
 ///
-/// Pages reach the column through [showDetail]: navigation code calls it
+/// Pages reach the split view through [showDetail]: navigation code calls it
 /// before it opens a page the usual way, and only opens the page itself when
 /// it returns false. Going back needs no change: a pop of the navigator the
 /// split view is on (the back button of Android, or `Navigator.pop` from a
@@ -65,14 +67,16 @@ class AdaptiveSplitView extends StatefulWidget {
   /// From this width on, the columns show side by side.
   final double minWidth;
 
-  /// Opens the page [settings] names in the column beside the list of the
-  /// split view in front, when it shows one: a split view that is wide, on
-  /// the page in front, and on screen (on the selected tab). A page picked in
-  /// the list replaces what the column shows; one opened from a page in the
-  /// column goes on top of it.
+  /// Opens the page [settings] names from the split view in front: one on
+  /// screen (on the selected tab), on the page in front or under the pages
+  /// it opened. On a wide window the page opens in the column beside the
+  /// list: a page picked in the list replaces what the column shows, and one
+  /// opened from a page in the column goes on top of it. On a narrow window
+  /// it opens over the list, as it would anyway, and the split view keeps it
+  /// in mind to show it beside the list once the window widens.
   ///
-  /// Returns false when no split view in front shows a column beside its
-  /// list: the caller then opens the page itself, as it always did.
+  /// Returns false when no split view is in front: the caller then opens the
+  /// page itself, as it always did.
   static bool showDetail(RouteSettings settings) {
     for (final state in _AdaptiveSplitViewState._mounted.reversed) {
       if (state._isInFront) return state._show(settings);
@@ -85,6 +89,14 @@ class AdaptiveSplitView extends StatefulWidget {
   /// side by side; null otherwise. Lets the list show which item is open.
   static RouteSettings? selectedDetailOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_SplitScope>()?.selected;
+
+  /// Whether [context] is in the list of a split view that shows its columns
+  /// side by side. Its rows open a page beside the list rather than over it,
+  /// so they go without the chevron of a row that opens a page.
+  static bool isInList(BuildContext context) {
+    final column = context.dependOnInheritedWidgetOfExactType<_ColumnScope>();
+    return column != null && !column.isDetail;
+  }
 
   /// Whether [context] is in a column of a split view that shows its columns
   /// side by side. A page there keeps its own bar instead of handing it to a
@@ -151,6 +163,14 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// page to show.
   bool _showsPlaceholder = false;
 
+  /// The pages opened over the list on a narrow window, from the one picked
+  /// in the list up: they move beside it once the window widens.
+  final _pagesOver = <Route<dynamic>>[];
+
+  /// The pages the column starts with as it comes back: those that were
+  /// open over the list.
+  List<RouteSettings>? _restored;
+
   /// One entry on the split view's own route for every page of the column
   /// above its first: a pop of the navigator the split view is on then goes
   /// back in the column first.
@@ -181,14 +201,21 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// Whether this split view shows a column beside its list right now, on the
   /// page in front, on screen.
   bool get _isInFront {
-    if (!mounted || !_wide || _detailKey.currentState == null) return false;
-    if (!(_route?.isCurrent ?? true)) return false;
+    if (!mounted) return false;
+    _pagesOver.removeWhere((page) => !page.isActive);
     // A tab that is not selected keeps its page, out of sight.
-    return TickerMode.getValuesNotifier(context).value.enabled &&
-        Visibility.of(context);
+    if (!Visibility.of(context)) return false;
+    // Under the pages it opened over the list on a narrow window.
+    if (!_wide && _pagesOver.isNotEmpty && _pagesOver.last.isCurrent) {
+      return true;
+    }
+    if (_wide && _detailKey.currentState == null) return false;
+    return (_route?.isCurrent ?? true) &&
+        TickerMode.getValuesNotifier(context).value.enabled;
   }
 
   bool _show(RouteSettings settings) {
+    if (!_wide) return _showOver(settings);
     final navigator = _detailKey.currentState;
     if (navigator == null) return false;
     if (_pressInMaster) {
@@ -202,6 +229,21 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
       if (route == null) return false;
       navigator.push(route);
     }
+    return true;
+  }
+
+  /// On a narrow window: opens the page over the list, and keeps it in mind.
+  bool _showOver(RouteSettings settings) {
+    final navigator = _route?.navigator;
+    final route = widget.onGenerateDetailRoute(settings);
+    if (navigator == null || route == null) return false;
+    // From the list itself, the page picked in it; else one opened from it.
+    if (_pagesOver.isEmpty) {
+      _selected = settings;
+      _picked = true;
+    }
+    _pagesOver.add(route);
+    navigator.push(route);
     return true;
   }
 
@@ -233,6 +275,16 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   );
 
   List<Route<dynamic>> _initialRoutes(NavigatorState _, String _) {
+    final restored = _restored;
+    _restored = null;
+    if (restored != null && restored.isNotEmpty) {
+      _showsPlaceholder = false;
+      return [
+        _shownAtOnce(restored.first),
+        for (final settings in restored.skip(1))
+          ?widget.onGenerateDetailRoute(settings),
+      ];
+    }
     final selected = _selected;
     _showsPlaceholder = selected == null;
     return [selected == null ? _placeholderRoute() : _shownAtOnce(selected)];
@@ -309,8 +361,9 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   // Narrowing ----------------------------------------------------------------
 
   /// The window got too narrow for the columns: the pages picked in the list
-  /// move onto the navigator the split view is on, so they stay on screen.
-  /// Called as the column goes, during layout: the rest waits for the frame.
+  /// move over it, onto the navigator the split view is on, so they stay on
+  /// screen. They are there at once, and go back as pages do. Called as the
+  /// column goes, during layout: the rest waits for the frame.
   void _collapse() {
     final pages = _picked
         ? [for (final page in _details) page.settings]
@@ -323,13 +376,48 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
       if (!mounted) return;
       _forgetHistory();
       final navigator = _route?.navigator;
-      if (_wide || navigator == null) return;
+      // Not over another page that covers the list.
+      if (_wide || navigator == null || !(_route?.isCurrent ?? false)) return;
       for (final settings in pages) {
-        final route = widget.onGenerateDetailRoute(settings);
-        if (route != null) navigator.push(route);
+        final route = _arrivedAt(widget.onGenerateDetailRoute(settings));
+        if (route == null) continue;
+        if (_pagesOver.isEmpty) {
+          _selected = settings;
+          _picked = true;
+        }
+        _pagesOver.add(route);
+        navigator.push(route);
       }
     });
   }
+
+  /// The window got wide enough for the columns: the pages open over the
+  /// list move beside it, as deep as they were, the list showing which one
+  /// is open, so the user lands where they left off. Only when they are the
+  /// pages in front: under another page they stay where they are. Called as
+  /// the column comes, during layout: the pages over the list go after it.
+  void _expand() {
+    _pagesOver.removeWhere((page) => !page.isActive);
+    final pages = [..._pagesOver];
+    _pagesOver.clear();
+    if (pages.isEmpty || !pages.last.isCurrent) return;
+    _restored = [for (final page in pages) page.settings];
+    _selected = pages.first.settings;
+    _picked = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      for (final page in pages.reversed) {
+        if (page.isActive) page.navigator?.removeRoute(page);
+      }
+    });
+  }
+
+  /// [route] there at once, as if it had been open all along, and leaving
+  /// as it would.
+  Route<dynamic>? _arrivedAt(Route<dynamic>? route) => switch (route) {
+    MaterialPageRoute<dynamic>(:final builder, :final settings) =>
+      _ArrivedPageRoute<dynamic>(builder: builder, settings: settings),
+    _ => route,
+  };
 
   // Layout -------------------------------------------------------------------
 
@@ -339,14 +427,46 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
           ? Theme.of(context).colorScheme.surface
           : CupertinoColors.systemGroupedBackground.resolveFrom(context));
 
+  /// How much narrower than the window the split view was at its last
+  /// layout, such as beside a navigation rail.
+  double _inset = 0;
+
+  /// The width of its last layout.
+  double? _laidOutWidth;
+
+  /// Whether the window widened while the split view was out of view, and
+  /// it has not been laid out since.
+  bool _widenedUnseen = false;
+
   @override
   Widget build(BuildContext context) {
+    // Under the pages it opened over the list, the split view is not laid
+    // out, so it learns of a window that widens here: by the width it had to
+    // spare at its last layout, it can show the pages beside the list.
+    final window = MediaQuery.sizeOf(context).width;
+    if (!_wide && _pagesOver.isNotEmpty && window - _inset >= widget.minWidth) {
+      _wide = true;
+      _widenedUnseen = true;
+      _expand();
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= widget.minWidth;
+        // Rebuilt out of view, it is still handed the width of its last
+        // layout, on the narrow window: that width says nothing new.
+        final stale = _widenedUnseen && constraints.maxWidth == _laidOutWidth;
+        if (!stale) {
+          _widenedUnseen = false;
+          _laidOutWidth = constraints.maxWidth;
+          _inset = window - constraints.maxWidth;
+        }
+        final wide = stale ? _wide : constraints.maxWidth >= widget.minWidth;
         if (wide != _wide) {
           _wide = wide;
-          if (!wide) _collapse();
+          if (wide) {
+            _expand();
+          } else {
+            _collapse();
+          }
         }
         final master = KeyedSubtree(key: _masterKey, child: widget.master);
         if (!wide) return master;
@@ -467,6 +587,18 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
       ),
     );
   }
+}
+
+/// A page that is there at once, as if it had been open all along, and that
+/// leaves as the page it stands for would.
+class _ArrivedPageRoute<T> extends MaterialPageRoute<T> {
+  _ArrivedPageRoute({required super.builder, super.settings});
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Duration get reverseTransitionDuration => super.transitionDuration;
 }
 
 /// Follows the pages of the column.

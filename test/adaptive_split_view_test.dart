@@ -203,6 +203,67 @@ void main() {
     expect(find.text('Item B'), findsOneWidget);
   });
 
+  testWidgets('a widening window lands where the user was: the pages open '
+      'over the list move beside it, as deep as they were', (tester) async {
+    await pumpSplit(tester, narrow);
+    await tester.tap(find.text('Item B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More B'));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = wide;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detail B+'), findsOneWidget);
+    expect(find.text('Item A'), findsOneWidget);
+    // ignore: avoid_print
+    print(
+      'DEBUG selected=${AdaptiveSplitView.selectedDetailOf(contexts['master']!)?.arguments} tiles=${tester.widgetList<ListTile>(find.byType(ListTile)).map((t) => t.selected).toList()}',
+    );
+    expect(isSelected(tester, 'B'), isTrue);
+    expect(
+      AdaptiveSplitView.isInColumn(contexts['Detail B+']!),
+      isTrue,
+      reason: 'in the column, not over the list',
+    );
+
+    goBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Detail B'), findsOneWidget);
+    expect(find.text('Item A'), findsOneWidget);
+  });
+
+  testWidgets('folding and unfolding again lands where the user was', (
+    tester,
+  ) async {
+    await pumpSplit(tester, wide);
+    await tester.tap(find.text('Item C'));
+    await tester.pump();
+    await tester.tap(find.text('More C'));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = narrow;
+    await tester.pumpAndSettle();
+    expect(find.text('Detail C+'), findsOneWidget);
+    expect(find.text('Item C'), findsNothing);
+
+    tester.view.physicalSize = wide;
+    await tester.pumpAndSettle();
+    expect(find.text('Detail C+'), findsOneWidget);
+    expect(find.text('Item A'), findsOneWidget);
+    expect(isSelected(tester, 'C'), isTrue);
+  });
+
+  testWidgets('tells its list apart from the column beside it', (tester) async {
+    await pumpSplit(tester, wide);
+    expect(AdaptiveSplitView.isInList(contexts['master']!), isTrue);
+    expect(AdaptiveSplitView.isInList(contexts['Detail A']!), isFalse);
+
+    tester.view.physicalSize = narrow;
+    await tester.pumpAndSettle();
+    expect(AdaptiveSplitView.isInList(contexts['master']!), isFalse);
+  });
+
   testWidgets('takes no pages while another page covers it', (tester) async {
     await pumpSplit(tester, wide);
     navigatorKey.currentState!.push(
