@@ -138,7 +138,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   static final _mounted = <_AdaptiveSplitViewState>[];
 
   final _masterKey = GlobalKey(debugLabel: 'AdaptiveSplitView master');
-  final _detailKey = GlobalKey<NavigatorState>(
+
+  /// The navigator of the column. A new one for every column that comes, so
+  /// that it starts from where the user is, not from what an earlier column
+  /// showed.
+  var _detailKey = GlobalKey<NavigatorState>(
     debugLabel: 'AdaptiveSplitView detail',
   );
   late final _observer = _DetailObserver(this);
@@ -149,8 +153,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// The pages of the column, from its first one up.
   final _details = <Route<dynamic>>[];
 
-  /// The page picked in the list, or the [AdaptiveSplitView.initialDetail]
-  /// shown before anything was.
+  /// While the columns show side by side: the page picked in the list, or
+  /// the [AdaptiveSplitView.initialDetail] shown before anything was.
   RouteSettings? _selected;
 
   /// Whether the page beside the list was picked, rather than shown first.
@@ -167,8 +171,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// in the list up: they move beside it once the window widens.
   final _pagesOver = <Route<dynamic>>[];
 
-  /// The pages the column starts with as it comes back: those that were
-  /// open over the list.
+  /// The pages the user is on, waiting for a place: in the column that
+  /// comes next, or else over the list.
   List<RouteSettings>? _restored;
 
   /// One entry on the split view's own route for every page of the column
@@ -237,11 +241,6 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     final navigator = _route?.navigator;
     final route = widget.onGenerateDetailRoute(settings);
     if (navigator == null || route == null) return false;
-    // From the list itself, the page picked in it; else one opened from it.
-    if (_pagesOver.isEmpty) {
-      _selected = settings;
-      _picked = true;
-    }
     _pagesOver.add(route);
     navigator.push(route);
     return true;
@@ -389,33 +388,36 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   void _collapse() {
     // Pages picked in the list, or opened from the page shown first; or
     // those still on their way into a column that is gone again.
-    final restored = _restored;
-    _restored = null;
     final pages =
-        restored ??
+        _restored ??
         (_picked || _details.length > 1
             ? [
                 for (final page in _details)
                   if (page.settings.name != _placeholderName) page.settings,
               ]
             : const <RouteSettings>[]);
+    _restored = pages.isEmpty ? null : pages;
     _details.clear();
     _selected = null;
     _picked = false;
     _showsPlaceholder = false;
+    // The column goes; one that comes back starts from where the user is.
+    _detailKey = GlobalKey<NavigatorState>(
+      debugLabel: 'AdaptiveSplitView detail',
+    );
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _forgetHistory();
+      _syncHistory();
+      // A column that came back in the meantime took the pages.
+      final pages = _restored;
+      if (_wide || pages == null) return;
+      _restored = null;
       final navigator = _route?.navigator;
       // Not over another page that covers the list.
-      if (_wide || navigator == null || !(_route?.isCurrent ?? false)) return;
+      if (navigator == null || !(_route?.isCurrent ?? false)) return;
       for (final settings in pages) {
         final route = _arrivedAt(widget.onGenerateDetailRoute(settings));
         if (route == null) continue;
-        if (_pagesOver.isEmpty) {
-          _selected = settings;
-          _picked = true;
-        }
         _pagesOver.add(route);
         navigator.push(route);
       }
@@ -431,18 +433,23 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     _pagesOver.removeWhere((page) => !page.isActive);
     final pages = [..._pagesOver];
     _pagesOver.clear();
-    if (pages.isEmpty || !pages.last.isCurrent) return;
-    _restored = [for (final page in pages) page.settings];
-    _selected = pages.first.settings;
-    _picked = true;
-    _moving
-      ..clear()
-      ..addAll(pages);
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      for (final page in pages.reversed) {
-        if (page.isActive) page.navigator?.removeRoute(page);
-      }
-    });
+    if (pages.isNotEmpty && pages.last.isCurrent) {
+      _restored = [for (final page in pages) page.settings];
+      _moving
+        ..clear()
+        ..addAll(pages);
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        for (final page in pages.reversed) {
+          if (page.isActive) page.navigator?.removeRoute(page);
+        }
+      });
+    }
+    // The column starts with what the user is on, or else with the page
+    // shown first: nothing picked on the narrow window counts once the user
+    // went back to the list.
+    final restored = _restored;
+    _selected = restored?.first;
+    _picked = restored != null;
   }
 
   /// [route] there at once, as if it had been open all along, and leaving

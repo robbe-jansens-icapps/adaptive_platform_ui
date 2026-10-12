@@ -292,6 +292,53 @@ void main() {
     expect(isSelected(tester, 'A'), isTrue);
   });
 
+  testWidgets('a page the user left on the narrow window does not come back '
+      'as the window widens: the page shown first does', (tester) async {
+    await pumpSplit(tester, narrow);
+    await tester.tap(find.text('Item B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More B'));
+    await tester.pumpAndSettle();
+    goBack();
+    await tester.pumpAndSettle();
+    goBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Item B'), findsOneWidget);
+
+    tester.view.physicalSize = wide;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detail A'), findsOneWidget);
+    expect(find.text('Detail B'), findsNothing);
+    expect(find.text('Detail B+'), findsNothing);
+    expect(isSelected(tester, 'A'), isTrue);
+    expect(isSelected(tester, 'B'), isFalse);
+  });
+
+  testWidgets('shows the page shown first as open, also when it arrives with '
+      'the list after the column', (tester) async {
+    tester.view.physicalSize = wide;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Widget app(RouteSettings? initial) => MaterialApp(
+      navigatorKey: navigatorKey,
+      home: AdaptiveSplitView(
+        onGenerateDetailRoute: onGenerateRoute,
+        initialDetail: initial,
+        master: master(),
+      ),
+    );
+    await tester.pumpWidget(app(null));
+    await tester.pumpAndSettle();
+    expect(find.text('Detail A'), findsNothing);
+
+    await tester.pumpWidget(app(detail('A')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detail A'), findsOneWidget);
+    expect(isSelected(tester, 'A'), isTrue);
+  });
+
   testWidgets('tells its list apart from the column beside it', (tester) async {
     await pumpSplit(tester, wide);
     expect(AdaptiveSplitView.isInList(contexts['master']!), isTrue);
