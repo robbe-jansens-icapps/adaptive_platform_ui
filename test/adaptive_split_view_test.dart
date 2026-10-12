@@ -254,6 +254,44 @@ void main() {
     expect(isSelected(tester, 'C'), isTrue);
   });
 
+  testWidgets('a window that narrows again on its way, as a fold can, still '
+      'lands where the user was, the list showing it', (tester) async {
+    await pumpSplit(tester, narrow);
+    await tester.tap(find.text('Item B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More B'));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = wide;
+    await tester.pump();
+    tester.view.physicalSize = const Size(600, 800);
+    await tester.pump();
+    tester.view.physicalSize = wide;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Detail B+'), findsOneWidget);
+    expect(find.text('Item A'), findsOneWidget);
+    expect(isSelected(tester, 'B'), isTrue);
+    expect(isSelected(tester, 'A'), isFalse);
+  });
+
+  testWidgets('folding keeps the pages opened from the page shown first', (
+    tester,
+  ) async {
+    await pumpSplit(tester, wide);
+    await tester.tap(find.text('More A'));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = narrow;
+    await tester.pumpAndSettle();
+    expect(find.text('Detail A+'), findsOneWidget);
+
+    tester.view.physicalSize = wide;
+    await tester.pumpAndSettle();
+    expect(find.text('Detail A+'), findsOneWidget);
+    expect(isSelected(tester, 'A'), isTrue);
+  });
+
   testWidgets('tells its list apart from the column beside it', (tester) async {
     await pumpSplit(tester, wide);
     expect(AdaptiveSplitView.isInList(contexts['master']!), isTrue);

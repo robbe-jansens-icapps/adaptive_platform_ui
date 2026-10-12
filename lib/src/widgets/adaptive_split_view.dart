@@ -267,7 +267,10 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     );
   }
 
+  static const _placeholderName = 'AdaptiveSplitView.placeholder';
+
   Route<dynamic> _placeholderRoute() => PageRouteBuilder<void>(
+    settings: const RouteSettings(name: _placeholderName),
     pageBuilder: (context, _, _) =>
         widget.placeholder ?? ColoredBox(color: _backgroundOf(context)),
     transitionDuration: Duration.zero,
@@ -293,6 +296,13 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// Shows [AdaptiveSplitView.initialDetail] in the column, which arrives
   /// with the list once that has loaded.
   void _showInitialDetail() {
+    // The column comes back with the pages that were open over the list.
+    final restored = _restored;
+    if (restored != null && restored.isNotEmpty) {
+      _selected = restored.first;
+      _picked = true;
+      return;
+    }
     final initial = _selected ??= widget.initialDetail;
     if (!_showsPlaceholder || initial == null) return;
     _showsPlaceholder = false;
@@ -307,7 +317,19 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
 
   // The pages of the column ------------------------------------------------
 
-  void _onDetailsChanged() => scheduleMicrotask(_syncHistory);
+  void _onDetailsChanged() => scheduleMicrotask(() {
+    _syncHistory();
+    _syncSelection();
+  });
+
+  /// The list shows the page the column starts with as the one open,
+  /// whatever brought it there.
+  void _syncSelection() {
+    if (!mounted || !_wide || _details.isEmpty) return;
+    final first = _details.first.settings;
+    if (first.name == _placeholderName || identical(first, _selected)) return;
+    setState(() => _selected = first);
+  }
 
   void _syncHistory() {
     if (!mounted) return;
@@ -365,9 +387,18 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// screen. They are there at once, and go back as pages do. Called as the
   /// column goes, during layout: the rest waits for the frame.
   void _collapse() {
-    final pages = _picked
-        ? [for (final page in _details) page.settings]
-        : const <RouteSettings>[];
+    // Pages picked in the list, or opened from the page shown first; or
+    // those still on their way into a column that is gone again.
+    final restored = _restored;
+    _restored = null;
+    final pages =
+        restored ??
+        (_picked || _details.length > 1
+            ? [
+                for (final page in _details)
+                  if (page.settings.name != _placeholderName) page.settings,
+              ]
+            : const <RouteSettings>[]);
     _details.clear();
     _selected = null;
     _picked = false;
@@ -404,6 +435,9 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     _restored = [for (final page in pages) page.settings];
     _selected = pages.first.settings;
     _picked = true;
+    _moving
+      ..clear()
+      ..addAll(pages);
     SchedulerBinding.instance.addPostFrameCallback((_) {
       for (final page in pages.reversed) {
         if (page.isActive) page.navigator?.removeRoute(page);
@@ -431,12 +465,10 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
   /// layout, such as beside a navigation rail.
   double _inset = 0;
 
-  /// The width of its last layout.
-  double? _laidOutWidth;
-
-  /// Whether the window widened while the split view was out of view, and
-  /// it has not been laid out since.
-  bool _widenedUnseen = false;
+  /// The pages on their way from over the list into the column. Until they
+  /// are gone from over it, the split view is out of view, and what its
+  /// layout says of the window is out of date.
+  final _moving = <Route<dynamic>>[];
 
   @override
   Widget build(BuildContext context) {
@@ -446,19 +478,16 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView> {
     final window = MediaQuery.sizeOf(context).width;
     if (!_wide && _pagesOver.isNotEmpty && window - _inset >= widget.minWidth) {
       _wide = true;
-      _widenedUnseen = true;
       _expand();
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Rebuilt out of view, it is still handed the width of its last
-        // layout, on the narrow window: that width says nothing new.
-        final stale = _widenedUnseen && constraints.maxWidth == _laidOutWidth;
-        if (!stale) {
-          _widenedUnseen = false;
-          _laidOutWidth = constraints.maxWidth;
-          _inset = window - constraints.maxWidth;
-        }
+        // Rebuilt while still out of view, it is handed the width of its
+        // last layout, on the narrow window, or of a window on its way: that
+        // width says nothing new.
+        _moving.removeWhere((page) => !page.isActive);
+        final stale = _moving.isNotEmpty;
+        if (!stale) _inset = window - constraints.maxWidth;
         final wide = stale ? _wide : constraints.maxWidth >= widget.minWidth;
         if (wide != _wide) {
           _wide = wide;
