@@ -5,6 +5,13 @@ and the credits. Names are GitHub handles. The "Unreleased" section collects
 everything merged since the last release and is folded into CHANGELOG.md when
 the release is cut.
 
+## Unreleased
+
+| Who | What | Where |
+| --- | --- | --- |
+| @monster-echo | Found that a two-pane detail pane inside the tab scaffold lost the tab bar, and pinpointed the owner lookup to fix | #173 |
+| @keithcheehui | `badgeCount` on toolbar actions, drawn by the Duo capsule, and on iOS 18 and Android | #174 |
+
 ## 1.0.2
 
 | Who | What | Where |
