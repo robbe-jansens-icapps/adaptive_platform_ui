@@ -3,7 +3,7 @@
 > **Blue Bike fork.** Forked from [adaptive_platform_ui 1.0.2](https://pub.dev/packages/adaptive_platform_ui/versions/1.0.2)
 > (MIT, see `LICENSE`), first from 1.0.1. The upstream `img/`, `example/`, `CLAUDE.md` and `codecov.yml` were left out.
 > Changes made on top of the release are listed under "Blue Bike fork" in `CHANGELOG.md`.
-> To take in a new release, commit it unmodified on the `vendor/upstream` branch and merge that branch into `main`.
+> To take in upstream changes, merge them from [berkaycatak/adaptive_platform_ui](https://github.com/berkaycatak/adaptive_platform_ui) into `main`. The folders left out come up as modify/delete conflicts: keep them deleted.
 
 [![CI](https://github.com/berkaycatak/adaptive_platform_ui/workflows/CI/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/actions)
 [![Release](https://github.com/berkaycatak/adaptive_platform_ui/workflows/Release/badge.svg)](https://github.com/berkaycatak/adaptive_platform_ui/releases)
