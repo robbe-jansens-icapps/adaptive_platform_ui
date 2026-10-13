@@ -57,6 +57,44 @@ void main() {
     expect(topOf(tester, 0), top + 16);
   });
 
+  testWidgets('takes new insets on a page that was never laid out, as one '
+      'that comes in covered by another', (tester) async {
+    useScreen(tester);
+    final insetTop = ValueNotifier(top);
+    addTearDown(insetTop.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    Route<void> atOnce(Widget page) => PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => page,
+      transitionDuration: Duration.zero,
+    );
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigator, home: const Text('home')),
+    );
+    navigator.currentState!
+      ..push(
+        atOnce(
+          ValueListenableBuilder<double>(
+            valueListenable: insetTop,
+            builder: (context, top, _) => AdaptiveScrollInsets(
+              top: top,
+              bottom: bottom,
+              child: ListView(children: [rows(20)]),
+            ),
+          ),
+        ),
+      )
+      ..push(atOnce(const ColoredBox(color: Colors.white)));
+    await tester.pump();
+
+    insetTop.value = top + 20;
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(topOf(tester, 0), top + 20);
+  });
+
   testWidgets('scrolls its content under the top bar', (tester) async {
     useScreen(tester);
     await pumpInsets(tester, ListView(children: [rows(20)]));

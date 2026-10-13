@@ -105,11 +105,18 @@ class _InsetScrollController extends ScrollController {
 
   void updateInsets({required double top, required double bottom}) {
     if (top == this.top && bottom == this.bottom) return;
+    final oldTop = this.top;
     this.top = top;
     this.bottom = bottom;
-    // The scroll views lay out again, with the new range.
+    // The scroll views lay out again, with the new range. One not laid out yet,
+    // such as on a page that came in covered, has no range to update: it only
+    // moves to where it now rests.
     for (final position in positions) {
-      position.notifyListeners();
+      if (position.hasContentDimensions) {
+        position.notifyListeners();
+      } else if (position.pixels == -oldTop) {
+        position.correctPixels(-top);
+      }
     }
   }
 
