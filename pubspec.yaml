@@ -1,7 +1,7 @@
 name: adaptive_platform_ui
 description: "Adaptive platform-specific widgets for Flutter. Auto renders native iOS 26+ liquid glass designs, traditional Cupertino widgets for older iOS versions, Material Design for Android."
 version: 1.0.2
-# Vendored fork of adaptive_platform_ui 1.0.2 for Blue Bike; see "Blue Bike fork" in README.md.
+# Blue Bike fork of adaptive_platform_ui 1.0.2; see "Blue Bike fork" in README.md.
 publish_to: none
 homepage: https://github.com/berkaycatak/adaptive_platform_ui
 

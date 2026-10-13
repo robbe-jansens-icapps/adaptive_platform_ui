@@ -181,8 +181,8 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
     if (PlatformInfo.isIOS26OrHigher()) {
       card = IOS26GlassSurface(
         cornerRadius: 26,
-        // Light enough to read on whatever is behind it.
-        tint: widget.color ?? Colors.white.withValues(alpha: 0.85),
+        // Light enough to read on whatever is behind it, and still glass.
+        tint: (widget.color ?? Colors.white).withValues(alpha: 0.85),
         child: content,
       );
     } else {
