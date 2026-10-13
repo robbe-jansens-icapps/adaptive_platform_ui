@@ -7,6 +7,7 @@ import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
+import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
@@ -120,7 +121,7 @@ class HostedTopToolbar extends StatelessWidget {
   }
 
   Widget _build(BuildContext context, Widget? _) {
-    final topInset = MediaQuery.viewPaddingOf(context).top;
+    final topInset = _barTop(context);
     final upperEntry = blend.upper;
     final lowerEntry = blend.lower;
     final upper = TopToolbarContent.of(upperEntry, titleOnly: titleOnly);
@@ -259,7 +260,10 @@ class HostedTopToolbar extends StatelessWidget {
       // Keyed by its look, so a back button carries on as the same control
       // from one page to the next.
       key: ValueKey<Object>(('adaptive_toolbar_back', style)),
-      left: 16 + (_hasWindowControls(context) ? 62 : 0),
+      left:
+          16 +
+          (_hasWindowControls(context) ? 62 : 0) +
+          (DuoTopStripScope.of(context)?.clusterLeft ?? 0),
       top: topInset,
       bottom: 0,
       child: Offstage(
@@ -374,6 +378,13 @@ class HostedTopToolbar extends StatelessWidget {
   static bool _hasWindowControls(BuildContext context) =>
       PlatformInfo.isIPad && _isWindowed(context);
 
+  /// Where the bar starts: below the status bar, or in the iPhone Duo's top
+  /// strip, beside its status cluster.
+  static double _barTop(BuildContext context) =>
+      DuoTopStripScope.of(context) != null
+      ? DuoTopStrip.barTop
+      : MediaQuery.viewPaddingOf(context).top;
+
   /// Whether the app runs in a window smaller than the display.
   static bool _isWindowed(BuildContext context) {
     final display = View.of(context).display.size;
@@ -438,9 +449,7 @@ class _Backdrop extends StatelessWidget {
           builder: (context, constraints) => Container(
             // Runs on below the bar for a smooth fade into the content.
             height:
-                MediaQuery.viewPaddingOf(context).top +
-                kHostedToolbarHeight +
-                30,
+                HostedTopToolbar._barTop(context) + kHostedToolbarHeight + 30,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -496,32 +505,39 @@ class _FallbackBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strip = DuoTopStripScope.of(context);
     return Align(
       alignment: Alignment.bottomCenter,
       child: SizedBox(
         height: kHostedToolbarHeight,
-        child: Row(
-          children: [
-            if (content.customLeading != null) content.customLeading!,
-            Expanded(
-              child: Center(
-                child:
-                    content.titleOverlay ??
-                    (content.title != null ? Text(content.title!) : null),
-              ),
-            ),
-            for (final action in content.actions)
-              Builder(
-                builder: (context) => CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  onPressed: () =>
-                      action.press(context, navigator: content.navigator),
-                  child: action.icon != null
-                      ? Icon(action.icon)
-                      : Text(action.title ?? ''),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: strip?.clusterLeft ?? 0,
+            right: strip?.clusterRight ?? 0,
+          ),
+          child: Row(
+            children: [
+              if (content.customLeading != null) content.customLeading!,
+              Expanded(
+                child: Center(
+                  child:
+                      content.titleOverlay ??
+                      (content.title != null ? Text(content.title!) : null),
                 ),
               ),
-          ],
+              for (final action in content.actions)
+                Builder(
+                  builder: (context) => CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () =>
+                        action.press(context, navigator: content.navigator),
+                    child: action.icon != null
+                        ? Icon(action.icon)
+                        : Text(action.title ?? ''),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

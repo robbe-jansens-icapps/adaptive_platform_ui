@@ -6,6 +6,7 @@ import 'package:foldable/foldable.dart';
 import '../../platform/platform_info.dart';
 import '../../platform/system_vertical_bar.dart';
 import '../../style/sf_symbol.dart';
+import '../../toolbar/duo_top_strip.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/toolbar_chrome_scope.dart';
 import '../adaptive_app_bar.dart';
@@ -344,6 +345,17 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                 SystemVerticalBarEdge.unknown,
           );
     final duoVerticalPose = pose != null;
+    // The iPhone Duo held upright: the bar goes in the strip along the top.
+    final stripScope = DuoTopStripScope.maybeOf(context);
+    final strip = stripScope != null
+        ? stripScope.strip
+        : pose == null && (_fold?.isFoldable ?? false)
+        ? DuoTopStrip.resolve(
+            viewPadding: viewPadding,
+            size: MediaQuery.sizeOf(context),
+            fold: _fold,
+          )
+        : null;
     // Nothing above reserved the strip (the leading Split View pane): add it
     // the way UIKit does for a native app, so the body clears the bar. A
     // scaffold nested in this one, or one under a host, finds the inset
@@ -395,6 +407,8 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
           ? 0.0
           : duoVerticalPose
           ? kDuoTitleBandHeight
+          : strip != null
+          ? strip.overhang
           : kToolbarContentHeight;
       final page = bodyContent;
       bodyContent = Padding(
@@ -459,23 +473,26 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                       ),
                     ],
                   )
-                : IOS26NativeToolbar(
-                    title: widget.title,
-                    leading: duoVerticalPose
-                        ? null
-                        : (widget.leading ?? heroLeading),
-                    showNativeView: showNativeView,
-                    actions: duoVerticalPose ? null : widget.actions,
-                    tintColor: widget.tintColor,
-                    titleWidget: widget.titleWidget,
-                    onActionTap: (index) {
-                      // Call the appropriate action callback
-                      if (widget.actions != null &&
-                          index >= 0 &&
-                          index < widget.actions!.length) {
-                        widget.actions![index].onPressed();
-                      }
-                    },
+                : DuoTopStripScope(
+                    strip: strip,
+                    child: IOS26NativeToolbar(
+                      title: widget.title,
+                      leading: duoVerticalPose
+                          ? null
+                          : (widget.leading ?? heroLeading),
+                      showNativeView: showNativeView,
+                      actions: duoVerticalPose ? null : widget.actions,
+                      tintColor: widget.tintColor,
+                      titleWidget: widget.titleWidget,
+                      onActionTap: (index) {
+                        // Call the appropriate action callback
+                        if (widget.actions != null &&
+                            index >= 0 &&
+                            index < widget.actions!.length) {
+                          widget.actions![index].onPressed();
+                        }
+                      },
+                    ),
                   ),
           ),
         // iPhone Duo: controls in a vertical bar on the trailing edge

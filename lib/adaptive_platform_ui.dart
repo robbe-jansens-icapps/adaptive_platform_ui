@@ -46,6 +46,7 @@ export 'src/widgets/adaptive_app.dart';
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
+export 'src/toolbar/duo_top_strip.dart' show DuoTopStrip, DuoTopStripScope;
 export 'src/toolbar/duo_vertical_bar.dart'
     show DuoBarSide, DuoLayout, DuoPose, DuoPoseScope;
 export 'src/toolbar/toolbar_chrome_scope.dart';

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../platform/platform_info.dart';
+import '../toolbar/duo_top_strip.dart';
 import '../toolbar/duo_vertical_bar.dart';
 import '../toolbar/fold_scope.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
@@ -705,16 +706,22 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         state: this,
         isDetail: isDetail,
         duoControls: duoControls,
-        // The pages draw their own bars, or only their titles while the
-        // vertical bar holds their controls.
-        child: ToolbarChromeScope(
-          hostsToolbar: false,
-          hostsDuoControls: duoControls,
-          child: MediaQuery.removePadding(
-            context: context,
-            removeLeft: removeLeft,
-            removeRight: removeRight,
-            child: child,
+        // The iPhone Duo's status cluster is only over the column at its side.
+        child: DuoTopStripScope(
+          strip: DuoTopStripScope.of(
+            context,
+          )?.within(left: !isDetail, right: isDetail),
+          // The pages draw their own bars, or only their titles while the
+          // vertical bar holds their controls.
+          child: ToolbarChromeScope(
+            hostsToolbar: false,
+            hostsDuoControls: duoControls,
+            child: MediaQuery.removePadding(
+              context: context,
+              removeLeft: removeLeft,
+              removeRight: removeRight,
+              child: child,
+            ),
           ),
         ),
       ),

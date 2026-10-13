@@ -8,6 +8,7 @@ import 'package:foldable/foldable.dart';
 import '../platform/platform_info.dart';
 import '../platform/system_vertical_bar.dart';
 import '../widgets/adaptive_toast.dart';
+import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'fold_scope.dart';
 import 'hosted_duo_bar.dart';
@@ -69,6 +70,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   /// What the debug log last reported, to print only the changes.
   SystemVerticalBarEdge _loggedEdge = SystemVerticalBarEdge.unknown;
   DuoPose? _loggedPose;
+  DuoTopStrip? _loggedStrip;
 
   @override
   void initState() {
@@ -141,13 +143,21 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     final pose = hostsToolbar
         ? DuoLayout.resolvePose(MediaQuery.viewPaddingOf(context), edge)
         : null;
+    final strip = hostsToolbar && pose == null
+        ? DuoTopStrip.resolve(
+            viewPadding: MediaQuery.viewPaddingOf(context),
+            size: MediaQuery.sizeOf(context),
+            fold: fold,
+          )
+        : null;
     assert(() {
       // Pose bugs only reproduce on a Duo; this makes a report actionable.
-      if (edge != _loggedEdge || pose != _loggedPose) {
+      if (edge != _loggedEdge || pose != _loggedPose || strip != _loggedStrip) {
         _loggedEdge = edge;
         _loggedPose = pose;
+        _loggedStrip = strip;
         debugPrint(
-          'AdaptiveToolbarHost: Duo pose ${pose ?? 'none'} '
+          'AdaptiveToolbarHost: Duo pose ${pose ?? strip ?? 'none'} '
           '(edge: ${edge.name})',
         );
       }
@@ -176,40 +186,44 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
               hostsDuoControls: pose != null,
               child: DuoPoseScope(
                 pose: pose,
-                // Toasts show above the bars.
-                child: AdaptiveToastLayer(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Always the first child at a stable position, so
-                      // toggling the chrome never rebuilds the navigator from
-                      // scratch. The MediaQuery in it is always here too, even
-                      // when it changes nothing: adding it only in some poses
-                      // would move the navigator in the element tree whenever
-                      // the pose changes (moving between Split View panes),
-                      // and rebuild every route.
-                      _BarInset(pose: pose, child: widget.child),
-                      if (hostsToolbar)
-                        HostedTopToolbar(
-                          blend: _blend,
-                          titleOnly: pose != null,
-                        ),
-                      if (pose != null)
-                        // The bar sits on whichever edge the pose names: the
-                        // right in most poses, the left in the leading Split
-                        // View pane.
-                        Positioned(
-                          top: 0,
-                          bottom: 0,
-                          left: pose.onLeft ? 0 : null,
-                          right: pose.onLeft ? null : 0,
-                          width: pose.bandWidth,
-                          child: HostedDuoBar(
+                child: DuoTopStripScope(
+                  strip: strip,
+                  // Toasts show above the bars.
+                  child: AdaptiveToastLayer(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Always the first child at a stable position, so
+                        // toggling the chrome never rebuilds the navigator from
+                        // scratch. The MediaQuery in it is always here too, even
+                        // when it changes nothing: adding it only in some poses
+                        // would move the navigator in the element tree whenever
+                        // the pose changes (moving between Split View panes),
+                        // and rebuild every route.
+                        _BarInset(pose: pose, child: widget.child),
+                        if (hostsToolbar)
+                          HostedTopToolbar(
                             blend: _blend,
-                            regions: fold?.regions ?? const <ReservedRegion>[],
+                            titleOnly: pose != null,
                           ),
-                        ),
-                    ],
+                        if (pose != null)
+                          // The bar sits on whichever edge the pose names: the
+                          // right in most poses, the left in the leading Split
+                          // View pane.
+                          Positioned(
+                            top: 0,
+                            bottom: 0,
+                            left: pose.onLeft ? 0 : null,
+                            right: pose.onLeft ? null : 0,
+                            width: pose.bandWidth,
+                            child: HostedDuoBar(
+                              blend: _blend,
+                              regions:
+                                  fold?.regions ?? const <ReservedRegion>[],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),

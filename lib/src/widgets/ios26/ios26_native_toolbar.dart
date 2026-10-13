@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import '../../toolbar/duo_top_strip.dart';
 import '../../utils/animation.dart';
 import '../adaptive_app_bar_action.dart';
 
@@ -179,7 +180,15 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
       return _buildFallbackToolbar();
     }
 
-    final safePadding = MediaQuery.paddingOf(context).top;
+    // In the iPhone Duo's top strip the bar sits in the strip, beside the
+    // status cluster, rather than below it.
+    final strip = DuoTopStripScope.of(context);
+    final safePadding = strip != null
+        ? DuoTopStrip.barTop
+        : MediaQuery.paddingOf(context).top;
+    final clusterLeft = strip?.clusterLeft ?? 0;
+    final clusterRight = strip?.clusterRight ?? 0;
+    final titleInset = _titleInset(clusterLeft, clusterRight);
 
     final creationParams = <String, dynamic>{
       // Hide native title when a titleWidget overlay is provided
@@ -192,6 +201,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
       'isDark': _isDark,
       if (!widget.showsGradient) 'showsGradient': false,
       if (widget.tintColor != null) 'tint': _colorToARGB(widget.tintColor!),
+      'barHeight': widget.height,
     };
 
     return AnimatedContainer(
@@ -201,17 +211,23 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
       child: Stack(
         children: [
           if (widget.showNativeView)
-            UiKitView(
-              viewType: 'adaptive_platform_ui/ios26_toolbar',
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
-              onPlatformViewCreated: _onPlatformViewCreated,
-              hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+            Positioned(
+              left: clusterLeft,
+              right: clusterRight,
+              top: 0,
+              bottom: 0,
+              child: UiKitView(
+                viewType: 'adaptive_platform_ui/ios26_toolbar',
+                creationParams: creationParams,
+                creationParamsCodec: const StandardMessageCodec(),
+                onPlatformViewCreated: _onPlatformViewCreated,
+                hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+              ),
             ),
           if (widget.leading != null)
             // Centred in the bar, below the status bar.
             Positioned(
-              left: 16,
+              left: _edgeInset(clusterLeft),
               top: safePadding,
               bottom: 0,
               child: Align(
@@ -222,8 +238,8 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
             ),
           if (widget.titleWidget != null)
             Positioned(
-              left: _titleInset,
-              right: _titleInset,
+              left: titleInset,
+              right: titleInset,
               top: safePadding,
               bottom: 0,
               child: Center(child: widget.titleWidget!),
@@ -233,12 +249,17 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
     );
   }
 
+  static const _margin = 16.0;
+  static const _gap = 8.0;
+
+  /// Where the bar's controls start: 16 points from its edge, or from the
+  /// iPhone Duo's status cluster at that edge.
+  static double _edgeInset(double cluster) => cluster + _margin;
+
   /// How far [IOS26NativeToolbar.titleWidget] keeps from both sides of the
-  /// bar: 16 points from its edges and 8 from the controls on either side, the
-  /// same on both sides so it stays centred.
-  double get _titleInset {
-    const margin = 16.0;
-    const gap = 8.0;
+  /// bar: 16 points from its edges or the status cluster at them, and 8 from
+  /// the controls, the same on both sides so it stays centred.
+  double _titleInset(double clusterLeft, double clusterRight) {
     final leadingText = widget.leadingText;
     final reservesLeading =
         widget.reservesLeading ??
@@ -249,9 +270,9 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
         ? _textButtonWidth(leadingText)
         : _controlSize;
     final leading =
-        margin +
+        _edgeInset(clusterLeft) +
         widget.leadingInset +
-        (reservesLeading ? leadingWidth + gap : 0);
+        (reservesLeading ? leadingWidth + _gap : 0);
     final actions = widget.actions ?? const <AdaptiveAppBarAction>[];
     var actionsWidth = 0.0;
     for (final action in actions) {
@@ -264,7 +285,8 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
       actionsWidth += iconOnly ? _controlSize : _textButtonWidth(title);
       if (action.spacerAfter != ToolbarSpacerType.none) actionsWidth += 12;
     }
-    final trailing = margin + (actions.isEmpty ? 0 : actionsWidth + gap);
+    final trailing =
+        _edgeInset(clusterRight) + (actions.isEmpty ? 0 : actionsWidth + _gap);
     return math.max(leading, trailing);
   }
 

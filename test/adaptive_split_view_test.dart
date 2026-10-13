@@ -9,8 +9,7 @@ const wide = Size(1000, 800);
 final navigatorKey = GlobalKey<NavigatorState>();
 var contexts = <String, BuildContext>{};
 
-RouteSettings detail(String name) =>
-    RouteSettings(name: '/detail', arguments: name);
+RouteSettings detail(String name) => RouteSettings(name: '/detail', arguments: name);
 
 /// Whether the pages are adaptive scaffolds with a bar, rather than plain.
 var adaptivePages = false;
@@ -23,18 +22,10 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       contexts['Detail $name'] = context;
       if (adaptivePages) {
         return AdaptiveScaffold(
-          appBar: AdaptiveAppBar(
-            useNativeToolbar: true,
-            title: 'Detail $name',
-            onBack: goBack,
-            automaticallyImplyLeading: false,
-          ),
+          appBar: AdaptiveAppBar(useNativeToolbar: true, title: 'Detail $name', onBack: goBack, automaticallyImplyLeading: false),
           // Clear of the bar over the top of the page.
           body: Center(
-            child: TextButton(
-              onPressed: () => open(detail('$name+')),
-              child: Text('More $name'),
-            ),
+            child: TextButton(onPressed: () => open(detail('$name+')), child: Text('More $name')),
           ),
         );
       }
@@ -42,10 +33,7 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
         body: Column(
           children: [
             Text('Detail $name'),
-            TextButton(
-              onPressed: () => open(detail('$name+')),
-              child: Text('More $name'),
-            ),
+            TextButton(onPressed: () => open(detail('$name+')), child: Text('More $name')),
           ],
         ),
       );
@@ -70,12 +58,7 @@ Widget master() => Scaffold(
       final opened = AdaptiveSplitView.selectedDetailOf(context)?.arguments;
       return ListView(
         children: [
-          for (final name in ['A', 'B', 'C'])
-            ListTile(
-              title: Text('Item $name'),
-              selected: opened == name,
-              onTap: () => open(detail(name)),
-            ),
+          for (final name in ['A', 'B', 'C']) ListTile(title: Text('Item $name'), selected: opened == name, onTap: () => open(detail(name))),
         ],
       );
     },
@@ -95,19 +78,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         navigatorKey: navigatorKey,
-        home: AdaptiveSplitView(
-          onGenerateDetailRoute: onGenerateRoute,
-          initialDetail: detail('A'),
-          master: master(),
-        ),
+        home: AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master()),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  bool isSelected(WidgetTester tester, String name) => tester
-      .widget<ListTile>(find.widgetWithText(ListTile, 'Item $name'))
-      .selected;
+  bool isSelected(WidgetTester tester, String name) => tester.widget<ListTile>(find.widgetWithText(ListTile, 'Item $name')).selected;
 
   testWidgets('on a narrow window only the list shows, and pages open over '
       'it', (tester) async {
@@ -131,9 +108,7 @@ void main() {
     expect(isSelected(tester, 'A'), isTrue);
   });
 
-  testWidgets('a page picked in the list replaces the one beside it at once', (
-    tester,
-  ) async {
+  testWidgets('a page picked in the list replaces the one beside it at once', (tester) async {
     await pumpSplit(tester, wide);
 
     await tester.tap(find.text('Item B'));
@@ -221,11 +196,7 @@ void main() {
       'DEBUG selected=${AdaptiveSplitView.selectedDetailOf(contexts['master']!)?.arguments} tiles=${tester.widgetList<ListTile>(find.byType(ListTile)).map((t) => t.selected).toList()}',
     );
     expect(isSelected(tester, 'B'), isTrue);
-    expect(
-      AdaptiveSplitView.isInColumn(contexts['Detail B+']!),
-      isTrue,
-      reason: 'in the column, not over the list',
-    );
+    expect(AdaptiveSplitView.isInColumn(contexts['Detail B+']!), isTrue, reason: 'in the column, not over the list');
 
     goBack();
     await tester.pumpAndSettle();
@@ -233,9 +204,7 @@ void main() {
     expect(find.text('Item A'), findsOneWidget);
   });
 
-  testWidgets('folding and unfolding again lands where the user was', (
-    tester,
-  ) async {
+  testWidgets('folding and unfolding again lands where the user was', (tester) async {
     await pumpSplit(tester, wide);
     await tester.tap(find.text('Item C'));
     await tester.pump();
@@ -275,9 +244,7 @@ void main() {
     expect(isSelected(tester, 'A'), isFalse);
   });
 
-  testWidgets('folding keeps the pages opened from the page shown first', (
-    tester,
-  ) async {
+  testWidgets('folding keeps the pages opened from the page shown first', (tester) async {
     await pumpSplit(tester, wide);
     await tester.tap(find.text('More A'));
     await tester.pumpAndSettle();
@@ -322,11 +289,7 @@ void main() {
     addTearDown(tester.view.reset);
     Widget app(RouteSettings? initial) => MaterialApp(
       navigatorKey: navigatorKey,
-      home: AdaptiveSplitView(
-        onGenerateDetailRoute: onGenerateRoute,
-        initialDetail: initial,
-        master: master(),
-      ),
+      home: AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: initial, master: master()),
     );
     await tester.pumpWidget(app(null));
     await tester.pumpAndSettle();
@@ -351,9 +314,7 @@ void main() {
 
   testWidgets('takes no pages while another page covers it', (tester) async {
     await pumpSplit(tester, wide);
-    navigatorKey.currentState!.push(
-      MaterialPageRoute<void>(builder: (_) => const Text('Over it')),
-    );
+    navigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => const Text('Over it')));
     await tester.pumpAndSettle();
 
     expect(AdaptiveSplitView.showDetail(detail('C')), isFalse);
@@ -375,11 +336,7 @@ void main() {
             index: index,
             children: [
               const Center(child: Text('Map')),
-              AdaptiveSplitView(
-                onGenerateDetailRoute: onGenerateRoute,
-                initialDetail: detail('A'),
-                master: master(),
-              ),
+              AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master()),
             ],
           ),
         ),
@@ -412,16 +369,10 @@ void main() {
     tester.view.physicalSize = wide;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(navigatorKey: navigatorKey, home: const Text('Home')),
-    );
+    await tester.pumpWidget(MaterialApp(navigatorKey: navigatorKey, home: const Text('Home')));
     navigatorKey.currentState!.push(
       MaterialPageRoute<void>(
-        builder: (_) => AdaptiveSplitView(
-          onGenerateDetailRoute: onGenerateRoute,
-          initialDetail: detail('A'),
-          master: master(),
-        ),
+        builder: (_) => AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master()),
       ),
     );
     await tester.pumpAndSettle();
@@ -441,36 +392,22 @@ void main() {
       PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
       PlatformInfo.debugIOSVersionOverride = 26;
       // Its native views are created as if there were UIKit.
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            SystemChannels.platform_views,
-            (call) async => null,
-          );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async => null);
       adaptivePages = true;
     });
     tearDown(() {
       PlatformInfo.debugPlatformOverride = null;
       PlatformInfo.debugIOSVersionOverride = null;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform_views, null);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
     });
 
     Finder backIn(String page) => find.descendant(
-      of: find.byWidgetPredicate(
-        (widget) =>
-            widget is AdaptiveScaffold &&
-            widget.appBar?.title == 'Detail $page',
-      ),
-      matching: find.byWidgetPredicate(
-        (widget) =>
-            widget is AdaptiveButton && widget.sfSymbol?.name == 'chevron.left',
-      ),
+      of: find.byWidgetPredicate((widget) => widget is AdaptiveScaffold && widget.appBar?.title == 'Detail $page'),
+      matching: find.byWidgetPredicate((widget) => widget is AdaptiveButton && widget.sfSymbol?.name == 'chevron.left'),
     );
 
     testWidgets('the first page beside the list has no back button; a page '
-        'opened from it has its own, which goes back in the column', (
-      tester,
-    ) async {
+        'opened from it has its own, which goes back in the column', (tester) async {
       await pumpSplit(tester, wide);
       expect(backIn('A'), findsNothing);
 
@@ -511,10 +448,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final cross = find.byWidgetPredicate(
-        (widget) =>
-            widget is AdaptiveButton && widget.sfSymbol?.name == 'xmark',
-      );
+      final cross = find.byWidgetPredicate((widget) => widget is AdaptiveButton && widget.sfSymbol?.name == 'xmark');
       expect(cross, findsOneWidget);
       await tester.tap(cross);
       expect(closed, 1);

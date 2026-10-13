@@ -37,11 +37,7 @@ enum DuoBarSide { left, right }
 /// on and how wide its strip is.
 @immutable
 class DuoPose {
-  const DuoPose({
-    required this.side,
-    required this.stripWidth,
-    required this.reservedBySystem,
-  });
+  const DuoPose({required this.side, required this.stripWidth, required this.reservedBySystem});
 
   final DuoBarSide side;
 
@@ -62,22 +58,14 @@ class DuoPose {
 
   /// Distance from the window's top to the centre of the bar's first control,
   /// with no camera or status cluster above it. The title is centred on it.
-  double get firstControlCenter =>
-      (reservedBySystem ? kDuoBarEdgeMargin : kDuoBarOnlyTopMargin) +
-      IOS26GlassCapsule.width / 2;
+  double get firstControlCenter => (reservedBySystem ? kDuoBarEdgeMargin : kDuoBarOnlyTopMargin) + IOS26GlassCapsule.width / 2;
 
   /// [insets] with the strip added on the bar's side: the inset UIKit would
   /// have reserved for a vertical bar it draws itself.
-  EdgeInsets addStrip(EdgeInsets insets) => onLeft
-      ? insets.copyWith(left: insets.left + stripWidth)
-      : insets.copyWith(right: insets.right + stripWidth);
+  EdgeInsets addStrip(EdgeInsets insets) => onLeft ? insets.copyWith(left: insets.left + stripWidth) : insets.copyWith(right: insets.right + stripWidth);
 
   @override
-  bool operator ==(Object other) =>
-      other is DuoPose &&
-      other.side == side &&
-      other.stripWidth == stripWidth &&
-      other.reservedBySystem == reservedBySystem;
+  bool operator ==(Object other) => other is DuoPose && other.side == side && other.stripWidth == stripWidth && other.reservedBySystem == reservedBySystem;
 
   @override
   int get hashCode => Object.hash(side, stripWidth, reservedBySystem);
@@ -98,10 +86,7 @@ abstract final class DuoLayout {
   /// only signal there. The insets win because they arrive with the frame,
   /// while the edge comes on its own channel and can be a frame stale after a
   /// pane move.
-  static DuoPose? resolvePose(
-    EdgeInsets viewPadding,
-    SystemVerticalBarEdge edge,
-  ) {
+  static DuoPose? resolvePose(EdgeInsets viewPadding, SystemVerticalBarEdge edge) {
     final side =
         barSide(viewPadding) ??
         switch (edge) {
@@ -110,14 +95,8 @@ abstract final class DuoLayout {
           SystemVerticalBarEdge.none || SystemVerticalBarEdge.unknown => null,
         };
     if (side == null) return null;
-    final inset = side == DuoBarSide.left
-        ? viewPadding.left
-        : viewPadding.right;
-    return DuoPose(
-      side: side,
-      stripWidth: inset > 0 ? inset : kDuoVerticalBarWidth,
-      reservedBySystem: inset > 0,
-    );
+    final inset = side == DuoBarSide.left ? viewPadding.left : viewPadding.right;
+    return DuoPose(side: side, stripWidth: inset > 0 ? inset : kDuoVerticalBarWidth, reservedBySystem: inset > 0);
   }
 
   /// The edge the safe-area insets alone put the bar on, or null where they
@@ -152,19 +131,14 @@ abstract final class DuoLayout {
   }
 
   /// Whether toolbar controls belong in a vertical bar right now.
-  static bool isVerticalBarPose(EdgeInsets viewPadding) =>
-      barSide(viewPadding) != null;
+  static bool isVerticalBarPose(EdgeInsets viewPadding) => barSide(viewPadding) != null;
 
   /// Free space to keep above and below the controls, so that they clear the
   /// camera and status cluster wherever the current rotation puts them: at
   /// the top of the strip in portrait, at the bottom of it in one landscape
   /// rotation. Measured on the system's own bar: controls start right at the
   /// edge of a region, and keep [kDuoBarEdgeMargin] from a free window edge.
-  static ({double top, double bottom}) barInsets({
-    required Size size,
-    required DuoPose pose,
-    required List<ReservedRegion> regions,
-  }) {
+  static ({double top, double bottom}) barInsets({required Size size, required DuoPose pose, required List<ReservedRegion> regions}) {
     // A strip the system did not reserve has no camera or status cluster in
     // it. No region will ever be reported there, so don't wait for one.
     if (!pose.reservedBySystem) {
@@ -205,20 +179,11 @@ abstract final class DuoLayout {
     // change). Until then stay clear of where the cluster can be instead of
     // starting underneath it.
     final unknown = inStrip.isEmpty;
-    return (
-      top:
-          top ??
-          (unknown ? kDuoStatusClusterFallbackHeight : kDuoBarEdgeMargin),
-      bottom: bottom ?? kDuoBarEdgeMargin,
-    );
+    return (top: top ?? (unknown ? kDuoStatusClusterFallbackHeight : kDuoBarEdgeMargin), bottom: bottom ?? kDuoBarEdgeMargin);
   }
 
   /// Top clearance of [barInsets].
-  static double topClearance({
-    required Size size,
-    required DuoPose pose,
-    required List<ReservedRegion> regions,
-  }) => barInsets(size: size, pose: pose, regions: regions).top;
+  static double topClearance({required Size size, required DuoPose pose, required List<ReservedRegion> regions}) => barInsets(size: size, pose: pose, regions: regions).top;
 }
 
 /// Hands the resolved [DuoPose] to everything below, so the bar, the title
@@ -232,17 +197,13 @@ class DuoPoseScope extends InheritedWidget {
 
   /// The nearest scope, or null when there is none. Tells "no scope" apart
   /// from a scope whose pose is null (a decision for horizontal bars).
-  static DuoPoseScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<DuoPoseScope>();
+  static DuoPoseScope? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<DuoPoseScope>();
 
   /// The pose in effect here. Without a scope, derived from the insets alone.
   static DuoPose? of(BuildContext context) {
     final scope = maybeOf(context);
     if (scope != null) return scope.pose;
-    return DuoLayout.resolvePose(
-      MediaQuery.viewPaddingOf(context),
-      SystemVerticalBarEdge.unknown,
-    );
+    return DuoLayout.resolvePose(MediaQuery.viewPaddingOf(context), SystemVerticalBarEdge.unknown);
   }
 
   @override
@@ -273,9 +234,7 @@ class DuoTitleBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base =
-        color?.withValues(alpha: 1) ??
-        CupertinoColors.systemBackground.resolveFrom(context);
+    final base = color?.withValues(alpha: 1) ?? CupertinoColors.systemBackground.resolveFrom(context);
     return IgnorePointer(
       child: OverflowBox(
         alignment: Alignment.topCenter,
@@ -318,9 +277,7 @@ class DuoToolbarTitle extends StatelessWidget {
     final pose = DuoPoseScope.of(context);
     final strip = pose?.stripWidth ?? 0;
     final onLeft = pose?.onLeft ?? false;
-    final center =
-        pose?.firstControlCenter ??
-        kDuoBarEdgeMargin + IOS26GlassCapsule.width / 2;
+    final center = pose?.firstControlCenter ?? kDuoBarEdgeMargin + IOS26GlassCapsule.width / 2;
     return Padding(
       padding: EdgeInsets.only(
         left: 20 + (onLeft ? strip : 0),
@@ -336,12 +293,7 @@ class DuoToolbarTitle extends StatelessWidget {
               title ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.4,
-                color: CupertinoColors.label.resolveFrom(context),
-              ),
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, letterSpacing: -0.4, color: CupertinoColors.label.resolveFrom(context)),
             ),
       ),
     );
@@ -400,9 +352,7 @@ class DuoVerticalBar extends StatelessWidget {
   final List<ReservedRegion> regions;
 
   /// [actions] split into the groups that each get a capsule.
-  static List<List<AdaptiveAppBarAction>> groupsOf(
-    List<AdaptiveAppBarAction> actions,
-  ) {
+  static List<List<AdaptiveAppBarAction>> groupsOf(List<AdaptiveAppBarAction> actions) {
     final groups = <List<AdaptiveAppBarAction>>[];
     var current = <AdaptiveAppBarAction>[];
     for (final action in actions) {
@@ -421,15 +371,9 @@ class DuoVerticalBar extends StatelessWidget {
     final pose = DuoPoseScope.of(context);
     if (pose == null) return const SizedBox.shrink();
     final tabs = tabBar?.items ?? const <AdaptiveNavigationDestination>[];
-    final insets = DuoLayout.barInsets(
-      size: MediaQuery.sizeOf(context),
-      pose: pose,
-      regions: regions,
-    );
+    final insets = DuoLayout.barInsets(size: MediaQuery.sizeOf(context), pose: pose, regions: regions);
     final tabCount = tabs.isNotEmpty ? tabs.length : reservedTabs;
-    final tabsHeight = tabCount == 0
-        ? 0.0
-        : IOS26GlassCapsule.tabsHeight(tabCount) + kDuoBarGroupSpacing;
+    final tabsHeight = tabCount == 0 ? 0.0 : IOS26GlassCapsule.tabsHeight(tabCount) + kDuoBarGroupSpacing;
 
     return Padding(
       // Safe areas are asymmetric on iPhone Duo; read each edge on its own.
@@ -447,15 +391,10 @@ class DuoVerticalBar extends StatelessWidget {
                   width: IOS26GlassCapsule.width,
                   height: IOS26GlassCapsule.tabsHeight(tabs.length),
                   child: IOS26GlassCapsule(
-                    items: [
-                      for (final tab in tabs)
-                        GlassCapsuleItem.fromDestination(tab),
-                    ],
+                    items: [for (final tab in tabs) GlassCapsuleItem.fromDestination(tab)],
                     selectedIndex: tabBar!.selectedIndex ?? 0,
                     inset: IOS26GlassCapsule.tabsInset,
-                    tint:
-                        tabBar!.selectedItemColor ??
-                        CupertinoTheme.of(context).primaryColor,
+                    tint: tabBar!.selectedItemColor ?? CupertinoTheme.of(context).primaryColor,
                     onTap: (index) => tabBar!.onTap?.call(index),
                   ),
                 ),
@@ -475,8 +414,7 @@ class DuoVerticalBar extends StatelessWidget {
     final groups = groupsOf(actions);
     final total = actions.length;
     var used = leading == null ? 0.0 : IOS26GlassCapsule.width;
-    final overflowCost =
-        kDuoBarGroupSpacing + IOS26GlassCapsule.actionsHeight(1);
+    final overflowCost = kDuoBarGroupSpacing + IOS26GlassCapsule.actionsHeight(1);
 
     final shown = <List<AdaptiveAppBarAction>>[];
     var count = 0;
@@ -488,8 +426,7 @@ class DuoVerticalBar extends StatelessWidget {
         // control plus the gap before it.
         final cost = capsule.isEmpty
             ? (used > 0 ? kDuoBarGroupSpacing : 0.0) + IOS26GlassCapsule.width
-            : IOS26GlassCapsule.actionsHeight(capsule.length + 1) -
-                  IOS26GlassCapsule.actionsHeight(capsule.length);
+            : IOS26GlassCapsule.actionsHeight(capsule.length + 1) - IOS26GlassCapsule.actionsHeight(capsule.length);
         final isLast = count == total - 1;
         // Keep room for the overflow control unless this is the last item.
         if (used + cost + (isLast ? 0 : overflowCost) > room) {
@@ -583,13 +520,7 @@ class _ActionCapsule extends StatelessWidget {
       width: IOS26GlassCapsule.width,
       height: IOS26GlassCapsule.actionsHeight(actions.length),
       child: IOS26GlassCapsule(
-        items: [
-          for (var i = 0; i < actions.length; i++)
-            GlassCapsuleItem.fromAction(
-              actions[i],
-              menuIdBase: i * _menuIdStride,
-            ),
-        ],
+        items: [for (var i = 0; i < actions.length; i++) GlassCapsuleItem.fromAction(actions[i], menuIdBase: i * _menuIdStride)],
         tint: tint,
         onTap: (index) => actions[index].onPressed(),
         onMenuTap: (id) {
@@ -605,11 +536,7 @@ class _ActionCapsule extends StatelessWidget {
 
 /// The back button of the trailing bar: one round glass control.
 class DuoBarBackButton extends StatelessWidget {
-  const DuoBarBackButton({
-    super.key,
-    required this.onPressed,
-    this.close = false,
-  });
+  const DuoBarBackButton({super.key, required this.onPressed, this.close = false});
 
   final VoidCallback onPressed;
 
@@ -624,16 +551,8 @@ class DuoBarBackButton extends StatelessWidget {
       child: IOS26GlassCapsule(
         items: [
           close
-              ? const GlassCapsuleItem(
-                  symbol: 'xmark',
-                  label: 'Close',
-                  fallback: Icon(CupertinoIcons.xmark, size: 22),
-                )
-              : const GlassCapsuleItem(
-                  symbol: 'chevron.left',
-                  label: 'Back',
-                  fallback: Icon(CupertinoIcons.chevron_left, size: 22),
-                ),
+              ? const GlassCapsuleItem(symbol: 'xmark', label: 'Close', fallback: Icon(CupertinoIcons.xmark, size: 22))
+              : const GlassCapsuleItem(symbol: 'chevron.left', label: 'Back', fallback: Icon(CupertinoIcons.chevron_left, size: 22)),
         ],
         onTap: (_) => onPressed(),
       ),

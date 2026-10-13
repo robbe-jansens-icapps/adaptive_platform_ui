@@ -88,7 +88,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         if showsGradient {
             setupGradient()
         }
-        setupNavigationBar()
+        setupNavigationBar(height: (args as? [String: Any])?["barHeight"] as? Double ?? 44)
 
         if let params = args as? [String: Any] {
             configureItems(params)
@@ -130,7 +130,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         updateGradientColors()
     }
 
-    private func setupNavigationBar() {
+    private func setupNavigationBar(height: Double) {
         containerView.backgroundColor = .clear
         // Keeps glass buttons from turning blue after a menu closes
         containerView.tintColor = .label
@@ -154,8 +154,11 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
 
         containerView.addSubview(navigationBar)
 
+        // At the bottom of the view, as tall as Flutter lays the bar out. Not
+        // below the window's safe area: in the iPhone Duo's top strip the bar
+        // sits in it.
         NSLayoutConstraint.activate([
-            navigationBar.topAnchor.constraint(equalTo: containerView.safeAreaLayoutGuide.topAnchor),
+            navigationBar.heightAnchor.constraint(equalToConstant: height),
             navigationBar.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             navigationBar.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
             navigationBar.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
