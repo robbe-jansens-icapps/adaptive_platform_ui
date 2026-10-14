@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Material, MaterialType;
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
@@ -334,12 +335,15 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                         if (hostsToolbar)
                           BackdropGroup(
                             backdropKey: _chromeBackdrop,
-                            child: HostedTopToolbar(
-                              blend: _blend,
-                              titleOnly: pose != null,
-                              chrome: chrome,
-                              placement: placement,
-                              sidebarInset: _sidebarInset,
+                            child: _ChromeMaterial(
+                              custom: chrome != null,
+                              child: HostedTopToolbar(
+                                blend: _blend,
+                                titleOnly: pose != null,
+                                chrome: chrome,
+                                placement: placement,
+                                sidebarInset: _sidebarInset,
+                              ),
                             ),
                           ),
                         // A sidebar expanded over the content closes with a
@@ -367,21 +371,24 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                           BackdropGroup(
                             key: const ValueKey<String>('adaptive_tab_bar'),
                             backdropKey: _chromeBackdrop,
-                            child: HostedTabBar(
-                              blend: _blend,
-                              height: _tabBarHeight,
-                              chrome: chrome,
-                              placement: placement,
-                              accessoryHeight: _accessoryHeight,
-                              sidebar: sidebar
-                                  ? HostedSidebar(
-                                      progress: _sidebar,
-                                      expanded: _sidebarExpanded,
-                                      overlaid: _sidebarOverlaid,
-                                      onToggle: _toggleSidebar,
-                                      onTabTapped: _collapseOverlaidSidebar,
-                                    )
-                                  : null,
+                            child: _ChromeMaterial(
+                              custom: chrome != null,
+                              child: HostedTabBar(
+                                blend: _blend,
+                                height: _tabBarHeight,
+                                chrome: chrome,
+                                placement: placement,
+                                accessoryHeight: _accessoryHeight,
+                                sidebar: sidebar
+                                    ? HostedSidebar(
+                                        progress: _sidebar,
+                                        expanded: _sidebarExpanded,
+                                        overlaid: _sidebarOverlaid,
+                                        onToggle: _toggleSidebar,
+                                        onTabTapped: _collapseOverlaidSidebar,
+                                      )
+                                    : null,
+                              ),
                             ),
                           ),
                         if (pose != null)
@@ -397,11 +404,14 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                             width: pose.bandWidth,
                             child: BackdropGroup(
                               backdropKey: _chromeBackdrop,
-                              child: HostedDuoBar(
-                                blend: _blend,
-                                chrome: chrome,
-                                regions:
-                                    fold?.regions ?? const <ReservedRegion>[],
+                              child: _ChromeMaterial(
+                                custom: chrome != null,
+                                child: HostedDuoBar(
+                                  blend: _blend,
+                                  chrome: chrome,
+                                  regions:
+                                      fold?.regions ?? const <ReservedRegion>[],
+                                ),
                               ),
                             ),
                           ),
@@ -418,6 +428,21 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
       ),
     );
   }
+}
+
+/// The app's own bars sit above the navigator, outside any page: give them
+/// what a page gives its content, a Material for ink and text styles.
+/// Native chrome is left as it is.
+class _ChromeMaterial extends StatelessWidget {
+  const _ChromeMaterial({required this.custom, required this.child});
+
+  final bool custom;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => custom
+      ? Material(type: MaterialType.transparency, child: child)
+      : child;
 }
 
 /// Room kept above the fixed toolbar in a window without any at its top.

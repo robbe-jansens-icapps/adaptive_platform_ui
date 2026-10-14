@@ -236,4 +236,17 @@ void main() {
     final leading = TestChrome.build(centerTitle: false);
     expect(leading.centersTitle(TargetPlatform.iOS), isFalse);
   });
+
+  testWidgets('the app\'s bars get a Material, as a page gives its content, for ink and text styles', (tester) async {
+    phone(tester);
+    final tabs = TabsFixture();
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    for (final part in [find.byKey(TestChrome.tabBarKey), find.text('title:Tab 0')]) {
+      final material = find.ancestor(of: part, matching: find.byType(Material));
+      expect(material, findsWidgets);
+      expect(tester.widget<Material>(material.first).type, MaterialType.transparency);
+    }
+  });
 }
