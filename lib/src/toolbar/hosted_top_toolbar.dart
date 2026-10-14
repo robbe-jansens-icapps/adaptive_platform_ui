@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
+import '../style/glass_button_glyph.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
@@ -291,6 +293,15 @@ class HostedTopToolbar extends StatelessWidget {
                   widthFactor: 1,
                   child: _BackButton(
                     content: back?.$1 ?? TopToolbarContent(backStyle: style),
+                    // While pages are pushed, popped or swiped back, also one
+                    // that both pages show and that stays put, so all of them
+                    // look the same; and one fading or sliding otherwise.
+                    moving:
+                        back != null &&
+                        blend.isBlending &&
+                        (blend.routeTransition.value ||
+                            !identical(back.$2, kAlwaysCompleteAnimation) ||
+                            back.$4 != null),
                   ),
                 ),
               ),
@@ -479,25 +490,193 @@ class _Backdrop extends StatelessWidget {
 /// Back for the page that owns the chrome: the page's own handler, or else a
 /// pop of the page's own navigator, so nested navigators (tabs, shell routes)
 /// pop the right stack.
-class _BackButton extends StatelessWidget {
-  const _BackButton({required this.content});
+///
+/// A native glass button. While pages move, a Flutter one takes its place,
+/// with the glyph as iOS shows it in the native button ([GlassButtonGlyph]):
+/// a native view on screen makes every frame of a transition dearer. The
+/// native button waits off stage meanwhile, and the stand-in fades out over it
+/// once it is back.
+class _BackButton extends StatefulWidget {
+  const _BackButton({required this.content, required this.moving});
 
   final TopToolbarContent content;
 
+  /// Whether pages move right now, or the button fades or slides with one.
+  final bool moving;
+
+  @override
+  State<_BackButton> createState() => _BackButtonState();
+}
+
+class _BackButtonState extends State<_BackButton>
+    with SingleTickerProviderStateMixin {
+  // As the system draws them.
+  static const _back = SFSymbol(
+    'chevron.left',
+    size: 19,
+    weight: FontWeight.w600,
+  );
+  static const _close = SFSymbol('xmark', size: 17, weight: FontWeight.w600);
+
+  SFSymbol get _symbol =>
+      widget.content.backStyle == AdaptiveBackButtonStyle.close
+      ? _close
+      : _back;
+
+  /// The stand-in's opacity: 1 while it stands in, fading out over the native
+  /// button once that is back.
+  late final AnimationController _standIn;
+
+  /// Whether the stand-in is in the native button's place right now.
+  bool _standingIn = false;
+
+  /// The appearance the glyph is loaded for: the native button's, which
+  /// follows the platform brightness.
+  bool? _dark;
+
+  GlassButtonGlyph? get _glyph => _dark == null
+      ? null
+      : GlassButtonGlyph.of(_symbol, side: kHostedToolbarHeight, dark: _dark!);
+
+  @override
+  void initState() {
+    super.initState();
+    _standIn = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    )..addStatusListener(_onStandInStatus);
+  }
+
+  // Gone once faded out.
+  void _onStandInStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && mounted) setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Ready long before the first page with a back button comes in: the two
+    // buttons are in place from the start. Again in the other appearance.
+    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    if (dark == _dark || defaultTargetPlatform != TargetPlatform.iOS) return;
+    _dark = dark;
+    GlassButtonGlyph.load(
+      _symbol,
+      context,
+      side: kHostedToolbarHeight,
+      dark: dark,
+    ).then((glyph) {
+      if (mounted && glyph != null) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(_BackButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.moving && !_standingIn) {
+      // Only with the glyph in hand: an empty button would be worse than the
+      // native one.
+      if (_glyph == null) return;
+      _standingIn = true;
+      _standIn.value = 1;
+    } else if (!widget.moving && _standingIn) {
+      _standingIn = false;
+      // The native button is back on screen with this frame; the stand-in
+      // makes way once it is.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _standingIn) return;
+        if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+          _standIn.value = 0;
+        } else {
+          _standIn.reverse(from: 1);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _standIn.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final onBack = content.onBack;
+    final content = widget.content;
+    final onBack = content.onBack ?? () => content.navigator?.maybePop();
+    final glyph = _glyph;
     // A circle as tall as the bar, as the system's back button.
     return SizedBox.square(
       dimension: kHostedToolbarHeight,
-      child: AdaptiveButton.sfSymbol(
-        size: AdaptiveButtonSize.large,
-        useSmoothRectangleBorder: false,
-        onPressed: onBack ?? () => content.navigator?.maybePop(),
-        // As the system draws them.
-        sfSymbol: content.backStyle == AdaptiveBackButtonStyle.close
-            ? const SFSymbol('xmark', size: 17, weight: FontWeight.w600)
-            : const SFSymbol('chevron.left', size: 19, weight: FontWeight.w600),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Offstage(
+            // Never an empty button: should the appearance change while pages
+            // move, the native one shows until the glyph for it is in.
+            offstage: _standingIn && glyph != null,
+            child: AdaptiveButton.sfSymbol(
+              size: AdaptiveButtonSize.large,
+              useSmoothRectangleBorder: false,
+              onPressed: onBack,
+              sfSymbol: _symbol,
+            ),
+          ),
+          if (glyph != null && (_standingIn || _standIn.value > 0))
+            FadeTransition(
+              key: const ValueKey<String>('adaptive_toolbar_back_stand_in'),
+              opacity: _standIn,
+              child: _BackStandIn(glyph: glyph, onPressed: onBack),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The back button without glass, for while pages move: a light, translucent
+/// circle, as the glass surfaces stand in for theirs, with the button's glyph.
+class _BackStandIn extends StatelessWidget {
+  const _BackStandIn({required this.glyph, required this.onPressed});
+
+  final GlassButtonGlyph glyph;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onPressed,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: dark ? const Color(0xE6303034) : const Color(0xE6FAFAFC),
+          shape: CircleBorder(
+            side: BorderSide(
+              color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
+              width: 0.5,
+            ),
+          ),
+          shadows: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 12,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        // Where, how large and in what colour the native button shows it.
+        child: Center(
+          child: Transform.translate(
+            offset: glyph.offset,
+            child: Image(
+              image: glyph.image,
+              color: glyph.color,
+              colorBlendMode: BlendMode.srcIn,
+              gaplessPlayback: true,
+            ),
+          ),
+        ),
       ),
     );
   }

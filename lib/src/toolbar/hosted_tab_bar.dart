@@ -13,9 +13,14 @@ import 'toolbar_registry.dart';
 /// Inside its page the native bar slid with the page under one that was
 /// pushed over it, and Flutter had to draw that page over a moving native
 /// view on every frame of the transition. Here it never moves and nothing is
-/// drawn over it: it fades out while a page without the tabs comes in, and
-/// back in as that page leaves, following a back swipe under the finger. It
-/// stays put and at full opacity while the pages within the tabs change.
+/// drawn over it. It stays put and at full opacity while the pages within the
+/// tabs change.
+///
+/// A native view on screen still makes every frame dearer while pages move,
+/// so the bar is out of the way for most of a transition between the tabs and
+/// a page without them, and for all of its end, where a stutter shows most:
+/// it fades out over the first fifth of a push, and stays away while a page
+/// pops or is swiped back off the tabs, to fade in once the tabs hold still.
 ///
 /// The native view is made once per tab layout and kept for as long as the
 /// layout is mounted: off stage while a page covers the tabs, so it is not
@@ -33,9 +38,31 @@ class HostedTabBar extends StatefulWidget {
   State<HostedTabBar> createState() => _HostedTabBarState();
 }
 
-class _HostedTabBarState extends State<HostedTabBar> {
+class _HostedTabBarState extends State<HostedTabBar>
+    with SingleTickerProviderStateMixin {
   /// The tab layouts the last build drew a bar for.
   List<ToolbarEntry> _built = const <ToolbarEntry>[];
+
+  /// The opacity of the bar in front: it fades in once the pages hold still
+  /// after a transition that brought the tabs in.
+  late final AnimationController _reveal;
+
+  /// Whether a transition running now, or that just ended, brings a bar in.
+  bool _revealPending = false;
+
+  /// How far into a push the bar of the page going out is gone, and so off
+  /// screen for the rest of it.
+  static const double _leaveBy = 0.2;
+
+  static final Animatable<double> _leaveOnPush = Tween<double>(begin: 1, end: 0)
+      .chain(
+        CurveTween(curve: const Interval(0, _leaveBy, curve: Curves.easeOut)),
+      );
+
+  /// The same, for a pop: the driver runs from 1 down to 0.
+  static final Animatable<double> _leaveOnPop = CurveTween(
+    curve: const Interval(1 - _leaveBy, 1, curve: Curves.easeIn),
+  );
 
   /// Fully out while a dialog or sheet covers the tabs: the bar would show
   /// above them, as it sits above the navigator.
@@ -44,6 +71,11 @@ class _HostedTabBarState extends State<HostedTabBar> {
   @override
   void initState() {
     super.initState();
+    _reveal = AnimationController(
+      vsync: this,
+      duration: kToolbarItemSwapDuration,
+      value: 1,
+    );
     _listen(widget.blend);
   }
 
@@ -59,6 +91,7 @@ class _HostedTabBarState extends State<HostedTabBar> {
   @override
   void dispose() {
     _unlisten(widget.blend);
+    _reveal.dispose();
     super.dispose();
   }
 
@@ -73,7 +106,48 @@ class _HostedTabBarState extends State<HostedTabBar> {
     blend.registry.removeListener(_onRegistryChanged);
   }
 
-  void _rebuild() => setState(() {});
+  void _rebuild() {
+    _updateReveal();
+    setState(() {});
+  }
+
+  /// Whether the running transition shows the upper page coming in: a push,
+  /// or a crossfade between two tab layouts. Otherwise it is a pop or a back
+  /// swipe, which uncover the lower page.
+  bool get _bringsUpperIn {
+    final blend = widget.blend;
+    return blend.upperOwns && !blend.isGestureBlend;
+  }
+
+  /// While pages move between two tab layouts, or between the tabs and a page
+  /// without them: the tab layout whose bar goes out, and the one whose bar
+  /// comes in. Both null while the pages within one tab layout change.
+  (ToolbarEntry?, ToolbarEntry?) _goingAndComing() {
+    final blend = widget.blend;
+    final registry = blend.registry;
+    final upper = registry.tabBarOwnerFor(blend.upper);
+    final lower = registry.tabBarOwnerFor(blend.lower);
+    if (upper?.id == lower?.id) return (null, null);
+    return _bringsUpperIn ? (lower, upper) : (upper, lower);
+  }
+
+  /// Notes a bar that a transition brings in, which waits off stage while the
+  /// pages move, and fades it in once they hold still.
+  void _updateReveal() {
+    final blend = widget.blend;
+    if (blend.isBlending) {
+      if (_goingAndComing().$2 != null) _revealPending = true;
+      return;
+    }
+    if (_revealPending && blend.registry.tabBarOwnerFor(blend.owner) != null) {
+      if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+        _reveal.value = 1;
+      } else {
+        _reveal.forward(from: 0);
+      }
+    }
+    _revealPending = false;
+  }
 
   /// The blend only tells of the pages in front. A tab layout that is
   /// covered or comes and goes is only seen here.
@@ -93,12 +167,20 @@ class _HostedTabBarState extends State<HostedTabBar> {
     final blend = widget.blend;
     final registry = blend.registry;
     _built = _hosted();
-    // As the iPhone Duo vertical bar does: the tabs of the page coming in and
-    // of the one going out, which are one and the same while the pages
-    // within a tab layout change.
+    final ownerTabs = registry.tabBarOwnerFor(blend.owner);
+    // The bar that stays in view: the owner's, or while pages move, the one
+    // of the tab layout on both sides of the transition. A bar that comes in
+    // waits off stage until the pages hold still.
     final upperTabs = registry.tabBarOwnerFor(blend.upper);
     final lowerTabs = registry.tabBarOwnerFor(blend.lower);
-    final ownerTabs = registry.tabBarOwnerFor(blend.owner);
+    final driver = blend.driver;
+    final shown = driver == null
+        ? ownerTabs
+        : upperTabs?.id == lowerTabs?.id
+        ? upperTabs
+        : null;
+    final going = driver == null ? null : _goingAndComing().$1;
+    final leave = driver?.drive(_bringsUpperIn ? _leaveOnPush : _leaveOnPop);
     return IgnorePointer(
       ignoring: blend.ownerIsCovered,
       child: FadeTransition(
@@ -109,12 +191,10 @@ class _HostedTabBarState extends State<HostedTabBar> {
             for (final entry in _built)
               _layer(
                 entry,
-                opacity: entry.id == upperTabs?.id
-                    ? lowerTabs?.id == upperTabs!.id
-                          ? kAlwaysCompleteAnimation
-                          : blend.upperOpacity
-                    : entry.id == lowerTabs?.id
-                    ? blend.lowerOpacity
+                opacity: entry.id == shown?.id
+                    ? _reveal
+                    : entry.id == going?.id
+                    ? leave
                     : null,
                 interactive: entry.id == ownerTabs?.id,
               ),

@@ -24,6 +24,116 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
         return Double(probe.effectiveRadius(corner: .bottomLeft))
     }
 
+    /// The glyph of a native glass button with the SF Symbol `name` at `size`
+    /// points and `weight` (a Flutter FontWeight value), as iOS26ButtonView
+    /// shows it in a button `side` points square: the button is made the same
+    /// way and laid out, as its configuration can show the symbol at another
+    /// size than the image it is given. In black on clear at the screen's
+    /// scale, as PNG, a mask for Flutter to tint, with the colour the button
+    /// draws it in (ARGB) in the light or dark appearance. For Flutter to stand
+    /// in for the button. Nil for a symbol iOS lacks.
+    private static func buttonGlyph(
+        name: String, size: Double, weight: Int?, side: Double, isDark: Bool
+    ) -> [String: Any]? {
+        guard #available(iOS 15.0, *),
+              let base = UIImage(systemName: name) ?? UIImage(named: name)
+        else { return nil }
+        let image = base.applyingSymbolConfiguration(
+            UIImage.SymbolConfiguration(
+                pointSize: CGFloat(size),
+                weight: iOS26ButtonView.symbolWeight(weight)
+            )
+        ) ?? base
+
+        // As iOS26ButtonView makes a glass button without a colour of its own.
+        let button = UIButton(type: .system)
+        button.overrideUserInterfaceStyle = isDark ? .dark : .light
+        button.tintColor = .systemBlue
+        var config: UIButton.Configuration
+        if #available(iOS 26.0, *) {
+            config = .glass()
+        } else {
+            config = .plain()
+        }
+        config.baseForegroundColor = .systemBlue
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        config.cornerStyle = .capsule
+        config.image = image
+        button.configuration = config
+        button.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        button.layoutIfNeeded()
+
+        // The symbol as the button shows it, at the size and in the place it
+        // shows it.
+        var shown = image
+        var shownSize = image.size
+        var center = CGPoint(x: side / 2, y: side / 2)
+        if let imageView = button.imageView, let displayed = imageView.image,
+           imageView.bounds.width > 0, imageView.bounds.height > 0 {
+            shown = displayed
+            if let preferred = imageView.preferredSymbolConfiguration,
+               let configured = displayed.applyingSymbolConfiguration(preferred) {
+                shown = configured
+            }
+            shownSize = imageView.bounds.size
+            center = imageView.convert(
+                CGPoint(x: imageView.bounds.midX, y: imageView.bounds.midY),
+                to: button
+            )
+        }
+        // A glass button shows its glyph in the label colour, whatever colour
+        // its configuration asks for (measured on device: #0D0D0D in the light
+        // appearance, the label's black through the glass). Before iOS 26 the
+        // plain button shows the configuration's.
+        let shownColor: UIColor
+        if #available(iOS 26.0, *) {
+            shownColor = .label
+        } else {
+            shownColor = button.configuration?.baseForegroundColor ?? .systemBlue
+        }
+        // In the appearance the button is in, named outright: a button that is
+        // in no window does not take its override into its traits, and would
+        // resolve the colour for the device's appearance instead.
+        let color = shownColor.resolvedColor(
+            with: UITraitCollection(userInterfaceStyle: isDark ? .dark : .light)
+        )
+
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        let rendered = UIGraphicsImageRenderer(size: shownSize, format: format).image { _ in
+            // Fitted as the image view fits it.
+            let fit = min(
+                shownSize.width / max(shown.size.width, 1),
+                shownSize.height / max(shown.size.height, 1)
+            )
+            let drawn = CGSize(width: shown.size.width * fit, height: shown.size.height * fit)
+            shown.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: CGRect(
+                x: (shownSize.width - drawn.width) / 2,
+                y: (shownSize.height - drawn.height) / 2,
+                width: drawn.width,
+                height: drawn.height
+            ))
+        }
+        guard let data = rendered.pngData() else { return nil }
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        func byte(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+        let argb = byte(alpha) << 24 | byte(red) << 16 | byte(green) << 8 | byte(blue)
+        return [
+            "bytes": FlutterStandardTypedData(bytes: data),
+            "scale": Double(scale),
+            "color": argb,
+            // Where the glyph's centre is off the button's.
+            "dx": Double(center.x - side / 2),
+            "dy": Double(center.y - side / 2),
+        ]
+    }
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         // The app font for native text (Dart: AdaptiveNativeFonts)
         let fontsChannel = FlutterMethodChannel(
@@ -38,6 +148,29 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             let fonts = (call.arguments as? [String: Any])?["fonts"] as? [[String: Any]] ?? []
             AdaptiveFontRegistry.shared.register(fonts)
             result(nil)
+        }
+
+        // The glyphs of native glass buttons drawn into images (Dart:
+        // GlassButtonGlyph), for their Flutter stand-ins while pages move.
+        let symbolsChannel = FlutterMethodChannel(
+            name: "adaptive_platform_ui/symbols",
+            binaryMessenger: registrar.messenger()
+        )
+        symbolsChannel.setMethodCallHandler { call, result in
+            guard call.method == "buttonGlyph",
+                  let args = call.arguments as? [String: Any],
+                  let name = args["name"] as? String
+            else {
+                result(FlutterMethodNotImplemented)
+                return
+            }
+            result(buttonGlyph(
+                name: name,
+                size: (args["size"] as? NSNumber)?.doubleValue ?? 24,
+                weight: (args["weight"] as? NSNumber)?.intValue,
+                side: (args["side"] as? NSNumber)?.doubleValue ?? 44,
+                isDark: (args["isDark"] as? NSNumber)?.boolValue ?? false
+            ))
         }
 
         // What the device is (Dart: PlatformInfo.isIPad): iPad windows have
@@ -55,6 +188,13 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
                 result(UIDevice.current.userInterfaceIdiom == .pad)
             case "displayCornerRadius":
                 result(displayCornerRadius())
+            case "lockAppearance":
+                // Dart: AdaptiveBrightnessLock.
+                let style = (call.arguments as? [String: Any])?["style"] as? String
+                AppearanceLock.shared.lock(
+                    style == "dark" ? .dark : style == "light" ? .light : .unspecified
+                )
+                result(nil)
             default:
                 result(FlutterMethodNotImplemented)
             }
@@ -161,5 +301,46 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             binaryMessenger: registrar.messenger()
         )
         verticalBarEdgeChannel.setStreamHandler(VerticalBarEdgeStreamHandler(registrar: registrar))
+    }
+}
+
+/// Holds the app's windows in one appearance (Dart: AdaptiveBrightnessLock),
+/// whatever the device's: for an app without a design for the other one, so
+/// that menus, alerts, pickers and every other view UIKit draws on its own
+/// match the Flutter pages. `.unspecified` lets them follow the device again.
+final class AppearanceLock {
+    static let shared = AppearanceLock()
+
+    private var style: UIUserInterfaceStyle = .unspecified
+    private var observer: NSObjectProtocol?
+
+    func lock(_ style: UIUserInterfaceStyle) {
+        self.style = style
+        for window in Self.windows() {
+            window.overrideUserInterfaceStyle = style
+        }
+        // Windows that come later, such as one on another display of the
+        // iPhone Duo, are held the same way.
+        if style != .unspecified, observer == nil {
+            observer = NotificationCenter.default.addObserver(
+                forName: UIWindow.didBecomeVisibleNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let self, self.style != .unspecified,
+                      let window = note.object as? UIWindow
+                else { return }
+                window.overrideUserInterfaceStyle = self.style
+            }
+        } else if style == .unspecified, let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+    }
+
+    private static func windows() -> [UIWindow] {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
     }
 }

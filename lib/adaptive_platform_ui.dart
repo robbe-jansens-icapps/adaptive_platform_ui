@@ -28,6 +28,7 @@
 library;
 
 // Platform utilities
+export 'src/platform/adaptive_brightness_lock.dart';
 export 'src/platform/adaptive_native_fonts.dart';
 export 'src/platform/platform_info.dart';
 

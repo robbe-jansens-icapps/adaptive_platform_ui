@@ -43,7 +43,7 @@ A Flutter package that provides adaptive platform-specific widgets with native i
   <img src="https://github.com/berkaycatak/adaptive_platform_ui/raw/main/img/iphone_fixed_toolbar.gif" alt="Fixed Liquid Glass toolbar on iPhone" width="300"/>
 </p>
 
-One toolbar stays in place while pages slide underneath it, and only its items change, in step with the page transition and with a back swipe. The native tab bar stays in place too: it fades out as a page is pushed over the tabs and back in as the page leaves, rather than sliding with the tabs page. On iPhone Duo the toolbar and the tab bar move to the vertical bar on the side, as native Liquid Glass capsules, in every rotation; items that do not fit move into the system overflow menu. Works with any router, with nothing to set up.
+One toolbar stays in place while pages slide underneath it, and only its items change, in step with the page transition and with a back swipe. The native tab bar stays in place too: it fades out at the start of a push over the tabs and fades back in once the page has left, rather than sliding with the tabs page. On iPhone Duo the toolbar and the tab bar move to the vertical bar on the side, as native Liquid Glass capsules, in every rotation; items that do not fit move into the system overflow menu. Works with any router, with nothing to set up.
 
 ## iOS 26+ Native Toolbar & Tab Bar
 

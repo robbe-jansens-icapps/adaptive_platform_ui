@@ -293,8 +293,10 @@ void main() {
     expect(layerOpacity(tester), 1);
   }, variant: ios);
 
-  testWidgets('it fades out as a page comes in over the tabs, waits off '
-      'stage, and fades back in as the page leaves', (tester) async {
+  testWidgets('it fades out in place over the first fifth of a push, stays '
+      'away while the page pops, and fades in once the tabs hold still', (
+    tester,
+  ) async {
     usePhone(tester);
     final tabs = Tabs();
     addTearDown(tabs.dispose);
@@ -304,15 +306,30 @@ void main() {
     expect(find.byType(IOS26NativeTabBar), findsOneWidget);
     expect(layerOpacity(tester), 1);
 
-    navigator.currentState!.push(pageRoute('Detail'));
+    /// What the bar shows: nothing while off stage.
+    double shown() => find.byType(IOS26NativeTabBar).evaluate().isEmpty
+        ? 0
+        : layerOpacity(tester);
+
+    final route = pageRoute('Detail') as PageRoute<void>;
+    navigator.currentState!.push(route);
+    // A pushed page spends its first frame off stage, its animation
+    // reporting the end it starts from.
     await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    // Fading out, in place: the bar does not move with the tabs page.
-    expect(layerOpacity(tester), lessThan(1));
-    final bottom = tester.getBottomLeft(nativeBar);
-    expect(bottom.dy, 874);
-    expect(bottom.dx, 0);
+    var fading = false;
+    while (route.animation!.status != AnimationStatus.completed) {
+      await tester.pump(const Duration(milliseconds: 8));
+      final progress = route.animation!.value;
+      final opacity = shown();
+      if (opacity > 0 && opacity < 1) {
+        fading = true;
+        // In place: the bar does not move with the tabs page.
+        expect(tester.getBottomLeft(nativeBar), const Offset(0, 874));
+      }
+      // Gone, and so off screen, for the rest of the push.
+      if (progress >= 0.2) expect(opacity, 0, reason: 'at $progress');
+    }
+    expect(fading, isTrue);
 
     await tester.pumpAndSettle();
     // Off stage while the page covers the tabs.
@@ -320,15 +337,65 @@ void main() {
     expect(nativeBar, findsOneWidget);
 
     navigator.currentState!.pop();
-    await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(IOS26NativeTabBar), findsOneWidget);
-    expect(layerOpacity(tester), greaterThan(0));
+    while (route.animation!.status != AnimationStatus.dismissed) {
+      await tester.pump(const Duration(milliseconds: 8));
+      if (route.animation!.status == AnimationStatus.dismissed) break;
+      expect(shown(), 0, reason: 'at ${route.animation!.value}');
+    }
 
+    // The tabs hold still: the bar fades in.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(shown(), greaterThan(0));
+    expect(shown(), lessThan(1));
     await tester.pumpAndSettle();
-    expect(find.byType(IOS26NativeTabBar), findsOneWidget);
-    expect(layerOpacity(tester), 1);
+    expect(shown(), 1);
+    expect(tabBarsMade(), hasLength(1));
+  }, variant: ios);
+
+  testWidgets('it stays away during a back swipe, also one that is let go '
+      'of early, and fades in once the tabs hold still', (tester) async {
+    usePhone(tester);
+    final tabs = Tabs();
+    addTearDown(tabs.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(hostedApp(navigator, tabsPage(tabs)));
+    await tester.pumpAndSettle();
+    double shown() => find.byType(IOS26NativeTabBar).evaluate().isEmpty
+        ? 0
+        : layerOpacity(tester);
+
+    navigator.currentState!.push(pageRoute('Detail'));
+    await tester.pumpAndSettle();
+
+    // Let go of early: the page stays, and so does the bar's absence.
+    var swipe = await tester.startGesture(const Offset(5, 400));
+    for (var i = 0; i < 3; i++) {
+      await swipe.moveBy(const Offset(20, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shown(), 0);
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+    await swipe.up();
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shown(), 0);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('body:Detail'), findsOneWidget);
+    expect(shown(), 0);
+
+    // All the way.
+    swipe = await tester.startGesture(const Offset(5, 400));
+    for (var i = 0; i < 10; i++) {
+      await swipe.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shown(), 0);
+    }
+    await swipe.up();
+    await tester.pumpAndSettle();
+    expect(find.text('body:Detail'), findsNothing);
+    expect(shown(), 1);
   }, variant: ios);
 
   testWidgets('it stays at full opacity while the pages within the tabs '

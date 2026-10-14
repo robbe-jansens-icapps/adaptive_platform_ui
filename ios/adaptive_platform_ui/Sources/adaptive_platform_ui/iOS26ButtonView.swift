@@ -414,7 +414,7 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
     }
 
     /// A Flutter FontWeight value (100 to 900) as a symbol weight.
-    private static func symbolWeight(_ value: Int?) -> UIImage.SymbolWeight {
+    static func symbolWeight(_ value: Int?) -> UIImage.SymbolWeight {
         switch value {
         case 100: return .ultraLight
         case 200: return .thin
