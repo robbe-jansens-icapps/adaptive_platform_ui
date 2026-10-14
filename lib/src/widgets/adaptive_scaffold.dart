@@ -330,12 +330,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
 
   /// Whether the native tab bar is shrunk while the page scrolls, for the bar
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
-  final ValueNotifier<bool> _tabBarMinimized = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _tabBarMinimized = _PageValue<bool>(false);
 
   /// How far the page's content has scrolled under the bars along its top,
   /// for custom chrome (see [ToolbarEntry.scrollEdge]).
-  final ValueNotifier<double> _scrollEdge = ValueNotifier<double>(0);
-  final ValueNotifier<double> _bottomScrollEdge = ValueNotifier<double>(0);
+  final ValueNotifier<double> _scrollEdge = _PageValue<double>(0);
+  final ValueNotifier<double> _bottomScrollEdge = _PageValue<double>(0);
 
   /// The latest scroll edge of each vertical scrollable in the page, with its
   /// depth and when it was last heard of.
@@ -2141,5 +2141,26 @@ class _CustomInlineBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// A value a page hands the toolbar host in its [ToolbarEntry]. The host
+/// keeps showing a page for a moment after it has gone (its items fade out
+/// as the next page's fade in), so it may still listen once the page has
+/// disposed the value: it then keeps its last value.
+class _PageValue<T> extends ValueNotifier<T> {
+  _PageValue(super.value);
+
+  bool _disposed = false;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_disposed) super.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

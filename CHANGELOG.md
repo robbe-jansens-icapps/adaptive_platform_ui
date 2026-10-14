@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **FIX**: Custom chrome: a page replaced where it stands (a new page in its place without a route transition) no longer trips "A ValueNotifier was used after being disposed" as its bar fades out. The host keeps showing a page for a moment after it has gone, and still listened to the scroll edge it had handed over; that value now keeps its last state once the page is gone
 * **NEW**: `AdaptiveTwoPane` lays two panes of a full screen page out around the fold of a partly open foldable: side by side on a fold down the window (held as a book), above and below one across it (standing on a table: a video above the fold, its chat below), and by `proportion` along `direction` without a fold. The panes keep their state as the device folds and as the second comes and goes, and lose the window's padding on the side they share. `FoldScope.foldOf` gives that fold for any page: the iPhone Duo's from the toolbar host, or an Android hinge or half-opened fold
 * **IMPROVEMENT**: Custom chrome: a sidebar stays in sight under a dialog, sheet or popover, dimmed as the toolbar is, instead of fading out as a tab bar along the bottom does
 * **IMPROVEMENT**: Each column of an `AdaptiveSplitView` is the window its pages have: their media query has the column's size, so a page beside another lays out for its own width (a phone's layout in a 380 point column), as a column of a split view controller has a compact width of its own
