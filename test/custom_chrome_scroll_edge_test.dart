@@ -20,7 +20,14 @@ Widget _back(BuildContext context, AdaptiveBackButtonSpec spec) {
   return GestureDetector(onTap: spec.onPressed, child: const SizedBox.square(dimension: 44, child: Text('back')));
 }
 
+const bottomBackdrop = ValueKey<String>('bottom backdrop');
+AdaptiveBarBackgroundSpec? lastBottom;
+
 Widget _background(BuildContext context, AdaptiveBarBackgroundSpec spec) {
+  if (spec.bottom) {
+    lastBottom = spec;
+    return ColoredBox(key: bottomBackdrop, color: spec.color!);
+  }
   lastBackground = spec;
   return ColoredBox(key: backdrop, color: spec.color!);
 }
@@ -55,6 +62,7 @@ void main() {
   setUp(() {
     backEdge = null;
     lastBackground = null;
+    lastBottom = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, (_) async => null);
   });
 
@@ -174,6 +182,64 @@ void main() {
     expect(backdropOpacity(tester), 0);
   });
 
+  double bottomOpacity(WidgetTester tester) => tester.widget<Opacity>(find.ancestor(of: find.byKey(bottomBackdrop), matching: find.byType(Opacity)).first).opacity;
+
+  testWidgets('along the bottom the same background is there while content runs under the bottom, and gone at its end', (tester) async {
+    phone(tester);
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await pumpApp(tester, listPage('List', controller: controller));
+
+    expect(bottomOpacity(tester), 1);
+    expect(lastBottom!.color, pageColor);
+    expect(lastBottom!.height, 34);
+    expect(tester.getRect(find.byKey(bottomBackdrop)).bottom, 844);
+
+    controller.jumpTo(controller.position.maxScrollExtent - 12);
+    await tester.pump();
+    expect(bottomOpacity(tester), closeTo(12 / AdaptiveScrollEdge.distance, 0.01));
+
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pump();
+    expect(bottomOpacity(tester), 0);
+  });
+
+  testWidgets('along the bottom it takes the page\'s colour, not that of the bar along the top', (tester) async {
+    phone(tester);
+    await pumpApp(
+      tester,
+      AdaptiveScaffold(
+        backgroundColor: pageColor,
+        appBar: const AdaptiveAppBar(title: 'Header', backdropColor: Color(0xFFFF8800)),
+        body: ListView(children: [for (var i = 0; i < 60; i++) const SizedBox(height: 60)]),
+      ),
+    );
+
+    expect(lastBottom!.color, pageColor);
+    expect(lastBackground!.color, const Color(0xFFFF8800));
+  });
+
+  testWidgets('behind the tab bar it reaches as high as the bar', (tester) async {
+    phone(tester);
+    await pumpApp(
+      tester,
+      AdaptiveScaffold(
+        bottomNavigationBar: AdaptiveBottomNavigationBar(
+          items: const [
+            AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
+            AdaptiveNavigationDestination(icon: Icons.circle, label: 'B'),
+          ],
+          selectedIndex: 0,
+          onTap: (_) {},
+        ),
+        body: Navigator(onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (_) => listPage('Tab'))),
+      ),
+    );
+
+    expect(lastBottom!.height, 60);
+    expect(bottomOpacity(tester), 1);
+  });
+
   testWidgets('content that only scrolls sideways leaves the bar clear', (tester) async {
     phone(tester);
     await pumpApp(
@@ -193,36 +259,75 @@ void main() {
     expect(backdropOpacity(tester), 0);
   });
 
-  testWidgets('beside the iPhone Duo\'s vertical bar the strip takes the colour of the page in front, so the bar reads as part of the page', (tester) async {
-    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
-    PlatformInfo.debugIOSVersionOverride = 26;
-    tester.view.physicalSize = const Size(466, 678);
-    tester.view.devicePixelRatio = 1;
-    tester.view.padding = const FakeViewPadding(right: 84);
-    tester.view.viewPadding = const FakeViewPadding(right: 84);
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        navigatorKey: navigator,
-        builder: (context, child) => AdaptiveToolbarHost(chrome: chrome, debugFold: duo(), child: child!),
-        home: plainPage('First', color: const Color(0xFFAA0000)),
-      ),
-    );
-    await tester.pumpAndSettle();
+  group('beside the iPhone Duo\'s vertical bar', () {
+    void cover(WidgetTester tester) {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      tester.view.physicalSize = const Size(466, 678);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(right: 84);
+      tester.view.viewPadding = const FakeViewPadding(right: 84);
+      addTearDown(tester.view.reset);
+    }
 
-    Color band() => tester.widget<ColoredBox>(find.descendant(of: find.byKey(const ValueKey<String>('adaptive_duo_band')), matching: find.byType(ColoredBox))).color;
-    expect(tester.getRect(find.byKey(const ValueKey<String>('adaptive_duo_band'))), const Rect.fromLTRB(382, 0, 466, 678));
-    expect(band(), const Color(0xFFAA0000));
+    Rect scaffoldOf(WidgetTester tester, String body) =>
+        tester.getRect(find.ancestor(of: find.byKey(ValueKey<String>(body)), matching: find.byType(Scaffold)).first);
 
-    navigator.currentState!.push(MaterialPageRoute<void>(builder: (_) => plainPage('Second', color: const Color(0xFF0000AA))));
-    await tester.pumpAndSettle();
-    expect(band(), const Color(0xFF0000AA));
+    testWidgets('a page inside a tab layout has its own background under the strip, with its content beside it', (tester) async {
+      cover(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => AdaptiveToolbarHost(chrome: chrome, debugFold: duo(), child: child!),
+          home: AdaptiveScaffold(
+            backgroundColor: const Color(0xFF999999),
+            bottomNavigationBar: AdaptiveBottomNavigationBar(
+              items: const [
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'B'),
+              ],
+              selectedIndex: 0,
+              onTap: (_) {},
+            ),
+            body: Navigator(
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (_) => AdaptiveScaffold(
+                  backgroundColor: const Color(0xFFFFFFFF),
+                  appBar: const AdaptiveAppBar(title: 'Tab'),
+                  body: const SizedBox.expand(key: ValueKey<String>('tab body')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('back'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(band(), isNot(anyOf(const Color(0xFFAA0000), const Color(0xFF0000AA))));
-    await tester.pumpAndSettle();
-    expect(band(), const Color(0xFFAA0000));
+      expect(scaffoldOf(tester, 'tab body').right, 466);
+      expect(tester.getRect(find.byKey(const ValueKey<String>('tab body'))).right, 466 - 84);
+    });
+
+    testWidgets('a page that extends behind the bar runs under the strip, with the strip in its padding', (tester) async {
+      cover(tester);
+      late EdgeInsets padding;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => AdaptiveToolbarHost(chrome: chrome, debugFold: duo(), child: child!),
+          home: AdaptiveScaffold(
+            extendBodyBehindVerticalBar: true,
+            appBar: const AdaptiveAppBar(title: 'Header'),
+            body: Builder(
+              builder: (context) {
+                padding = MediaQuery.paddingOf(context);
+                return const SizedBox.expand(key: ValueKey<String>('header body'));
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(const ValueKey<String>('header body'))).right, 466);
+      expect(padding.right, 84);
+    });
   });
 }

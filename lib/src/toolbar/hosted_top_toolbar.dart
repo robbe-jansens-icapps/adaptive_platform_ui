@@ -615,6 +615,127 @@ class HostedTopToolbar extends StatelessWidget {
   }
 }
 
+/// What sits behind the bars along the bottom with custom chrome: the tab
+/// bar, an accessory floating at the bottom, or the home indicator alone.
+/// Like the toolbar's background it is in the colour of the page in front,
+/// blended from one page to the next, and only there as far as the page's
+/// content runs under the bottom ([ToolbarEntry.bottomScrollEdge]). It keeps
+/// out of the iPhone Duo's vertical bar and from under a sidebar.
+class HostedBottomEdge extends StatelessWidget {
+  const HostedBottomEdge({
+    super.key,
+    required this.blend,
+    required this.chrome,
+    required this.placement,
+    required this.tabBarHeight,
+    required this.accessoryHeight,
+    this.sidebarInset = const AlwaysStoppedListenable<double>(0),
+  });
+
+  final ToolbarBlend blend;
+  final AdaptiveChrome chrome;
+  final AdaptiveChromePlacement placement;
+
+  /// The room the tab bar takes along the bottom, while it is there.
+  final ValueListenable<double> tabBarHeight;
+
+  /// The room an accessory floating at the bottom of the content takes.
+  final ValueListenable<double> accessoryHeight;
+
+  final ValueListenable<double> sidebarInset;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(listenable: blend, builder: _build);
+  }
+
+  Widget _build(BuildContext context, Widget? _) {
+    final upper = blend.upper;
+    final lower = blend.lower;
+    final driver = blend.driver;
+    final systemBackground = CupertinoColors.systemBackground.resolveFrom(
+      context,
+    );
+    // The page's own colour first: the bar's may be a header's, at the top.
+    Color colorOf(ToolbarEntry? entry) =>
+        HostedTopToolbar._opaque(entry?.backgroundColor) ??
+        HostedTopToolbar._opaque(entry?.appBar?.backdropColor) ??
+        systemBackground;
+    bool tabsBelow(ToolbarEntry? entry) =>
+        placement == AdaptiveChromePlacement.bottom &&
+        blend.registry.tabBarOwnerFor(entry) != null;
+    final pose = DuoPoseScope.of(context);
+    final viewBottom = MediaQuery.viewPaddingOf(context).bottom;
+    return IgnorePointer(
+      child: FadeTransition(
+        opacity: ReverseAnimation(blend.cover),
+        child: AnimatedBuilder(
+          animation: Listenable.merge(<Listenable?>[
+            tabBarHeight,
+            accessoryHeight,
+            sidebarInset,
+            driver,
+          ]),
+          builder: (context, _) {
+            double heightOf(ToolbarEntry? entry) => math.max(
+              viewBottom,
+              math.max(
+                tabsBelow(entry) ? tabBarHeight.value : 0,
+                accessoryHeight.value,
+              ),
+            );
+            final t = lower != null && driver != null ? driver.value : 1.0;
+            final height = lower == null
+                ? heightOf(upper)
+                : heightOf(lower) + (heightOf(upper) - heightOf(lower)) * t;
+            final color = lower == null
+                ? colorOf(upper)
+                : Color.lerp(colorOf(lower), colorOf(upper), t)!;
+            final upperEdge =
+                upper?.bottomScrollEdge ??
+                const AlwaysStoppedListenable<double>(0);
+            final builder = chrome.barBackgroundBuilder;
+            final background = builder != null
+                ? builder(
+                    context,
+                    AdaptiveBarBackgroundSpec(
+                      placement: placement,
+                      height: height,
+                      color: color,
+                      bottom: true,
+                      scrollEdge: upperEdge,
+                      data: upper?.appBar?.chromeData,
+                    ),
+                  )
+                : _Backdrop(color: color, height: height, bottom: true);
+            return Padding(
+              padding: EdgeInsets.only(
+                left:
+                    sidebarInset.value +
+                    (pose != null && pose.onLeft ? pose.stripWidth : 0),
+                right: pose != null && !pose.onLeft ? pose.stripWidth : 0,
+              ),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: height,
+                  width: double.infinity,
+                  child: _ScrollEdgeFade(
+                    upper: upperEdge,
+                    lower: lower?.bottomScrollEdge,
+                    driver: lower != null ? driver : null,
+                    child: background,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// Shows [child], the bar's background, as far as the content of the page
 /// it belongs to has scrolled under the bar; during a blend between two pages
 /// that both have one, from the [lower] page's scroll to the [upper] one's.
@@ -719,28 +840,36 @@ class _DialogSlide extends StatelessWidget {
 /// the page's [color]: invisible at rest, it fades out what scrolls under the
 /// bar.
 class _Backdrop extends StatelessWidget {
-  const _Backdrop({required this.color, required this.height});
+  const _Backdrop({
+    required this.color,
+    required this.height,
+    this.bottom = false,
+  });
 
   final Color color;
 
-  /// How far down the bar reaches from the top of the window.
+  /// How far down the bar reaches from the top of the window, or up from the
+  /// bottom of it for a [bottom] one.
   final double height;
+
+  /// Along the bottom of the window, fading out upwards.
+  final bool bottom;
 
   @override
   Widget build(BuildContext context) {
     final base = color.withValues(alpha: 1);
     return IgnorePointer(
       child: OverflowBox(
-        alignment: Alignment.topCenter,
+        alignment: bottom ? Alignment.bottomCenter : Alignment.topCenter,
         maxHeight: double.infinity,
         child: LayoutBuilder(
           builder: (context, constraints) => Container(
-            // Runs on below the bar for a smooth fade into the content.
+            // Runs on past the bar for a smooth fade into the content.
             height: height + 30,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+                begin: bottom ? Alignment.bottomCenter : Alignment.topCenter,
+                end: bottom ? Alignment.topCenter : Alignment.bottomCenter,
                 stops: const [0.0, 0.4, 0.7, 1.0],
                 colors: [
                   base.withValues(alpha: 0.85),

@@ -26,6 +26,7 @@ class ToolbarEntry {
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
     this.scrollEdge,
+    this.bottomScrollEdge,
     this.backgroundColor,
   });
 
@@ -88,6 +89,10 @@ class ToolbarEntry {
   /// from 0 to 1 (see `AdaptiveScrollEdge`), where the page tracks it: with
   /// custom chrome.
   final ValueListenable<double>? scrollEdge;
+
+  /// The same along the bottom: how much of the page's content runs under
+  /// the bars there, from 0 to 1.
+  final ValueListenable<double>? bottomScrollEdge;
 
   /// The colour of the page (`AdaptiveScaffold.backgroundColor`), for the
   /// chrome around it to match.

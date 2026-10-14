@@ -190,6 +190,7 @@ class AdaptiveScaffold extends StatefulWidget {
     this.useHeroBackButton = true,
     this.useFixedToolbar = true,
     this.tabBarHidden = false,
+    this.extendBodyBehindVerticalBar = false,
   });
 
   /// App bar configuration
@@ -295,9 +296,20 @@ class AdaptiveScaffold extends StatefulWidget {
   /// to prevent native platform views from bleeding through.
   final bool tabBarHidden;
 
+  /// With custom chrome on the iPhone Duo, whether the body runs under the
+  /// strip of the vertical bar too, so a header's colour can reach into the
+  /// bar. The strip stays in the body's media query padding, for its content
+  /// to keep clear of. By default the body sits beside the strip, and the
+  /// page's background alone runs under it.
+  final bool extendBodyBehindVerticalBar;
+
   @override
   State<AdaptiveScaffold> createState() => _AdaptiveScaffoldState();
 }
+
+/// What one scrollable in a page last said about its scroll edges, with how
+/// deep it is and when it said so.
+typedef _ScrollEdges = ({int depth, int order, double edge, double bottom});
 
 class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   final GlobalKey<_MinimizableTabBarState> _tabBarKey =
@@ -318,11 +330,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// How far the page's content has scrolled under the bars along its top,
   /// for custom chrome (see [ToolbarEntry.scrollEdge]).
   final ValueNotifier<double> _scrollEdge = ValueNotifier<double>(0);
+  final ValueNotifier<double> _bottomScrollEdge = ValueNotifier<double>(0);
 
   /// The latest scroll edge of each vertical scrollable in the page, with its
   /// depth and when it was last heard of.
-  final Map<BuildContext, ({int depth, int order, double edge})> _edges =
-      <BuildContext, ({int depth, int order, double edge})>{};
+  final Map<BuildContext, _ScrollEdges> _edges = <BuildContext, _ScrollEdges>{};
   int _edgeOrder = 0;
 
   /// The outermost scrollables decide, as it is their content that runs
@@ -336,10 +348,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       _ => (null, 0, null),
     };
     final edge = metrics == null ? null : AdaptiveScrollEdge.of(metrics);
-    if (edge == null || context == null) return false;
-    _edges[context] = (depth: depth, order: _edgeOrder++, edge: edge);
+    final bottom = metrics == null
+        ? null
+        : AdaptiveScrollEdge.bottomOf(metrics);
+    if (edge == null || bottom == null || context == null) return false;
+    _edges[context] = (
+      depth: depth,
+      order: _edgeOrder++,
+      edge: edge,
+      bottom: bottom,
+    );
     _edges.removeWhere((context, _) => !context.mounted);
-    ({int depth, int order, double edge})? decides;
+    _ScrollEdges? decides;
     for (final entry in _edges.values) {
       if (decides == null ||
           entry.depth < decides.depth ||
@@ -347,7 +367,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         decides = entry;
       }
     }
-    if (decides != null) _scrollEdge.value = decides.edge;
+    if (decides != null) {
+      _scrollEdge.value = decides.edge;
+      _bottomScrollEdge.value = decides.bottom;
+    }
     return false;
   }
 
@@ -380,10 +403,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         AdaptiveChromePlacement.bottom =>
           ToolbarChromeScope.maybeOf(context)?.tabBarHeight ??
               const AlwaysStoppedAnimation<double>(0),
-        AdaptiveChromePlacement.vertical ||
-        AdaptiveChromePlacement.topStrip => AdaptiveChromeScope.maybeOf(
-          context,
-        )!.floatingAccessoryHeight,
+        AdaptiveChromePlacement.vertical || AdaptiveChromePlacement.topStrip =>
+          AdaptiveChromeScope.maybeOf(context)!.floatingAccessoryHeight,
         AdaptiveChromePlacement.sidebar => const AlwaysStoppedAnimation<double>(
           0,
         ),
@@ -449,6 +470,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     _ownTabBarHeight.dispose();
     _tabBarMinimized.dispose();
     _scrollEdge.dispose();
+    _bottomScrollEdge.dispose();
     super.dispose();
   }
 
@@ -488,8 +510,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     // Custom chrome draws any tab bar the page describes, and so does the
     // iPhone Duo's vertical bar: the page's own bar would have nowhere to go.
     final custom = _customChrome != null;
-    if (bar == null ||
-        (!bar.useNativeBottomBar && !custom && !_tabsInDuoBar)) {
+    if (bar == null || (!bar.useNativeBottomBar && !custom && !_tabsInDuoBar)) {
       return null;
     }
     if (bar.items == null ||
@@ -572,6 +593,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             : _tabsHostedAtBottom(context),
         tabBarMinimized: _tabBarMinimized,
         scrollEdge: _customChrome != null ? _scrollEdge : null,
+        bottomScrollEdge: _customChrome != null ? _bottomScrollEdge : null,
         backgroundColor: widget.backgroundColor,
       ),
     );
@@ -1323,10 +1345,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       topInset = chrome.metrics.toolbarHeight;
     }
 
+    final tabs = _nativeTabBar;
+    final ownsTabs = tabs != null && _usesFixedToolbar(context);
     // The iPhone Duo strip beside a page the host draws the bar for is the
-    // bar's: the content keeps out of it.
+    // bar's: the content keeps out of it, while the page's background runs
+    // under it. A tab layout leaves that to the pages inside it, so each of
+    // those has its own background there.
     final padding = MediaQuery.paddingOf(context);
-    final sideInset = pose == null || !hosted
+    final sideInset =
+        pose == null ||
+            !hosted ||
+            ownsTabs ||
+            widget.extendBodyBehindVerticalBar
         ? 0.0
         : pose.onLeft
         ? padding.left
@@ -1334,8 +1364,6 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     final barOnLeft = pose?.onLeft ?? false;
 
     Widget body = widget.body ?? const SizedBox.shrink();
-    final tabs = _nativeTabBar;
-    final ownsTabs = tabs != null && _usesFixedToolbar(context);
     if (ownsTabs) {
       body = _TabLayout(
         ownerRoute: ModalRoute.of(context),
@@ -1374,8 +1402,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
               top: topFloor != null
                   ? math.max(inner.padding.top, topFloor)
                   : inner.padding.top + topInset,
-              left: barOnLeft ? inner.padding.left - sideInset : inner.padding.left,
-              right: barOnLeft ? inner.padding.right : inner.padding.right - sideInset,
+              left: barOnLeft
+                  ? inner.padding.left - sideInset
+                  : inner.padding.left,
+              right: barOnLeft
+                  ? inner.padding.right
+                  : inner.padding.right - sideInset,
             ),
             viewPadding: inner.viewPadding.copyWith(
               top: topFloor != null
@@ -1908,8 +1940,7 @@ class _TabsLeaveWhenPushed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final raised = context
-        .dependOnInheritedWidgetOfExactType<_RaisedForTabs>();
+    final raised = context.dependOnInheritedWidgetOfExactType<_RaisedForTabs>();
     final ownerRoute = raised?.ownerRoute;
     final keepsTabs =
         ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false;
@@ -1988,7 +2019,9 @@ class _CustomInlineBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
     final metrics = chrome.metrics;
-    final height = titleBand ? kDuoTitleBandHeight : top + metrics.toolbarHeight;
+    final height = titleBand
+        ? kDuoTitleBandHeight
+        : top + metrics.toolbarHeight;
     final centered = !titleBand && chrome.centersTitle(defaultTargetPlatform);
     final title = chrome.titleBuilder(
       context,
@@ -2051,7 +2084,8 @@ class _CustomInlineBar extends StatelessWidget {
             child: NavigationToolbar(
               leading: Padding(
                 padding: const EdgeInsetsDirectional.only(start: 16),
-                child: leading ??
+                child:
+                    leading ??
                     (impliesBack
                         ? chrome.backButtonBuilder(
                             context,

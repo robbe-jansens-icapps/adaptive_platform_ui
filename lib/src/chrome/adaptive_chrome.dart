@@ -242,14 +242,21 @@ class AdaptiveBarBackgroundSpec {
     required this.height,
     this.color,
     this.titleBand = false,
+    this.bottom = false,
     this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
 
   final AdaptiveChromePlacement placement;
 
-  /// How far down the bar reaches from the top of the window.
+  /// How far the bar reaches from the edge of the window it sits on: down
+  /// from the top, or up from the bottom for a [bottom] one.
   final double height;
+
+  /// Whether this sits along the bottom of the window, behind the tab bar,
+  /// a floating accessory or the home indicator, fading out upwards, rather
+  /// than behind the toolbar along the top.
+  final bool bottom;
 
   /// How far the page's content has scrolled under the bar (see
   /// [AdaptiveScrollEdge]). The host already fades the background in with
@@ -374,10 +381,11 @@ class AdaptiveChrome {
   /// A group of a page's actions.
   final AdaptiveActionsBuilder actionsBuilder;
 
-  /// Behind the toolbar. A soft gradient in the page's colour when null, as
-  /// behind the native bar. Either way it fades in as the page's content
-  /// scrolls under the bar, as the system's scroll edge effect does, and is
-  /// gone while nothing is underneath.
+  /// Behind the toolbar along the top, and behind what sits along the bottom
+  /// ([AdaptiveBarBackgroundSpec.bottom]). A soft gradient in the page's
+  /// colour when null, as behind the native bar. Either way it fades in as
+  /// the page's content scrolls under it, as the system's scroll edge effect
+  /// does, and is gone while nothing is underneath.
   final AdaptiveBarBackgroundBuilder? barBackgroundBuilder;
 
   /// The tabs in a sidebar along the leading edge of a wide window
@@ -502,11 +510,20 @@ abstract final class AdaptiveScrollEdge {
   /// in.
   static const double distance = 24;
 
-  /// The scroll edge of a scrollable with [metrics], or null for one that
-  /// does not run vertically.
+  /// The scroll edge along the top of a scrollable with [metrics], or null
+  /// for one that does not run vertically.
   static double? of(ScrollMetrics metrics) {
     if (metrics.axis != Axis.vertical) return null;
     final under = metrics.axisDirection == AxisDirection.up ? metrics.extentAfter : metrics.extentBefore;
+    return (under / distance).clamp(0.0, 1.0);
+  }
+
+  /// The scroll edge along the bottom: how much content there is below the
+  /// bottom of a scrollable with [metrics], running under the bars there.
+  /// Null for one that does not run vertically.
+  static double? bottomOf(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return null;
+    final under = metrics.axisDirection == AxisDirection.up ? metrics.extentBefore : metrics.extentAfter;
     return (under / distance).clamp(0.0, 1.0);
   }
 }
