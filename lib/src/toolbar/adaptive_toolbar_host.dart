@@ -431,7 +431,9 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
 }
 
 /// The app's own bars sit above the navigator, outside any page: give them
-/// what a page gives its content, a Material for ink and text styles.
+/// what a page gives its content, a Material for ink and text styles, and a
+/// semantics boundary, so each control gets a node of its own, in its own
+/// place, rather than its label merging into one that spans the window.
 /// Native chrome is left as it is.
 class _ChromeMaterial extends StatelessWidget {
   const _ChromeMaterial({required this.custom, required this.child});
@@ -441,7 +443,11 @@ class _ChromeMaterial extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => custom
-      ? Material(type: MaterialType.transparency, child: child)
+      ? Semantics(
+          container: true,
+          explicitChildNodes: true,
+          child: Material(type: MaterialType.transparency, child: child),
+        )
       : child;
 }
 

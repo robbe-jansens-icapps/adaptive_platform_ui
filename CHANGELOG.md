@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: Custom chrome: the app's bars form a semantics container of their own, as a page's route does, so their controls are reported to accessibility services, and to UI test drivers, in their own place rather than merged into a node that spans the window
 * **FIX**: Custom chrome: the app's bars sit in a transparent `Material`, as a page's content does. Above the navigator they had none, so their text showed Flutter's yellow underlined fallback style and ink effects had nowhere to draw
 * **NEW**: `AdaptivePopover.show` and `showMenu` take `chromeData`, handed to the app's popover surface (`AdaptivePopoverSpec.data`), so one app can open popovers in more than one look
 * **FIX**: iPhone Duo: the tabs of a tab page with its own bottom bar (`useNativeBottomBar: false`) are in the vertical bar, where the system puts tabs. Before, with a native toolbar they disappeared in the vertical bar pose, as the page left its bar out and the bar got none; without one, the page's bar stayed along the bottom

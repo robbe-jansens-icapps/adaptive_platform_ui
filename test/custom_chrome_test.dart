@@ -249,4 +249,18 @@ void main() {
       expect(tester.widget<Material>(material.first).type, MaterialType.transparency);
     }
   });
+
+  testWidgets('each of the app\'s controls is in the semantics tree in its own place', (tester) async {
+    phone(tester);
+    final handle = tester.ensureSemantics();
+    final tabs = TabsFixture(actions: [AdaptiveAppBarAction(title: 'Share', onPressed: () {})]);
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    final action = tester.getSemantics(find.text('action:Share'));
+    expect(action.rect.width, lessThan(100));
+    final tab = tester.getSemantics(find.text('tab:Tab 1'));
+    expect(tab.rect.width, lessThan(200));
+    handle.dispose();
+  });
 }
