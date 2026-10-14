@@ -135,6 +135,11 @@ enum TabBarMinimizeBehavior {
 
   /// Let the system decide
   automatic,
+
+  /// Minimize when scrolling down, and stay minimized until the page is
+  /// back at its top. The native tab bar has no such behavior and minimizes
+  /// on scrolling down instead.
+  onScrollDownUntilTop,
 }
 
 /// How much of the bottom of a page the native iOS 26 tab bar of the
@@ -1731,6 +1736,10 @@ bool? _tabBarMinimizedAfter(
   final metrics = notification.metrics;
   // A carousel or a pager scrolling sideways says nothing about the page.
   if (metrics.axis != Axis.vertical) return null;
+  if (behavior == TabBarMinimizeBehavior.onScrollDownUntilTop &&
+      AdaptiveScrollEdge.of(metrics) == 0) {
+    return minimized ? false : null;
+  }
 
   // Check if we're in overscroll territory (pull-to-refresh or bottom bounce)
   // When pixels < minScrollExtent, user is pulling down beyond top (overscroll)
@@ -1744,7 +1753,9 @@ bool? _tabBarMinimizedAfter(
   // Ignore scroll events during overscroll to prevent tab bar animation during bounce
   if (isOverscrolling) return null;
 
-  if (behavior == TabBarMinimizeBehavior.onScrollDown ||
+  if (behavior == TabBarMinimizeBehavior.onScrollDownUntilTop) {
+    if (delta > 0 && !minimized) return true;
+  } else if (behavior == TabBarMinimizeBehavior.onScrollDown ||
       behavior == TabBarMinimizeBehavior.automatic) {
     // Minimize when scrolling down (positive delta)
     if (delta > 0 && !minimized) return true;

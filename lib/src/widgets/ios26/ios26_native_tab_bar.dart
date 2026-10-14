@@ -52,6 +52,13 @@ class IOS26NativeTabBar extends StatefulWidget {
 }
 
 class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
+  /// UIKit has no behavior that waits for the top: it minimizes on
+  /// scrolling down.
+  int get _nativeMinimizeBehavior =>
+      widget.minimizeBehavior == TabBarMinimizeBehavior.onScrollDownUntilTop
+      ? TabBarMinimizeBehavior.onScrollDown.index
+      : widget.minimizeBehavior.index;
+
   static bool get _hasUIKit =>
       IOS26NativeTabBar.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
 
@@ -248,7 +255,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         'selectedIndex': widget.selectedIndex,
         'isDark': _isDark,
         'isRtl': _isRtl,
-        'minimizeBehavior': widget.minimizeBehavior.index,
+        'minimizeBehavior': _nativeMinimizeBehavior,
         'hidden': widget.hidden,
         if (_effectiveTint != null) 'tint': _colorToARGB(_effectiveTint!),
         if (widget.unselectedItemTint != null)
@@ -515,7 +522,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     if (_lastMinimizeBehavior != widget.minimizeBehavior) {
       _lastMinimizeBehavior = widget.minimizeBehavior;
       await _invoke<void>(ch, 'setMinimizeBehavior', {
-        'behavior': widget.minimizeBehavior.index,
+        'behavior': _nativeMinimizeBehavior,
       });
     }
 

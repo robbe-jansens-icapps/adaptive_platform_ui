@@ -76,7 +76,9 @@ class _IOS26ScaffoldLegacyState extends State<IOS26ScaffoldLegacy>
       final delta = notification.scrollDelta ?? 0;
 
       if (widget.minimizeBehavior == TabBarMinimizeBehavior.onScrollDown ||
-          widget.minimizeBehavior == TabBarMinimizeBehavior.automatic) {
+          widget.minimizeBehavior == TabBarMinimizeBehavior.automatic ||
+          widget.minimizeBehavior ==
+              TabBarMinimizeBehavior.onScrollDownUntilTop) {
         // Minimize when scrolling down (positive delta)
         if (delta > 0 && !_isMinimized) {
           _minimizeTabBar();

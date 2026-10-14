@@ -32,7 +32,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
   });
 
-  Future<void> pumpTabs(WidgetTester tester) async {
+  Future<void> pumpTabs(WidgetTester tester, {TabBarMinimizeBehavior behavior = TabBarMinimizeBehavior.onScrollDown}) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
@@ -44,7 +44,7 @@ void main() {
         home: ValueListenableBuilder<int>(
           valueListenable: selected,
           builder: (context, index, _) => AdaptiveScaffold(
-            minimizeBehavior: TabBarMinimizeBehavior.onScrollDown,
+            minimizeBehavior: behavior,
             bottomNavigationBar: AdaptiveBottomNavigationBar(
               items: const [
                 AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
@@ -94,6 +94,23 @@ void main() {
     expect(minimized!.value, isTrue);
 
     selected.value = 1;
+    await tester.pumpAndSettle();
+    expect(minimized!.value, isFalse);
+  });
+
+  testWidgets('until the top: scrolling up a little keeps the bar small, and it is back only at the top', (tester) async {
+    await pumpTabs(tester, behavior: TabBarMinimizeBehavior.onScrollDownUntilTop);
+    final list = find.byKey(const ValueKey<String>('list'));
+
+    await tester.drag(list, const Offset(0, -800));
+    await tester.pumpAndSettle();
+    expect(minimized!.value, isTrue);
+
+    await tester.drag(list, const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(minimized!.value, isTrue);
+
+    await tester.drag(list, const Offset(0, 2000));
     await tester.pumpAndSettle();
     expect(minimized!.value, isFalse);
   });
