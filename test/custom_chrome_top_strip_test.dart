@@ -22,13 +22,13 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
   });
 
-  Future<TabsFixture> pumpPortrait(WidgetTester tester, {bool hidesWhenPushed = true}) async {
+  Future<TabsFixture> pumpPortrait(WidgetTester tester, {bool hidesWhenPushed = true, AdaptiveChrome chrome = TestChrome.inTopStrip}) async {
     tester.view.physicalSize = innerPortrait;
     tester.view.devicePixelRatio = 1;
     tester.view.padding = const FakeViewPadding(top: 84, bottom: 20);
     tester.view.viewPadding = const FakeViewPadding(top: 84, bottom: 20);
     addTearDown(tester.view.reset);
-    final tabs = TabsFixture(debugFold: duo(regions: [cluster]), hidesWhenPushed: hidesWhenPushed);
+    final tabs = TabsFixture(debugFold: duo(regions: [cluster]), hidesWhenPushed: hidesWhenPushed, chrome: chrome);
     await tester.pumpWidget(tabs.app());
     await tester.pumpAndSettle();
     return tabs;
@@ -82,6 +82,30 @@ void main() {
     expect(tester.getCenter(find.text('title:Detail')).dy, 84 + kHostedToolbarHeight / 2);
     expect(tester.getCenter(find.text('back')).dy, 84 + kHostedToolbarHeight / 2);
     expect(tabs.paddingOf('Detail').top, 84 + kHostedToolbarHeight);
+  });
+
+  testWidgets('by default the tabs stay along the bottom at full size, as the system tab bar does, and the toolbar sits in the strip', (tester) async {
+    final tabs = await pumpPortrait(tester, chrome: TestChrome.chrome);
+
+    expect(TestChrome.lastTabSpec!.placement, AdaptiveChromePlacement.bottom);
+    final bar = tester.getRect(find.byKey(TestChrome.tabBarKey));
+    expect(bar.bottom, innerPortrait.height);
+    expect(bar.width, innerPortrait.width);
+    expect(tester.getCenter(find.text('title:Tab 0')).dy, DuoTopStrip.barTop + kHostedToolbarHeight / 2);
+    final padding = tabs.paddingOf('Tab 0');
+    expect(padding.top, 84);
+    expect(tabs.insetOf('Tab 0'), TestChrome.tabBarHeight);
+  });
+
+  testWidgets('by default a pushed page keeps its bar in the strip, beside the status cluster', (tester) async {
+    final tabs = await pumpPortrait(tester, chrome: TestChrome.chrome);
+
+    tabs.push(0, 'Detail');
+    await tester.pumpAndSettle();
+
+    expect(tester.getCenter(find.text('title:Detail')).dy, DuoTopStrip.barTop + kHostedToolbarHeight / 2);
+    expect(tester.getRect(find.text('back')).right, lessThan(cluster.bounds.left));
+    expect(tabs.paddingOf('Detail').top, 84);
   });
 
   testWidgets('without a hinge there is no strip: the tabs go along the bottom', (tester) async {

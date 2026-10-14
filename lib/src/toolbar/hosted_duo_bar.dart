@@ -79,86 +79,140 @@ class HostedDuoBar extends StatelessWidget {
     // blend instead of being torn down and rebuilt.
     return IgnorePointer(
       ignoring: blend.ownerIsCovered,
-      child: FadeTransition(
-        opacity: blend.chromeOpacity,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (lowerEntry != null && !lower.isEmpty)
-              _layer(
-                key: ValueKey<Object>(lowerEntry.id),
-                content: lower,
-                opacity: lowerOpacity,
-                interactive: !upperOwns,
-                reservedTabs: lowerTabs?.tabBar?.items?.length ?? 0,
-              ),
-            if (upperEntry != null && !upper.isEmpty)
-              _layer(
-                key: ValueKey<Object>(upperEntry.id),
-                content: upper,
-                opacity: upperOpacity,
-                interactive: upperOwns,
-                reservedTabs: upperTabs?.tabBar?.items?.length ?? 0,
-              ),
-            for (final (content, opacity, interactive) in backs)
-              FadeTransition(
-                // Keyed by its look, so a back button carries on as the same
-                // control from one page to the next.
-                key: ValueKey<Object>((
-                  'adaptive_toolbar_back',
-                  content.backStyle,
-                )),
-                opacity: opacity,
-                // See HostedTopToolbar._layer: in the semantics tree at every
-                // opacity, left out while it fades with the page leaving.
-                alwaysIncludeSemantics: true,
-                child: ExcludeSemantics(
-                  excluding: !interactive,
-                  child: IgnorePointer(
-                    ignoring: !interactive,
-                    child: DuoVerticalBar(
-                      leading: chrome == null
-                          ? DuoBarBackButton(
-                              onPressed: content.back,
-                              close:
-                                  content.backStyle ==
-                                  AdaptiveBackButtonStyle.close,
-                            )
-                          : SizedBox.square(
-                              dimension: IOS26GlassCapsule.width,
-                              child: chrome!.backButtonBuilder(
-                                context,
-                                AdaptiveBackButtonSpec(
-                                  placement: AdaptiveChromePlacement.vertical,
-                                  style: content.backStyle,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (chrome != null) _band(context, upperEntry, lowerEntry),
+          FadeTransition(
+            opacity: blend.chromeOpacity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (lowerEntry != null && !lower.isEmpty)
+                  _layer(
+                    key: ValueKey<Object>(lowerEntry.id),
+                    content: lower,
+                    opacity: lowerOpacity,
+                    interactive: !upperOwns,
+                    reservedTabs: lowerTabs?.tabBar?.items?.length ?? 0,
+                  ),
+                if (upperEntry != null && !upper.isEmpty)
+                  _layer(
+                    key: ValueKey<Object>(upperEntry.id),
+                    content: upper,
+                    opacity: upperOpacity,
+                    interactive: upperOwns,
+                    reservedTabs: upperTabs?.tabBar?.items?.length ?? 0,
+                  ),
+                for (final (content, opacity, interactive) in backs)
+                  FadeTransition(
+                    // Keyed by its look, so a back button carries on as the same
+                    // control from one page to the next.
+                    key: ValueKey<Object>((
+                      'adaptive_toolbar_back',
+                      content.backStyle,
+                    )),
+                    opacity: opacity,
+                    // See HostedTopToolbar._layer: in the semantics tree at every
+                    // opacity, left out while it fades with the page leaving.
+                    alwaysIncludeSemantics: true,
+                    child: ExcludeSemantics(
+                      excluding: !interactive,
+                      child: IgnorePointer(
+                        ignoring: !interactive,
+                        child: DuoVerticalBar(
+                          leading: chrome == null
+                              ? DuoBarBackButton(
                                   onPressed: content.back,
-                                  data: content.data,
+                                  close:
+                                      content.backStyle ==
+                                      AdaptiveBackButtonStyle.close,
+                                )
+                              : SizedBox.square(
+                                  dimension: IOS26GlassCapsule.width,
+                                  child: chrome!.backButtonBuilder(
+                                    context,
+                                    AdaptiveBackButtonSpec(
+                                      placement:
+                                          AdaptiveChromePlacement.vertical,
+                                      style: content.backStyle,
+                                      onPressed: content.back,
+                                      data: content.data,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                      regions: regions,
+                          regions: regions,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            for (final (tabs, opacity) in tabLayers)
-              FadeTransition(
-                key: ValueKey<(String, Object)>(('adaptive_tabs', tabs.id)),
-                opacity: opacity,
-                alwaysIncludeSemantics: true,
-                child: ExcludeSemantics(
-                  excluding: tabs.id != upperTabs?.id,
-                  child: DuoVerticalBar(
-                    tabBar: tabs.tabBar,
-                    regions: regions,
-                    chrome: chrome,
+                for (final (tabs, opacity) in tabLayers)
+                  FadeTransition(
+                    key: ValueKey<(String, Object)>(('adaptive_tabs', tabs.id)),
+                    opacity: opacity,
+                    alwaysIncludeSemantics: true,
+                    child: ExcludeSemantics(
+                      excluding: tabs.id != upperTabs?.id,
+                      child: DuoVerticalBar(
+                        tabBar: tabs.tabBar,
+                        regions: regions,
+                        chrome: chrome,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-          ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// With custom chrome, the strip beside the content in the colour of the
+  /// page in front, so the bar reads as part of the page rather than a panel
+  /// of its own: blended from one page's colour to the next's as the pages
+  /// are. Gone while a dialog or sheet covers the page, as the top bar's
+  /// background is, so the strip dims with the rest of the page.
+  Widget _band(
+    BuildContext context,
+    ToolbarEntry? upperEntry,
+    ToolbarEntry? lowerEntry,
+  ) {
+    final pose = DuoPoseScope.of(context);
+    final upper = _pageColorOf(upperEntry);
+    final lower = _pageColorOf(lowerEntry);
+    final driver = blend.driver;
+    final Widget color = upper != null && lower != null && driver != null
+        ? AnimatedBuilder(
+            animation: driver,
+            builder: (context, _) =>
+                ColoredBox(color: Color.lerp(lower, upper, driver.value)!),
+          )
+        : ColoredBox(color: upper ?? lower ?? const Color(0x00000000));
+    return Positioned(
+      key: const ValueKey<String>('adaptive_duo_band'),
+      top: 0,
+      bottom: 0,
+      left: (pose?.onLeft ?? false) ? 0 : null,
+      right: (pose?.onLeft ?? false) ? null : 0,
+      width: pose?.stripWidth ?? 0,
+      child: IgnorePointer(
+        child: FadeTransition(
+          opacity: ReverseAnimation(blend.cover),
+          child: color,
         ),
       ),
     );
+  }
+
+  static Color? _pageColorOf(ToolbarEntry? entry) {
+    for (final color in [
+      entry?.backgroundColor,
+      entry?.appBar?.backdropColor,
+    ]) {
+      if (color != null && color.a > 0) return color.withValues(alpha: 1);
+    }
+    return null;
   }
 
   /// One page's controls. The back button's slot is left empty because the

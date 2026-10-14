@@ -95,7 +95,7 @@ void main() {
   testWidgets('it keeps its state through every placement: the top strip, the vertical bar, a sidebar, the bottom', (tester) async {
     window(tester, const Size(669, 951), const FakeViewPadding(top: 84, bottom: 20));
     addTearDown(tester.view.reset);
-    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(), chrome: TestChrome.withFrames);
+    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(), chrome: TestChrome.withFramesInTopStrip);
     await tester.pumpWidget(tabs.app());
     await tester.pumpAndSettle();
     expect(TestChrome.lastAccessorySpec!.placement, AdaptiveChromePlacement.topStrip);

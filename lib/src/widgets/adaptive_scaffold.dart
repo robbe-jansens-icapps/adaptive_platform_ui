@@ -315,6 +315,42 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
   final ValueNotifier<bool> _tabBarMinimized = ValueNotifier<bool>(false);
 
+  /// How far the page's content has scrolled under the bars along its top,
+  /// for custom chrome (see [ToolbarEntry.scrollEdge]).
+  final ValueNotifier<double> _scrollEdge = ValueNotifier<double>(0);
+
+  /// The latest scroll edge of each vertical scrollable in the page, with its
+  /// depth and when it was last heard of.
+  final Map<BuildContext, ({int depth, int order, double edge})> _edges =
+      <BuildContext, ({int depth, int order, double edge})>{};
+  int _edgeOrder = 0;
+
+  /// The outermost scrollables decide, as it is their content that runs
+  /// under the bar: a list below a header pinned under the bar (a nested
+  /// scroll view) scrolls under the header, not under the bar. Among those
+  /// the one that scrolled last does.
+  bool _trackScrollEdge(Notification notification) {
+    final (metrics, depth, context) = switch (notification) {
+      final ScrollNotification n => (n.metrics, n.depth, n.context),
+      final ScrollMetricsNotification n => (n.metrics, n.depth, n.context),
+      _ => (null, 0, null),
+    };
+    final edge = metrics == null ? null : AdaptiveScrollEdge.of(metrics);
+    if (edge == null || context == null) return false;
+    _edges[context] = (depth: depth, order: _edgeOrder++, edge: edge);
+    _edges.removeWhere((context, _) => !context.mounted);
+    ({int depth, int order, double edge})? decides;
+    for (final entry in _edges.values) {
+      if (decides == null ||
+          entry.depth < decides.depth ||
+          (entry.depth == decides.depth && entry.order > decides.order)) {
+        decides = entry;
+      }
+    }
+    if (decides != null) _scrollEdge.value = decides.edge;
+    return false;
+  }
+
   void _onTabBarSizeChanged(Size size) {
     if (mounted) _ownTabBarHeight.value = size.height;
   }
@@ -393,7 +429,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     if (oldWidget.appBar != widget.appBar ||
         oldWidget.useFixedToolbar != widget.useFixedToolbar ||
         oldWidget.tabBarHidden != widget.tabBarHidden ||
-        oldWidget.bottomNavigationBar != widget.bottomNavigationBar) {
+        oldWidget.bottomNavigationBar != widget.bottomNavigationBar ||
+        oldWidget.backgroundColor != widget.backgroundColor) {
       _syncToolbarEntry();
     }
     if (widget.minimizeBehavior == TabBarMinimizeBehavior.never) {
@@ -408,6 +445,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     _toolbarRegistry?.remove(this);
     _ownTabBarHeight.dispose();
     _tabBarMinimized.dispose();
+    _scrollEdge.dispose();
     super.dispose();
   }
 
@@ -530,6 +568,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             ? _nativeTabBar != null && _usesFixedToolbar(context)
             : _tabsHostedAtBottom(context),
         tabBarMinimized: _tabBarMinimized,
+        scrollEdge: _customChrome != null ? _scrollEdge : null,
+        backgroundColor: widget.backgroundColor,
       ),
     );
   }
@@ -1260,7 +1300,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       topInset = hasTitle ? kDuoTitleBandHeight : 0;
     } else if (strip != null && hosted) {
       // The bar is in the strip, or below it while the tabs are in it.
-      topInset = _TabLayout.showsTabs(context) || _nativeTabBar != null
+      topInset =
+          placement == AdaptiveChromePlacement.topStrip &&
+              (_TabLayout.showsTabs(context) || _nativeTabBar != null)
           ? chrome.metrics.toolbarHeight
           : strip.overhang;
     } else {
@@ -1301,6 +1343,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       }
     } else {
       body = _TabsLeaveWhenPushed(child: body);
+    }
+    if (hosted) {
+      body = NotificationListener<Notification>(
+        onNotification: _trackScrollEdge,
+        child: body,
+      );
     }
 
     final page = Builder(

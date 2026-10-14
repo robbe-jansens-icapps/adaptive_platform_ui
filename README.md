@@ -296,7 +296,7 @@ ones:
 |---|---|---|---|
 | `bottom` | phones, narrow windows | along the bottom | along the top |
 | `vertical` | iPhone Duo cover display, inner display sideways, Split View panes | down the vertical bar | title in the band, controls in the bar |
-| `topStrip` | iPhone Duo inner display upright | in the top strip, beside the status cluster | below the strip |
+| `topStrip` | iPhone Duo inner display upright, with `tabsInTopStrip` | in the top strip, beside the status cluster | below the strip |
 | `sidebar` | windows from 700 points wide (iPad, unfolded foldables), with a `sidebarBuilder` | in a sidebar along the leading edge | beside the sidebar |
 
 ```dart
@@ -320,6 +320,10 @@ MaterialApp(
 Keep one `AdaptiveChrome` instance (a `const` of top-level or static
 builders): a new one rebuilds every page.
 
+On the iPhone Duo's inner display held upright the tabs stay along the
+bottom, as the system's do, and the toolbar sits in the strip beside the
+camera; `tabsInTopStrip: true` moves the tabs into the strip instead.
+
 Pages stay the same: an `AdaptiveScaffold` with an `AdaptiveAppBar` (pass
 `chromeData` for anything your builders need, such as a dark or light look)
 and, for the tab layout, an `AdaptiveBottomNavigationBar`. Content runs under
@@ -333,6 +337,12 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
   along the bottom, floating at the bottom of the content beside the iPhone
   Duo's vertical bar, docked in the sidebar; one widget all along, so its
   state survives folding and rotating.
+- **Scroll edge**: the bar's background fades in as the page's content
+  scrolls under it, and is gone while nothing is underneath, as the system's
+  scroll edge effect is. The background, back button and actions get
+  `scrollEdge` (0 to 1) in their spec, for controls that only need a surface
+  of their own over content. Beside the iPhone Duo's vertical bar the strip
+  takes the colour of the page in front.
 - **Glass**: `AdaptiveGlass` is frosted glass in your colours, drawn by
   Flutter; sheets (`AdaptiveSheet`) and popovers take the chrome's.
 - **Popovers**: `AdaptivePopover.show` grows out of a control and shrinks back

@@ -20,6 +20,14 @@ abstract final class TestChrome {
     actionsBuilder: _actions,
   );
 
+  static const AdaptiveChrome inTopStrip = AdaptiveChrome(
+    tabBarBuilder: _tabBar,
+    titleBuilder: _title,
+    backButtonBuilder: _back,
+    actionsBuilder: _actions,
+    tabsInTopStrip: true,
+  );
+
   static const sidebarKey = ValueKey<String>('test sidebar');
   static AdaptiveSidebarSpec? lastSidebarSpec;
 
@@ -60,6 +68,16 @@ abstract final class TestChrome {
     actionsBuilder: _actions,
     sidebarBuilder: _sidebar,
     accessoryBuilder: _frame,
+  );
+
+  static const AdaptiveChrome withFramesInTopStrip = AdaptiveChrome(
+    tabBarBuilder: _tabBar,
+    titleBuilder: _title,
+    backButtonBuilder: _back,
+    actionsBuilder: _actions,
+    sidebarBuilder: _sidebar,
+    accessoryBuilder: _frame,
+    tabsInTopStrip: true,
   );
 
   static Widget _frame(BuildContext context, AdaptiveAccessorySpec spec, Widget accessory) {

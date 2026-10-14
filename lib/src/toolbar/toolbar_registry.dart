@@ -25,6 +25,8 @@ class ToolbarEntry {
     this.tabBarMinimized,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
+    this.scrollEdge,
+    this.backgroundColor,
   });
 
   /// Identifies the registering scaffold instance.
@@ -81,6 +83,15 @@ class ToolbarEntry {
   /// Whether the hosted [tabBar] is shrunk out of the way of the content, as
   /// the scaffold's `minimizeBehavior` asks when its page scrolls.
   final ValueListenable<bool>? tabBarMinimized;
+
+  /// How far the page's content has scrolled under the bars along its top,
+  /// from 0 to 1 (see `AdaptiveScrollEdge`), where the page tracks it: with
+  /// custom chrome.
+  final ValueListenable<double>? scrollEdge;
+
+  /// The colour of the page (`AdaptiveScaffold.backgroundColor`), for the
+  /// chrome around it to match.
+  final Color? backgroundColor;
 
   /// Whether the registering scaffold shows a tab bar. Such a scaffold is the
   /// root of a tab layout and never gets an automatic back button.

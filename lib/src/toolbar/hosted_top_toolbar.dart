@@ -36,6 +36,8 @@ class TopToolbarContent {
     this.subtitle,
     this.titleWidget,
     this.data,
+    this.scrollEdge = const AlwaysStoppedListenable<double>(0),
+    this.pageColor,
   });
 
   /// No page owns the chrome, the page has no toolbar, or it draws a
@@ -65,6 +67,9 @@ class TopToolbarContent {
       subtitle: appBar.subtitle,
       titleWidget: appBar.titleWidget,
       data: appBar.chromeData,
+      scrollEdge:
+          entry.scrollEdge ?? const AlwaysStoppedListenable<double>(0),
+      pageColor: entry.backgroundColor,
     );
   }
 
@@ -97,6 +102,14 @@ class TopToolbarContent {
 
   /// [AdaptiveAppBar.chromeData], for custom chrome.
   final Object? data;
+
+  /// How far the page's content has scrolled under the bar, for custom
+  /// chrome ([ToolbarEntry.scrollEdge]).
+  final ValueListenable<double> scrollEdge;
+
+  /// The page's own colour ([ToolbarEntry.backgroundColor]), which custom
+  /// chrome falls back on without a [backdropColor].
+  final Color? pageColor;
 
   /// Whether the native bar has anything to show: a title it draws itself
   /// or bar buttons.
@@ -160,13 +173,14 @@ class HostedTopToolbar extends StatelessWidget {
     final topInset = _barTop(context);
     final upperEntry = blend.upper;
     final lowerEntry = blend.lower;
-    // Custom chrome on the iPhone Duo held upright puts the tabs in the top
-    // strip: a page that shows them has its bar below the strip, one without
-    // them has it in the strip, beside the status cluster.
+    // Custom chrome with its tabs in the iPhone Duo's top strip: a page that
+    // shows them has its bar below the strip, one without them has it in the
+    // strip, beside the status cluster.
     final strip = DuoTopStripScope.of(context);
     double topOf(ToolbarEntry? entry) =>
         chrome != null &&
             strip != null &&
+            placement == AdaptiveChromePlacement.topStrip &&
             !titleOnly &&
             blend.registry.tabBarOwnerFor(entry) != null
         ? strip.height
@@ -244,14 +258,21 @@ class HostedTopToolbar extends StatelessWidget {
     final systemBackground = CupertinoColors.systemBackground.resolveFrom(
       context,
     );
-    final upperColor = upper.backdropColor ?? systemBackground;
-    final lowerColor = lower.backdropColor ?? systemBackground;
+    final custom = chrome != null;
+    // Custom chrome takes the page's own colour where the bar's is missing or
+    // see-through: a transparent bar colour asks for no bar, not a black one.
+    Color? colorOf(TopToolbarContent content) => custom
+        ? _opaque(content.backdropColor) ?? _opaque(content.pageColor)
+        : content.backdropColor;
+    final upperColor = colorOf(upper) ?? systemBackground;
+    final lowerColor = colorOf(lower) ?? systemBackground;
     final driver = blend.driver;
     // Pages of one colour have nothing to blend, which would redraw the
     // backdrop on every frame of the transition.
     final backdropData = upperBackdrop ? upper.data : lower.data;
     final backdropTop = upperBackdrop ? upperTop : lowerTop;
-    final backdrop =
+    final backdropEdge = upperBackdrop ? upper.scrollEdge : lower.scrollEdge;
+    Widget backdrop =
         upperBackdrop &&
             lowerBackdrop &&
             driver != null &&
@@ -263,6 +284,7 @@ class HostedTopToolbar extends StatelessWidget {
               Color.lerp(lowerColor, upperColor, driver.value)!,
               backdropData,
               backdropTop,
+              backdropEdge,
             ),
           )
         : _backdrop(
@@ -270,7 +292,18 @@ class HostedTopToolbar extends StatelessWidget {
             upperBackdrop ? upperColor : lowerColor,
             backdropData,
             backdropTop,
+            backdropEdge,
           );
+    if (custom) {
+      // As the system's scroll edge effect: only there while content is
+      // underneath, and in step from one page's scroll to the next's.
+      backdrop = _ScrollEdgeFade(
+        upper: upperBackdrop ? upper.scrollEdge : null,
+        lower: lowerBackdrop ? lower.scrollEdge : null,
+        driver: upperBackdrop && lowerBackdrop ? driver : null,
+        child: backdrop,
+      );
+    }
 
     return Align(
       alignment: Alignment.topCenter,
@@ -417,6 +450,7 @@ class HostedTopToolbar extends StatelessWidget {
     Color color,
     Object? data,
     double topInset,
+    ValueListenable<double> scrollEdge,
   ) {
     final builder = chrome?.barBackgroundBuilder;
     if (builder != null) {
@@ -427,6 +461,7 @@ class HostedTopToolbar extends StatelessWidget {
           height: titleOnly ? kDuoTitleBandHeight : topInset + _toolbarHeight,
           color: color,
           titleBand: titleOnly,
+          scrollEdge: scrollEdge,
           data: data,
         ),
       );
@@ -554,6 +589,9 @@ class HostedTopToolbar extends StatelessWidget {
     ),
   );
 
+  static Color? _opaque(Color? color) =>
+      color == null || color.a == 0 ? null : color;
+
   /// Whether the system's window controls take the bar's leading corner: in
   /// an iPad window smaller than the display. An iPhone Duo window in split
   /// view has none.
@@ -574,6 +612,43 @@ class HostedTopToolbar extends StatelessWidget {
         MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
     return (display.longestSide - viewport.longestSide).abs() > 1 ||
         (display.shortestSide - viewport.shortestSide).abs() > 1;
+  }
+}
+
+/// Shows [child], the bar's background, as far as the content of the page
+/// it belongs to has scrolled under the bar; during a blend between two pages
+/// that both have one, from the [lower] page's scroll to the [upper] one's.
+class _ScrollEdgeFade extends StatelessWidget {
+  const _ScrollEdgeFade({
+    required this.upper,
+    required this.lower,
+    required this.driver,
+    required this.child,
+  });
+
+  final ValueListenable<double>? upper;
+  final ValueListenable<double>? lower;
+  final Animation<double>? driver;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final upper = this.upper;
+    final lower = this.lower;
+    final driver = this.driver;
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable?>[upper, lower, driver]),
+      child: child,
+      builder: (context, child) {
+        final double edge;
+        if (upper != null && lower != null && driver != null) {
+          edge = lower.value + (upper.value - lower.value) * driver.value;
+        } else {
+          edge = (upper ?? lower)?.value ?? 0;
+        }
+        return Opacity(opacity: edge.clamp(0.0, 1.0), child: child);
+      },
+    );
   }
 }
 
@@ -707,6 +782,7 @@ class _BackButton extends StatelessWidget {
           placement: placement,
           style: content.backStyle,
           onPressed: onBack ?? () => content.navigator?.maybePop(),
+          scrollEdge: content.scrollEdge,
           data: content.data,
         ),
       );
@@ -787,6 +863,7 @@ class _CustomBar extends StatelessWidget {
                       actions: actions,
                       axis: Axis.horizontal,
                       tint: content.tint,
+                      scrollEdge: content.scrollEdge,
                       data: content.data,
                       onPressed: (action, anchor) =>
                           action.press(anchor, navigator: content.navigator),

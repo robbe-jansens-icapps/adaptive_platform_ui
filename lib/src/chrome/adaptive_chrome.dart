@@ -23,8 +23,10 @@ enum AdaptiveChromePlacement {
   /// vertical bar beside the content, the title at the top.
   vertical,
 
-  /// The iPhone Duo inner display held upright: the tabs in the strip along
-  /// the top, beside the camera and status cluster.
+  /// The iPhone Duo inner display held upright, for a chrome that asks for it
+  /// ([AdaptiveChrome.tabsInTopStrip]): the tabs in the strip along the top,
+  /// beside the camera and status cluster. Without it they stay at the
+  /// bottom, as the system's tab bar does there.
   topStrip,
 
   /// A wide window (an iPad, an unfolded foldable): the tabs in a sidebar
@@ -161,6 +163,7 @@ class AdaptiveBackButtonSpec {
     required this.placement,
     required this.style,
     required this.onPressed,
+    this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
 
@@ -169,6 +172,11 @@ class AdaptiveBackButtonSpec {
   /// A chevron, or a cross for a page shown like a dialog.
   final AdaptiveBackButtonStyle style;
   final VoidCallback onPressed;
+
+  /// How far the page's content has scrolled under the bar (see
+  /// [AdaptiveScrollEdge]), for a control that only needs a surface of its
+  /// own once there is content behind it.
+  final ValueListenable<double> scrollEdge;
 
   /// [AdaptiveAppBar.chromeData] of the page the button goes back from.
   final Object? data;
@@ -185,6 +193,7 @@ class AdaptiveActionsSpec {
     this.overflow = false,
     this.showOverflow,
     this.tint,
+    this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
 
@@ -210,6 +219,10 @@ class AdaptiveActionsSpec {
   /// [AdaptiveAppBar.tintColor].
   final Color? tint;
 
+  /// How far the page's content has scrolled under the bar (see
+  /// [AdaptiveScrollEdge]).
+  final ValueListenable<double> scrollEdge;
+
   /// [AdaptiveAppBar.chromeData].
   final Object? data;
 }
@@ -223,6 +236,7 @@ class AdaptiveBarBackgroundSpec {
     required this.height,
     this.color,
     this.titleBand = false,
+    this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
 
@@ -230,6 +244,11 @@ class AdaptiveBarBackgroundSpec {
 
   /// How far down the bar reaches from the top of the window.
   final double height;
+
+  /// How far the page's content has scrolled under the bar (see
+  /// [AdaptiveScrollEdge]). The host already fades the background in with
+  /// it.
+  final ValueListenable<double> scrollEdge;
 
   /// [AdaptiveAppBar.backdropColor]: the colour of the page underneath.
   final Color? color;
@@ -330,6 +349,7 @@ class AdaptiveChrome {
     this.accessoryBuilder,
     this.popoverBuilder,
     this.centerTitle,
+    this.tabsInTopStrip = false,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
   });
@@ -349,7 +369,9 @@ class AdaptiveChrome {
   final AdaptiveActionsBuilder actionsBuilder;
 
   /// Behind the toolbar. A soft gradient in the page's colour when null, as
-  /// behind the native bar.
+  /// behind the native bar. Either way it fades in as the page's content
+  /// scrolls under the bar, as the system's scroll edge effect does, and is
+  /// gone while nothing is underneath.
   final AdaptiveBarBackgroundBuilder? barBackgroundBuilder;
 
   /// The tabs in a sidebar along the leading edge of a wide window
@@ -372,6 +394,13 @@ class AdaptiveChrome {
   /// Whether titles are centred in the toolbar: on iOS when null, as the
   /// system does, and at the leading edge elsewhere.
   final bool? centerTitle;
+
+  /// Whether the tabs go in the iPhone Duo's top strip, beside the camera and
+  /// status cluster, while its inner display is held upright
+  /// ([AdaptiveChromePlacement.topStrip]). By default they stay along the
+  /// bottom there, at full size, as the system's tab bar does, and the
+  /// toolbar sits in the strip.
+  final bool tabsInTopStrip;
 
   /// The glass of every [AdaptiveGlass] below the host that brings none of
   /// its own: the app's builders and its sheets.
@@ -452,9 +481,26 @@ AdaptiveChromePlacement resolveChromePlacement({
   AdaptiveChrome? chrome,
 }) {
   if (pose != null) return AdaptiveChromePlacement.vertical;
-  if (strip != null) return AdaptiveChromePlacement.topStrip;
+  if (strip != null && (chrome?.tabsInTopStrip ?? true)) return AdaptiveChromePlacement.topStrip;
   if (chrome?.sidebarBuilder != null && width >= chrome!.metrics.sidebarMinWindowWidth) {
     return AdaptiveChromePlacement.sidebar;
   }
   return AdaptiveChromePlacement.bottom;
+}
+
+/// How far a page's content has scrolled under the bars along its top: 0 at
+/// rest, 1 once it has scrolled [distance] under them. Custom chrome fades the
+/// bar's background in with it and hands it to the app's controls.
+abstract final class AdaptiveScrollEdge {
+  /// How far content scrolls under the bar before the scroll edge is fully
+  /// in.
+  static const double distance = 24;
+
+  /// The scroll edge of a scrollable with [metrics], or null for one that
+  /// does not run vertically.
+  static double? of(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return null;
+    final under = metrics.axisDirection == AxisDirection.up ? metrics.extentAfter : metrics.extentBefore;
+    return (under / distance).clamp(0.0, 1.0);
+  }
 }
