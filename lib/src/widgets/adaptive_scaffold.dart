@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../chrome/adaptive_chrome.dart';
+import '../chrome/scroll_edge_effect.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../toolbar/duo_top_strip.dart';
@@ -434,6 +435,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// Shrinks or restores the tab bar that the host draws as the page scrolls,
   /// as [AdaptiveScaffold.minimizeBehavior] asks.
   bool _minimizeHostedTabBar(ScrollNotification notification) {
+    // Beside a list the list decides: the page it opened scrolling on its
+    // own would shrink and restore the tab bar against it.
+    final source = notification.context;
+    if (source != null && AdaptiveSplitView.isInDetailColumn(source)) {
+      return false;
+    }
     final minimized = _tabBarMinimizedAfter(
       notification,
       widget.minimizeBehavior,
@@ -1376,7 +1383,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         child: _withBottomBarInset(
           context,
           placement == AdaptiveChromePlacement.sidebar
-              ? _BesideSidebarBody(child: body)
+              ? _BesideSidebarBody(enabled: !widget.tabBarHidden, child: body)
               : body,
           ownerRoute: ModalRoute.of(context),
         ),
@@ -1398,15 +1405,21 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       );
     }
 
+    // The scroll edge effect of the scroll views in the page: under the
+    // bar, if the page has one with a background, and above the chrome along
+    // the bottom.
+    final edgeAlongTop =
+        appBar != null && appBar.showsBackdrop && (!inBarPose || hasTitle);
     final page = Builder(
       builder: (context) {
         final inner = MediaQuery.of(context);
+        final top = topFloor != null
+            ? math.max(inner.padding.top, topFloor)
+            : inner.padding.top + topInset;
         return MediaQuery(
           data: inner.copyWith(
             padding: inner.padding.copyWith(
-              top: topFloor != null
-                  ? math.max(inner.padding.top, topFloor)
-                  : inner.padding.top + topInset,
+              top: top,
               left: barOnLeft
                   ? inner.padding.left - sideInset
                   : inner.padding.left,
@@ -1420,7 +1433,23 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                   : inner.viewPadding.top + topInset,
             ),
           ),
-          child: body,
+          child: AdaptiveScrollEdgeRegion(
+            chrome: chrome,
+            placement: placement,
+            top: edgeAlongTop ? top : null,
+            titleBand: inBarPose,
+            bottom: inner.padding.bottom,
+            topColor:
+                _opaqueColor(appBar?.backdropColor) ??
+                _opaqueColor(widget.backgroundColor) ??
+                CupertinoColors.systemBackground.resolveFrom(context),
+            bottomColor:
+                _opaqueColor(widget.backgroundColor) ??
+                _opaqueColor(appBar?.backdropColor) ??
+                CupertinoColors.systemBackground.resolveFrom(context),
+            data: appBar?.chromeData,
+            child: body,
+          ),
         );
       },
     );
@@ -1876,7 +1905,11 @@ class _RaisedForTabs extends InheritedWidget {
 /// its width as it eases between a rail and its full width. What the sidebar
 /// covers of the window's padding at that edge is taken from it.
 class _BesideSidebarBody extends StatelessWidget {
-  const _BesideSidebarBody({required this.child});
+  const _BesideSidebarBody({required this.enabled, required this.child});
+
+  /// Whether the sidebar is there: a tab layout that hides its tabs
+  /// (`AdaptiveScaffold.tabBarHidden`) hides it, and its pages take the room.
+  final bool enabled;
 
   final Widget child;
 
@@ -1885,7 +1918,8 @@ class _BesideSidebarBody extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: AdaptiveChromeScope.sidebarInsetOf(context),
       child: child,
-      builder: (context, inset, child) {
+      builder: (context, sidebarInset, child) {
+        final inset = enabled ? sidebarInset : 0.0;
         final mediaQuery = MediaQuery.of(context);
         return Padding(
           padding: EdgeInsets.only(left: inset),
@@ -2045,29 +2079,12 @@ class _CustomInlineBar extends StatelessWidget {
         data: appBar.chromeData,
       ),
     );
-    final background = appBar.showsBackdrop
-        ? chrome.barBackgroundBuilder?.call(
-            context,
-            AdaptiveBarBackgroundSpec(
-              placement: placement,
-              height: height,
-              color: appBar.backdropColor,
-              titleBand: titleBand,
-              data: appBar.chromeData,
-            ),
-          )
-        : null;
+    // The background under the bar is the scroll edge of the page's scroll
+    // views (AdaptiveScrollEdgeRegion), as under the host's bar.
     if (titleBand) {
       return SizedBox(
         height: height,
-        child: Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.none,
-          children: [
-            ?background,
-            DuoToolbarTitle(titleWidget: title),
-          ],
-        ),
+        child: DuoToolbarTitle(titleWidget: title),
       );
     }
 
@@ -2089,7 +2106,6 @@ class _CustomInlineBar extends StatelessWidget {
         fit: StackFit.expand,
         clipBehavior: Clip.none,
         children: [
-          ?background,
           Padding(
             padding: EdgeInsets.only(top: top),
             child: NavigationToolbar(
@@ -2164,3 +2180,8 @@ class _PageValue<T> extends ValueNotifier<T> {
     super.dispose();
   }
 }
+
+/// [color] when it covers what is under it, so a see-through colour asks for
+/// the page's own instead of a black backdrop.
+Color? _opaqueColor(Color? color) =>
+    color == null || color.a < 1 ? null : color;

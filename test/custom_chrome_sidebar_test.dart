@@ -21,13 +21,13 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
   });
 
-  Future<TabsFixture> pumpTabs(WidgetTester tester, Size size, {bool hidesWhenPushed = true, AdaptiveChrome chrome = TestChrome.withSidebar}) async {
+  Future<TabsFixture> pumpTabs(WidgetTester tester, Size size, {bool hidesWhenPushed = true, AdaptiveChrome chrome = TestChrome.withSidebar, Color? pageColor}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     tester.view.padding = const FakeViewPadding(top: 24, bottom: 20);
     tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 20);
     addTearDown(tester.view.reset);
-    final tabs = TabsFixture(chrome: chrome, hidesWhenPushed: hidesWhenPushed);
+    final tabs = TabsFixture(chrome: chrome, hidesWhenPushed: hidesWhenPushed, pageColor: pageColor);
     await tester.pumpWidget(tabs.app());
     await tester.pumpAndSettle();
     return tabs;
@@ -110,6 +110,37 @@ void main() {
     expect(body(tester, 'Detail').left, 300);
     expect(tester.getRect(find.text('back')).left, greaterThanOrEqualTo(300 + 16));
     expect(tabs.paddingOf('Detail').bottom, 20);
+  });
+
+  testWidgets('a tab layout that hides its tabs hides the sidebar, and its pages take the room instead of keeping it empty', (tester) async {
+    final tabs = await pumpTabs(tester, landscape);
+
+    tabs.push(0, 'Detail');
+    tabs.tabBarHidden.value = true;
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(TestChrome.sidebarKey), findsNothing);
+    expect(body(tester, 'Detail').left, 0);
+    expect(tester.getRect(find.text('back')).left, lessThan(300));
+
+    tabs.tabBarHidden.value = false;
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(TestChrome.sidebarKey), findsOneWidget);
+    expect(body(tester, 'Detail').left, 300);
+  });
+
+  testWidgets('behind the sidebar the page in front runs on in its own colour, so no edge shows between them', (tester) async {
+    const pageColor = Color(0xFF123456);
+    await pumpTabs(tester, landscape, pageColor: pageColor);
+
+    final behind = find.descendant(
+      of: find.ancestor(of: find.byKey(TestChrome.sidebarKey), matching: find.byType(Stack)).first,
+      matching: find.byWidgetPredicate((widget) => widget is ColoredBox && widget.color == pageColor),
+    );
+    expect(behind, findsOneWidget);
+    expect(tester.getRect(behind).left, 0);
+    expect(tester.getRect(behind).width, 300);
   });
 
   testWidgets('a page over the whole tab layout has the window to itself', (tester) async {

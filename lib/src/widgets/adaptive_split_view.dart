@@ -117,6 +117,12 @@ class AdaptiveSplitView extends StatefulWidget {
     return column != null && !column.isDetail;
   }
 
+  /// Whether [context] is in the column beside the list of a split view that
+  /// shows its columns side by side. Does not rebuild [context] when that
+  /// changes, so it can be asked while handling a notification.
+  static bool isInDetailColumn(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_ColumnScope>()?.isDetail ?? false;
+
   /// Whether [context] is in a column of a split view that shows its columns
   /// side by side. A page there keeps its own bar instead of handing it to a
   /// fixed toolbar that spans the window.

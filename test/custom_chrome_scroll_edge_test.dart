@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -112,13 +114,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  double backdropOpacity(WidgetTester tester) => tester
-      .widget<Opacity>(
-        find
-            .ancestor(of: find.byKey(backdrop), matching: find.byType(Opacity))
-            .first,
-      )
-      .opacity;
+  /// How far the background along the top is in where a scroll view draws
+  /// it, 0 where none does.
+  double backdropOpacity(WidgetTester tester) => debugScrollEdgesOnScreen()
+      .map((edges) => edges.top)
+      .whereType<double>()
+      .fold(0, math.max);
 
   testWidgets(
     'the bar\'s background is only there as far as content has scrolled under the bar, in the page\'s colour',
@@ -244,16 +245,10 @@ void main() {
     },
   );
 
-  double bottomOpacity(WidgetTester tester) => tester
-      .widget<Opacity>(
-        find
-            .ancestor(
-              of: find.byKey(bottomBackdrop),
-              matching: find.byType(Opacity),
-            )
-            .first,
-      )
-      .opacity;
+  double bottomOpacity(WidgetTester tester) => debugScrollEdgesOnScreen()
+      .map((edges) => edges.bottom)
+      .whereType<double>()
+      .fold(0, math.max);
 
   testWidgets(
     'along the bottom the same background is there while content runs under the bottom, and gone at its end',
@@ -364,6 +359,140 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('title:Second'), findsOneWidget);
       expect(backdropOpacity(tester), 0);
+    },
+  );
+
+  testWidgets(
+    'a header pinned above a list stays clear: the list does not run under the bar, so nothing is drawn over the header',
+    (tester) async {
+      phone(tester);
+      const header = ValueKey<String>('pinned header');
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await pumpApp(
+        tester,
+        AdaptiveScaffold(
+          appBar: const AdaptiveAppBar(title: 'Pinned'),
+          body: Builder(
+            builder: (context) => Column(
+              children: [
+                SizedBox(height: MediaQuery.paddingOf(context).top),
+                const SizedBox(key: header, height: 120),
+                Expanded(
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: ListView(
+                      controller: controller,
+                      children: [
+                        for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      controller.jumpTo(600);
+      await tester.pump();
+
+      expect(backdropOpacity(tester), 0);
+      expect(
+        find.descendant(of: find.byKey(header), matching: find.byKey(backdrop)),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'a control floating over the bottom of a list stays above the background along the bottom',
+    (tester) async {
+      phone(tester);
+      const list = ValueKey<String>('list');
+      const floating = ValueKey<String>('floating control');
+      await pumpApp(
+        tester,
+        AdaptiveScaffold(
+          appBar: const AdaptiveAppBar(title: 'Floating'),
+          body: Stack(
+            children: [
+              ListView(
+                key: list,
+                children: [
+                  for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                ],
+              ),
+              const Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(key: floating, width: 200, height: 48),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(bottomOpacity(tester), 1);
+      expect(
+        find.descendant(
+          of: find.byKey(list),
+          matching: find.byKey(bottomBackdrop),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: find.byKey(list), matching: find.byKey(floating)),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'where scroll views nest, the outer one draws along the top and the inner one along the bottom',
+    (tester) async {
+      phone(tester);
+      final outer = ScrollController();
+      addTearDown(outer.dispose);
+      await pumpApp(
+        tester,
+        AdaptiveScaffold(
+          appBar: const AdaptiveAppBar(title: 'Nested'),
+          body: CustomScrollView(
+            controller: outer,
+            slivers: [
+              const SliverToBoxAdapter(child: SizedBox(height: 200)),
+              SliverFillRemaining(
+                child: ListView(
+                  children: [
+                    for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      outer.jumpTo(100);
+      await tester.pump();
+
+      final edges = debugScrollEdgesOnScreen();
+      expect(edges.where((edge) => edge.top != null), hasLength(1));
+      expect(edges.where((edge) => edge.bottom != null), hasLength(1));
+      expect(edges.singleWhere((edge) => edge.top != null).bottom, isNull);
+      expect(bottomOpacity(tester), 1);
+    },
+  );
+
+  testWidgets(
+    'a page without scroll views, such as a map, has no background along the top or the bottom',
+    (tester) async {
+      phone(tester);
+      await pumpApp(tester, plainPage('Map'));
+
+      expect(debugScrollEdgesOnScreen(), isEmpty);
+      expect(find.byKey(bottomBackdrop), findsNothing);
     },
   );
 

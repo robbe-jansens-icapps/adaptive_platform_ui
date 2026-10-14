@@ -346,19 +346,6 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                               ),
                             ),
                           ),
-                        if (chrome != null)
-                          BackdropGroup(
-                            key: const ValueKey<String>('adaptive_bottom_edge'),
-                            backdropKey: _chromeBackdrop,
-                            child: HostedBottomEdge(
-                              blend: _blend,
-                              chrome: chrome,
-                              placement: placement,
-                              tabBarHeight: _tabBarHeight,
-                              accessoryHeight: _accessoryHeight,
-                              sidebarInset: _sidebarInset,
-                            ),
-                          ),
                         // A sidebar expanded over the content closes with a
                         // tap outside it.
                         if (sidebar)

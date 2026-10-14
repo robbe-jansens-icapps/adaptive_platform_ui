@@ -46,6 +46,7 @@ export 'src/widgets/adaptive_app.dart';
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
 export 'src/chrome/adaptive_chrome.dart'
     hide AlwaysStoppedListenable, resolveChromePlacement;
+export 'src/chrome/scroll_edge_effect.dart';
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
 export 'src/toolbar/duo_top_strip.dart'

@@ -171,9 +171,13 @@ class TabsFixture {
     this.debugFold,
     this.debugVerticalBarEdge,
     this.accessory,
+    this.pageColor,
   });
 
   final Widget? accessory;
+
+  /// The background of the pages in the tabs.
+  final Color? pageColor;
 
   final bool hidesWhenPushed;
   final List<AdaptiveAppBarAction> actions;
@@ -186,6 +190,7 @@ class TabsFixture {
   final root = GlobalKey<NavigatorState>();
   late final navigators = List.generate(tabCount, (_) => GlobalKey<NavigatorState>());
   final selected = ValueNotifier<int>(0);
+  final tabBarHidden = ValueNotifier<bool>(false);
   final _paddings = <String, EdgeInsets>{};
   final _insets = <String, double>{};
 
@@ -193,6 +198,7 @@ class TabsFixture {
   double insetOf(String title) => _insets[title]!;
 
   Widget pageWidget(String title, {AdaptiveBackButtonStyle style = AdaptiveBackButtonStyle.back}) => AdaptiveScaffold(
+    backgroundColor: pageColor,
     appBar: AdaptiveAppBar(title: title, actions: actions, chromeData: chromeData, backButtonStyle: style),
     body: Builder(
       builder: (context) {
@@ -216,19 +222,20 @@ class TabsFixture {
       debugVerticalBarEdge: debugVerticalBarEdge,
       child: child!,
     ),
-    home: ValueListenableBuilder<int>(
-      valueListenable: selected,
-      builder: (context, index, _) => AdaptiveScaffold(
+    home: ListenableBuilder(
+      listenable: Listenable.merge([selected, tabBarHidden]),
+      builder: (context, _) => AdaptiveScaffold(
+        tabBarHidden: tabBarHidden.value,
         bottomNavigationBar: AdaptiveBottomNavigationBar(
           items: [for (var i = 0; i < tabCount; i++) AdaptiveNavigationDestination(icon: Icons.circle, label: 'Tab $i')],
-          selectedIndex: index,
+          selectedIndex: selected.value,
           onTap: (i) => selected.value = i,
           hidesWhenPushed: hidesWhenPushed,
           chromeData: 'tabs',
           accessory: accessory,
         ),
         body: IndexedStack(
-          index: index,
+          index: selected.value,
           children: [
             for (var i = 0; i < tabCount; i++)
               Navigator(

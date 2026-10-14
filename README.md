@@ -352,9 +352,12 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
   along the bottom, floating at the bottom of the content beside the iPhone
   Duo's vertical bar, docked in the sidebar; one widget all along, so its
   state survives folding and rotating.
-- **Scroll edge**: the bar's background fades in as the page's content
-  scrolls under it, and is gone while nothing is underneath, as the system's
-  scroll edge effect is. The background, back button and actions get
+- **Scroll edge**: as the system's scroll edge effect, the bars' background
+  is part of each scroll view whose content runs under them, along the top
+  and along the bottom, and fades in as content scrolls under them. Whatever
+  the page lays over its scroll views stays clear of it: a search field
+  pinned above a list, a segmented control floating over its bottom. A page
+  without one, such as a map, gets none. The back button and actions get
   `scrollEdge` (0 to 1) in their spec, for controls that only need a surface
   of their own over content. Beside the iPhone Duo's vertical bar the strip
   takes the colour of the page in front.

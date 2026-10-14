@@ -122,4 +122,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(minimized!.value, isFalse);
   });
+  testWidgets(
+    'beside a list only the list shrinks the tab bar: the page it opened scrolls without making it flicker',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 700);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 20);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 20);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) =>
+              AdaptiveToolbarHost(chrome: chrome, child: child!),
+          home: AdaptiveScaffold(
+            minimizeBehavior: TabBarMinimizeBehavior.onScrollDownUntilTop,
+            bottomNavigationBar: AdaptiveBottomNavigationBar(
+              items: const [
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'B'),
+              ],
+              selectedIndex: 0,
+              onTap: (_) {},
+            ),
+            body: AdaptiveSplitView(
+              initialDetail: const RouteSettings(name: 'detail'),
+              onGenerateDetailRoute: (settings) => MaterialPageRoute<void>(
+                settings: settings,
+                builder: (_) => AdaptiveScaffold(
+                  appBar: const AdaptiveAppBar(title: 'Detail'),
+                  body: ListView(
+                    key: const ValueKey<String>('detail list'),
+                    children: [
+                      for (var i = 0; i < 80; i++) const SizedBox(height: 60),
+                    ],
+                  ),
+                ),
+              ),
+              master: AdaptiveScaffold(
+                appBar: const AdaptiveAppBar(title: 'List'),
+                body: ListView(
+                  key: const ValueKey<String>('master list'),
+                  children: [
+                    for (var i = 0; i < 80; i++) const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(minimized!.value, isFalse);
+
+      await tester.drag(
+        find.byKey(const ValueKey<String>('detail list')),
+        const Offset(0, -600),
+      );
+      await tester.pumpAndSettle();
+      expect(minimized!.value, isFalse);
+
+      await tester.drag(
+        find.byKey(const ValueKey<String>('master list')),
+        const Offset(0, -600),
+      );
+      await tester.pumpAndSettle();
+      expect(minimized!.value, isTrue);
+
+      await tester.drag(
+        find.byKey(const ValueKey<String>('detail list')),
+        const Offset(0, 2000),
+      );
+      await tester.pumpAndSettle();
+      expect(minimized!.value, isTrue);
+    },
+  );
 }
