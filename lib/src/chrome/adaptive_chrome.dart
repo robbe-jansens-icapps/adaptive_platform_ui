@@ -112,6 +112,17 @@ class AdaptiveAccessorySpec {
   final bool compact;
 }
 
+/// What a popover sits on, for the surface the app draws
+/// ([AdaptiveChrome.popoverBuilder]).
+@immutable
+class AdaptivePopoverSpec {
+  const AdaptivePopoverSpec({required this.sheet});
+
+  /// Whether it opens as a sheet from the bottom, on a compact window,
+  /// rather than anchored to its control.
+  final bool sheet;
+}
+
 /// A page's title, as the app's title draws it.
 @immutable
 class AdaptiveTitleSpec {
@@ -168,6 +179,7 @@ class AdaptiveActionsSpec {
     required this.axis,
     required this.onPressed,
     this.overflow = false,
+    this.showOverflow,
     this.tint,
     this.data,
   });
@@ -186,6 +198,10 @@ class AdaptiveActionsSpec {
   /// Whether this is the one control holding the actions that did not fit,
   /// which shows a menu of all of them.
   final bool overflow;
+
+  /// For the [overflow] control: opens the menu of [actions] next to
+  /// [anchor], the control pressed, and performs the one picked.
+  final void Function(BuildContext anchor)? showOverflow;
 
   /// [AdaptiveAppBar.tintColor].
   final Color? tint;
@@ -228,6 +244,7 @@ typedef AdaptiveActionsBuilder = Widget Function(BuildContext context, AdaptiveA
 typedef AdaptiveBarBackgroundBuilder = Widget Function(BuildContext context, AdaptiveBarBackgroundSpec spec);
 typedef AdaptiveSidebarBuilder = Widget Function(BuildContext context, AdaptiveSidebarSpec spec);
 typedef AdaptiveAccessoryBuilder = Widget Function(BuildContext context, AdaptiveAccessorySpec spec, Widget accessory);
+typedef AdaptivePopoverBuilder = Widget Function(BuildContext context, AdaptivePopoverSpec spec, Widget content);
 
 /// Sizes the custom chrome lays out with. The defaults are the system's.
 @immutable
@@ -307,6 +324,7 @@ class AdaptiveChrome {
     this.barBackgroundBuilder,
     this.sidebarBuilder,
     this.accessoryBuilder,
+    this.popoverBuilder,
     this.centerTitle,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
@@ -341,6 +359,11 @@ class AdaptiveChrome {
   /// above the tab bar, a floating capsule, a card in a sidebar. The
   /// accessory as it is when null.
   final AdaptiveAccessoryBuilder? accessoryBuilder;
+
+  /// The surface of every `AdaptivePopover` below the host, and of the menus
+  /// of the app's actions, which open as popovers: anchored, or as a sheet
+  /// on a compact window. Glass when null.
+  final AdaptivePopoverBuilder? popoverBuilder;
 
   /// Whether titles are centred in the toolbar: on iOS when null, as the
   /// system does, and at the leading edge elsewhere.

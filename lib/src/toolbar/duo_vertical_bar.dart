@@ -7,7 +7,9 @@ import '../chrome/adaptive_chrome.dart';
 import '../platform/system_vertical_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
+import '../widgets/adaptive_popover.dart';
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/ios26/ios26_popup_menu_button.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
 
 /// Width of the strip the vertical control bar lives in when the system
@@ -498,6 +500,27 @@ class DuoVerticalBar extends StatelessWidget {
     return children;
   }
 
+  /// The actions that did not fit, in a menu next to [anchor]; the one
+  /// picked is performed from there.
+  Future<void> _showOverflow(
+    BuildContext anchor,
+    List<AdaptiveAppBarAction> actions,
+  ) async {
+    final index = await AdaptivePopover.showMenu(
+      anchor: anchor,
+      navigator: navigator,
+      items: [
+        for (final action in actions)
+          AdaptivePopupMenuItem<void>(
+            label: action.effectiveLabel ?? '',
+            icon: action.icon ?? action.iconWidget,
+          ),
+      ],
+    );
+    if (index == null || !anchor.mounted) return;
+    actions[index].press(anchor, navigator: navigator);
+  }
+
   /// One group of actions as the app draws it, in the size of the capsule
   /// it stands for; the overflow control in the size of one action.
   Widget _customActions(
@@ -516,6 +539,9 @@ class DuoVerticalBar extends StatelessWidget {
             actions: actions,
             axis: Axis.vertical,
             overflow: overflow,
+            showOverflow: overflow
+                ? (anchor) => _showOverflow(anchor, actions)
+                : null,
             tint: tint,
             data: chromeData,
             onPressed: (action, anchor) =>

@@ -119,7 +119,7 @@ abstract final class TestChrome {
   static Widget _actions(BuildContext context, AdaptiveActionsSpec spec) => spec.overflow
       ? Builder(
           builder: (anchor) => GestureDetector(
-            onTap: () => spec.onPressed(spec.actions.first, anchor),
+            onTap: () => spec.showOverflow!(anchor),
             child: const SizedBox.square(dimension: 44, child: Center(child: Text('more', style: TextStyle(fontSize: 8)))),
           ),
         )
