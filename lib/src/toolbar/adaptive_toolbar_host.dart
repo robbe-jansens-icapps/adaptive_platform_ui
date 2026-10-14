@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../platform/system_vertical_bar.dart';
+import '../widgets/adaptive_glass.dart';
 import '../widgets/adaptive_toast.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
@@ -29,10 +31,14 @@ import 'toolbar_registry.dart';
 /// inner display.
 ///
 /// Works with any router: it depends on nothing but the widget tree.
+///
+/// With [chrome] the bars are the app's own, drawn by Flutter on every
+/// platform, and the host places them the same way.
 class AdaptiveToolbarHost extends StatefulWidget {
   const AdaptiveToolbarHost({
     super.key,
     required this.child,
+    this.chrome,
     this.hostsTabBar = true,
     @visibleForTesting this.debugFold,
     @visibleForTesting this.debugVerticalBarEdge,
@@ -41,13 +47,19 @@ class AdaptiveToolbarHost extends StatefulWidget {
   /// The navigator (or whatever the app's `builder` receives).
   final Widget child;
 
+  /// The app's own bars, in place of the native iOS 26 ones. The host then
+  /// draws the chrome on every platform, not only on iOS 26 and later. Keep
+  /// one instance: a new one rebuilds every page that reads it.
+  final AdaptiveChrome? chrome;
+
   /// Whether the host draws the native tab bar of a tab layout at the bottom
   /// of the screen, above the navigator, on iOS 26+ (outside the iPhone Duo
   /// vertical bar, which holds the tabs anyway). It then stays put while
   /// pages are pushed over the tabs and popped, fading out and in with them,
   /// instead of sliding with the tabs page under the page that comes in,
   /// which costs frames on every step of the transition. False leaves the
-  /// bar in the tab layout's page.
+  /// bar in the tab layout's page. The tabs of a [chrome] are always the
+  /// host's.
   final bool hostsTabBar;
 
   /// Replaces the platform's fold readings (the reserved regions) and the
@@ -68,6 +80,9 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     with TickerProviderStateMixin {
   final ToolbarRegistry _registry = ToolbarRegistry();
   late final ToolbarBlend _blend;
+
+  /// The bars read the content underneath once, together.
+  final BackdropKey _chromeBackdrop = BackdropKey();
 
   /// The height of the hosted tab bar, once measured.
   final ValueNotifier<double> _tabBarHeight = ValueNotifier<double>(0);
@@ -146,25 +161,31 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   @override
   Widget build(BuildContext context) {
     final fold = widget.debugFold ?? _fold;
-    // The fixed chrome only exists where pages use the native iOS 26
-    // toolbar; elsewhere pages keep their own Cupertino / Material bars.
-    final hostsToolbar =
+    final chrome = widget.chrome;
+    // The iPhone Duo's poses only exist on iOS 26 and later: an Android
+    // window with a cutout on one side is no vertical bar pose.
+    final resolvesDuo =
         widget.debugFold != null || PlatformInfo.isIOS26OrHigher();
+    // The fixed chrome exists where pages use the native iOS 26 toolbar, and
+    // everywhere for custom chrome; elsewhere pages keep their own Cupertino
+    // / Material bars.
+    final hostsToolbar = chrome != null || resolvesDuo;
     final edge =
         widget.debugVerticalBarEdge ??
         _edge?.value ??
         SystemVerticalBarEdge.unknown;
     // Resolved once: the bar, the title and the pages all read this decision.
-    final pose = hostsToolbar
+    final pose = resolvesDuo
         ? DuoLayout.resolvePose(MediaQuery.viewPaddingOf(context), edge)
         : null;
-    final strip = hostsToolbar && pose == null
+    final strip = resolvesDuo && pose == null
         ? DuoTopStrip.resolve(
             viewPadding: MediaQuery.viewPaddingOf(context),
             size: MediaQuery.sizeOf(context),
             fold: fold,
           )
         : null;
+    final placement = resolveChromePlacement(pose: pose, strip: strip);
     assert(() {
       // Pose bugs only reproduce on a Duo; this makes a report actionable.
       if (edge != _loggedEdge || pose != _loggedPose || strip != _loggedStrip) {
@@ -188,7 +209,9 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
         pose == null &&
         MediaQuery.viewPaddingOf(context).top == 0;
     // In the iPhone Duo vertical bar poses the tabs are in that bar.
-    final hostsTabBar = widget.hostsTabBar && hostsToolbar && pose == null;
+    final hostsTabBar = chrome != null
+        ? pose == null
+        : widget.hostsTabBar && hostsToolbar && pose == null;
 
     return FoldScope(
       hinge: FoldScope.hingeFrom(fold),
@@ -207,6 +230,11 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                 pose: pose,
                 child: DuoTopStripScope(
                   strip: strip,
+                  child: AdaptiveChromeScope(
+                    chrome: chrome,
+                    placement: placement,
+                    child: AdaptiveGlassTheme(
+                      style: chrome?.glass ?? const AdaptiveGlassStyle(),
                   // Toasts show above the bars.
                   child: AdaptiveToastLayer(
                     child: Stack(
@@ -221,15 +249,25 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                         // and rebuild every route.
                         _BarInset(pose: pose, child: widget.child),
                         if (hostsToolbar)
-                          HostedTopToolbar(
-                            blend: _blend,
-                            titleOnly: pose != null,
+                          BackdropGroup(
+                            backdropKey: _chromeBackdrop,
+                            child: HostedTopToolbar(
+                              blend: _blend,
+                              titleOnly: pose != null,
+                              chrome: chrome,
+                              placement: placement,
+                            ),
                           ),
                         if (hostsTabBar)
-                          HostedTabBar(
+                          BackdropGroup(
                             key: const ValueKey<String>('adaptive_tab_bar'),
-                            blend: _blend,
-                            height: _tabBarHeight,
+                            backdropKey: _chromeBackdrop,
+                            child: HostedTabBar(
+                              blend: _blend,
+                              height: _tabBarHeight,
+                              chrome: chrome,
+                              placement: placement,
+                            ),
                           ),
                         if (pose != null)
                           // The bar sits on whichever edge the pose names: the
@@ -242,13 +280,18 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                             left: pose.onLeft ? 0 : null,
                             right: pose.onLeft ? null : 0,
                             width: pose.bandWidth,
-                            child: HostedDuoBar(
-                              blend: _blend,
-                              regions:
-                                  fold?.regions ?? const <ReservedRegion>[],
+                            child: BackdropGroup(
+                              backdropKey: _chromeBackdrop,
+                              child: HostedDuoBar(
+                                blend: _blend,
+                                regions:
+                                    fold?.regions ?? const <ReservedRegion>[],
+                              ),
                             ),
                           ),
                       ],
+                    ),
+                  ),
                     ),
                   ),
                 ),

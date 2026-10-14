@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../utils/size_reporter.dart';
 import '../widgets/ios26/ios26_native_tab_bar.dart';
 import 'toolbar_blend.dart';
@@ -20,10 +21,24 @@ import 'toolbar_registry.dart';
 /// The native view is made once per tab layout and kept for as long as the
 /// layout is mounted: off stage while a page covers the tabs, so it is not
 /// made again at the start of every pop.
+///
+/// With [chrome] it is the app's own tab bar, drawn by Flutter, that sits
+/// there and comes and goes the same way.
 class HostedTabBar extends StatefulWidget {
-  const HostedTabBar({super.key, required this.blend, required this.height});
+  const HostedTabBar({
+    super.key,
+    required this.blend,
+    required this.height,
+    this.chrome,
+    this.placement = AdaptiveChromePlacement.bottom,
+  });
 
   final ToolbarBlend blend;
+
+  /// The app's own bars, if any.
+  final AdaptiveChrome? chrome;
+
+  final AdaptiveChromePlacement placement;
 
   /// Set to the height the bar covers at the bottom of the screen, for the
   /// tab layout to keep its content clear of it.
@@ -155,15 +170,25 @@ class _HostedTabBarState extends State<HostedTabBar> {
                 onSizeChanged: (size) => widget.height.value = size.height,
                 child: _Minimizable(
                   minimized: entry.tabBarMinimized,
-                  child: IOS26NativeTabBar(
-                    destinations: bar.items!,
-                    selectedIndex: bar.selectedIndex!,
-                    onTap: bar.onTap!,
-                    tint:
-                        bar.selectedItemColor ??
-                        CupertinoTheme.of(context).primaryColor,
-                    unselectedItemTint: bar.unselectedItemColor,
-                  ),
+                  child: widget.chrome?.tabBarBuilder(
+                        context,
+                        AdaptiveTabBarSpec(
+                          placement: widget.placement,
+                          items: bar.items!,
+                          selectedIndex: bar.selectedIndex!,
+                          onTap: bar.onTap!,
+                          data: bar.chromeData,
+                        ),
+                      ) ??
+                      IOS26NativeTabBar(
+                        destinations: bar.items!,
+                        selectedIndex: bar.selectedIndex!,
+                        onTap: bar.onTap!,
+                        tint:
+                            bar.selectedItemColor ??
+                            CupertinoTheme.of(context).primaryColor,
+                        unselectedItemTint: bar.unselectedItemColor,
+                      ),
                 ),
               ),
             ),

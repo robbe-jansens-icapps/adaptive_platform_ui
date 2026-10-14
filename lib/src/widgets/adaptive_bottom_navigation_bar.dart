@@ -25,6 +25,8 @@ class AdaptiveBottomNavigationBar {
     this.bottomNavigationBar,
     this.selectedItemColor,
     this.unselectedItemColor,
+    this.hidesWhenPushed = false,
+    this.chromeData,
   });
 
   /// Navigation items for bottom navigation bar
@@ -88,6 +90,18 @@ class AdaptiveBottomNavigationBar {
   /// If null, uses platform defaults.
   final Color? unselectedItemColor;
 
+  /// Whether the tabs leave while a page pushed inside the tab layout is in
+  /// front, as UIKit's `hidesBottomBarWhenPushed` does: a page opened on the
+  /// navigator of a tab, rather than over the whole tab layout. They fade out
+  /// with the push and back in with the pop, following a back swipe, and the
+  /// page gets the room at the bottom. Only with custom chrome
+  /// ([AdaptiveToolbarHost.chrome]); a sidebar stays.
+  final bool hidesWhenPushed;
+
+  /// Anything the app's custom chrome wants to know about these tabs, handed
+  /// to its tab bar builder as [AdaptiveTabBarSpec.data].
+  final Object? chromeData;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -98,6 +112,8 @@ class AdaptiveBottomNavigationBar {
     Widget? bottomNavigationBar,
     Color? selectedItemColor,
     Color? unselectedItemColor,
+    bool? hidesWhenPushed,
+    Object? chromeData,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -108,6 +124,8 @@ class AdaptiveBottomNavigationBar {
       bottomNavigationBar: bottomNavigationBar ?? this.bottomNavigationBar,
       selectedItemColor: selectedItemColor ?? this.selectedItemColor,
       unselectedItemColor: unselectedItemColor ?? this.unselectedItemColor,
+      hidesWhenPushed: hidesWhenPushed ?? this.hidesWhenPushed,
+      chromeData: chromeData ?? this.chromeData,
     );
   }
 }

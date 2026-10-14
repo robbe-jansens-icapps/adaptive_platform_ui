@@ -2,11 +2,15 @@ import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_native_tab_bar.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, internal;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform, internal;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
+import '../toolbar/duo_top_strip.dart';
+import '../toolbar/duo_vertical_bar.dart';
 import 'adaptive_app_bar.dart';
 import 'adaptive_app_bar_action.dart';
 import 'adaptive_badge.dart';
@@ -324,7 +328,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// or is 0 while the tabs are in the iPhone Duo trailing bar. Only the
   /// inset follows it: the body is not built again when it changes, or when
   /// the bar moves between the page and the host.
-  Widget _withBottomBarInset(BuildContext context, Widget body) {
+  Widget _withBottomBarInset(
+    BuildContext context,
+    Widget body, {
+    ModalRoute<Object?>? ownerRoute,
+  }) {
     final ValueListenable<double> height;
     if (_tabsInTrailingBar(context)) {
       height = const AlwaysStoppedAnimation<double>(0);
@@ -337,6 +345,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     return _BottomBarInset(
       height: height,
       hidden: widget.tabBarHidden,
+      ownerRoute: ownerRoute,
+      hidesWhenPushed: widget.bottomNavigationBar?.hidesWhenPushed ?? false,
       child: body,
     );
   }
@@ -416,7 +426,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// stage, for when it shows again.
   AdaptiveBottomNavigationBar? get _nativeTabBar {
     final bar = widget.bottomNavigationBar;
-    if (bar == null || !bar.useNativeBottomBar) return null;
+    // Custom chrome draws any tab bar the page describes.
+    final custom = _customChrome != null;
+    if (bar == null || (!bar.useNativeBottomBar && !custom)) return null;
     if (bar.items == null ||
         bar.items!.isEmpty ||
         bar.selectedIndex == null ||
@@ -434,12 +446,17 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// of the screen, above the navigator (see
   /// [ToolbarChromeScope.hostsBottomTabBar]), so the page draws none.
   bool _tabsHostedAtBottom(BuildContext context) =>
-      PlatformInfo.isIOS26OrHigher() &&
+      (_customChrome != null || PlatformInfo.isIOS26OrHigher()) &&
       _nativeTabBar != null &&
       _usesFixedToolbar(context) &&
       (ToolbarChromeScope.maybeOf(context)?.hostsBottomTabBar ?? false);
 
+  /// The custom chrome of the toolbar host above, if it has any: read once
+  /// per dependency change, as the registry is.
+  AdaptiveChrome? _customChrome;
+
   void _syncToolbarEntry() {
+    _customChrome = AdaptiveChromeScope.chromeOf(context);
     final registry = ToolbarRegistry.maybeOf(context);
     if (registry == null) return;
     final inColumn = AdaptiveSplitView.isInColumn(context);
@@ -469,7 +486,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         route: ModalRoute.of(context),
         navigator: navigator,
         enclosingRoutes: enclosingRoutes,
-        titleOverlay: inColumn ? null : _buildIOS26TitleOverlay(),
+        titleOverlay: inColumn || _customChrome != null
+            ? null
+            : _buildIOS26TitleOverlay(),
         // `TickerMode.valuesOf` replaces this, but only exists in Flutter
         // releases after 3.35; `of` works on every supported version.
         // ignore: deprecated_member_use
@@ -598,6 +617,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   }
 
   Widget _buildPage(BuildContext context) {
+    final chrome = _customChrome;
+    if (chrome != null) return _buildCustomChromePage(context, chrome);
+
     final useNativeToolbar = widget.appBar?.useNativeToolbar ?? false;
     final useNativeBottomBar =
         widget.bottomNavigationBar?.useNativeBottomBar ?? true;
@@ -1171,6 +1193,128 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     );
   }
 
+  /// A page under a toolbar host with custom chrome, the same on every
+  /// platform: the host draws its bars, or the page draws its own bar with
+  /// the app's builders where the host's would not reach it (a sheet, a
+  /// dialog, a column of a split view). Its content runs under the bars and
+  /// keeps clear of them through the media query's padding, as under the
+  /// native bars of iOS 26.
+  Widget _buildCustomChromePage(BuildContext context, AdaptiveChrome chrome) {
+    final appBar = widget.appBar;
+    final placement = AdaptiveChromeScope.placementOf(context);
+    final hostChrome = ToolbarChromeScope.maybeOf(context);
+    final hosted =
+        _usesFixedToolbar(context) &&
+        (hostChrome?.hostsToolbar ?? false) &&
+        (appBar?.useNativeToolbar ?? true);
+    final inColumn = AdaptiveSplitView.isInColumn(context);
+    final pose = DuoPoseScope.of(context);
+    final strip = DuoTopStripScope.of(context);
+    final hasTitle = appBar?.title != null || appBar?.titleWidget != null;
+    // In the iPhone Duo vertical bar pose the controls of every page are in
+    // the vertical bar, those of the pages in a column too.
+    final controlsInBar =
+        pose != null &&
+        (hosted || (inColumn && AdaptiveSplitView.handsControlsToBar(context)));
+    final ownBar = appBar != null && !hosted;
+
+    final double topInset;
+    if (appBar == null) {
+      topInset = 0;
+    } else if (pose != null && (hosted || controlsInBar)) {
+      topInset = hasTitle ? kDuoTitleBandHeight : 0;
+    } else if (strip != null && hosted) {
+      topInset = strip.overhang;
+    } else {
+      topInset = chrome.metrics.toolbarHeight;
+    }
+
+    // The iPhone Duo strip beside a page the host draws the bar for is the
+    // bar's: the content keeps out of it.
+    final padding = MediaQuery.paddingOf(context);
+    final sideInset = pose == null || !hosted
+        ? 0.0
+        : pose.onLeft
+        ? padding.left
+        : padding.right;
+    final barOnLeft = pose?.onLeft ?? false;
+
+    Widget body = widget.body ?? const SizedBox.shrink();
+    final tabs = _nativeTabBar;
+    final ownsTabs = tabs != null && _usesFixedToolbar(context);
+    if (ownsTabs) {
+      body = _withBottomBarInset(context, body, ownerRoute: ModalRoute.of(context));
+      if (_tabsHostedAtBottom(context) &&
+          widget.minimizeBehavior != TabBarMinimizeBehavior.never) {
+        body = NotificationListener<ScrollNotification>(
+          onNotification: _minimizeHostedTabBar,
+          child: body,
+        );
+      }
+    } else {
+      body = _TabsLeaveWhenPushed(child: body);
+    }
+
+    final page = Builder(
+      builder: (context) {
+        final inner = MediaQuery.of(context);
+        return MediaQuery(
+          data: inner.copyWith(
+            padding: inner.padding.copyWith(
+              top: inner.padding.top + topInset,
+              left: barOnLeft ? inner.padding.left - sideInset : inner.padding.left,
+              right: barOnLeft ? inner.padding.right : inner.padding.right - sideInset,
+            ),
+            viewPadding: inner.viewPadding.copyWith(
+              top: inner.viewPadding.top + topInset,
+            ),
+          ),
+          child: body,
+        );
+      },
+    );
+
+    return Scaffold(
+      key: widget.scaffoldKey,
+      backgroundColor: widget.backgroundColor,
+      resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+      floatingActionButton: widget.floatingActionButton,
+      drawer: widget.drawer,
+      endDrawer: widget.endDrawer,
+      drawerScrimColor: widget.drawerScrimColor,
+      onDrawerChanged: widget.onDrawerChanged,
+      onEndDrawerChanged: widget.onEndDrawerChanged,
+      drawerEnableOpenDragGesture: widget.drawerEnableOpenDragGesture,
+      endDrawerEnableOpenDragGesture: widget.endDrawerEnableOpenDragGesture,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+              left: barOnLeft ? sideInset : 0,
+              right: barOnLeft ? 0 : sideInset,
+            ),
+            child: page,
+          ),
+          if (ownBar)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _CustomInlineBar(
+                appBar: appBar,
+                chrome: chrome,
+                placement: placement,
+                showsControls: !controlsInBar,
+                titleBand: controlsInBar,
+                hasTabs: tabs != null,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   IconData _sfSymbolToCupertinoIcon(String sfSymbol) {
     const iconMap = {
       'house': CupertinoIcons.house,
@@ -1473,6 +1617,8 @@ class _BottomBarInset extends StatelessWidget {
     required this.height,
     required this.hidden,
     required this.child,
+    this.ownerRoute,
+    this.hidesWhenPushed = false,
   });
 
   final ValueListenable<double> height;
@@ -1480,6 +1626,11 @@ class _BottomBarInset extends StatelessWidget {
   /// The bar is hidden for now ([AdaptiveScaffold.tabBarHidden]): no inset.
   final bool hidden;
   final Widget child;
+
+  /// The route of the page with the tabs, and whether its tabs leave while a
+  /// page is pushed inside them: such a page takes the room back.
+  final ModalRoute<Object?>? ownerRoute;
+  final bool hidesWhenPushed;
 
   @override
   Widget build(BuildContext context) {
@@ -1490,7 +1641,11 @@ class _BottomBarInset extends StatelessWidget {
         final inset = hidden ? 0.0 : height;
         return AdaptiveBottomBarInset(
           height: inset,
-          child: _BottomBarPadding(height: inset, child: child!),
+          child: _BottomBarPadding(
+            height: inset,
+            ownerRoute: hidesWhenPushed ? ownerRoute : null,
+            child: child!,
+          ),
         );
       },
     );
@@ -1502,24 +1657,261 @@ class _BottomBarInset extends StatelessWidget {
 /// keyboard sliding in, so the scaffold around it is not rebuilt for them and
 /// does not publish its app bar again.
 class _BottomBarPadding extends StatelessWidget {
-  const _BottomBarPadding({required this.height, required this.child});
+  const _BottomBarPadding({
+    required this.height,
+    required this.child,
+    this.ownerRoute,
+  });
 
   final double height;
   final Widget child;
 
+  /// The route of the page with the tabs, when they leave while a page is
+  /// pushed inside them.
+  final ModalRoute<Object?>? ownerRoute;
+
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final bottom = math.max(mediaQuery.padding.bottom, height);
+    final viewBottom = math.max(mediaQuery.viewPadding.bottom, height);
+    return MediaQuery(
+      data: mediaQuery.copyWith(
+        padding: mediaQuery.padding.copyWith(bottom: bottom),
+        viewPadding: mediaQuery.viewPadding.copyWith(bottom: viewBottom),
+      ),
+      child: _RaisedForTabs(
+        ownerRoute: ownerRoute,
+        padding: bottom - mediaQuery.padding.bottom,
+        viewPadding: viewBottom - mediaQuery.viewPadding.bottom,
+        child: child,
+      ),
+    );
+  }
+}
+
+/// How far the page with the tabs raised the bottom padding for them, for
+/// the pages pushed inside its tab layout, which the tabs leave
+/// ([AdaptiveBottomNavigationBar.hidesWhenPushed]): they take it back.
+class _RaisedForTabs extends InheritedWidget {
+  const _RaisedForTabs({
+    required this.ownerRoute,
+    required this.padding,
+    required this.viewPadding,
+    required super.child,
+  });
+
+  /// Null when the tabs stay while pages are pushed inside them.
+  final ModalRoute<Object?>? ownerRoute;
+  final double padding;
+  final double viewPadding;
+
+  @override
+  bool updateShouldNotify(_RaisedForTabs oldWidget) =>
+      ownerRoute != oldWidget.ownerRoute ||
+      padding != oldWidget.padding ||
+      viewPadding != oldWidget.viewPadding;
+}
+
+/// Gives a page pushed inside a tab layout whose tabs leave for it
+/// ([AdaptiveBottomNavigationBar.hidesWhenPushed]) back the room the tabs
+/// took at the bottom, as UIKit does for `hidesBottomBarWhenPushed`. The tab
+/// pages themselves keep it, and so does every page while the tabs stay (in
+/// a sidebar).
+class _TabsLeaveWhenPushed extends StatelessWidget {
+  const _TabsLeaveWhenPushed({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final raised = context
+        .dependOnInheritedWidgetOfExactType<_RaisedForTabs>();
+    final ownerRoute = raised?.ownerRoute;
+    final keepsTabs =
+        ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false;
+    if (ownerRoute == null ||
+        keepsTabs ||
+        !_pushedWithin(context, ownerRoute)) {
+      return child;
+    }
     final mediaQuery = MediaQuery.of(context);
     return MediaQuery(
       data: mediaQuery.copyWith(
         padding: mediaQuery.padding.copyWith(
-          bottom: math.max(mediaQuery.padding.bottom, height),
+          bottom: math.max(0, mediaQuery.padding.bottom - raised!.padding),
         ),
         viewPadding: mediaQuery.viewPadding.copyWith(
-          bottom: math.max(mediaQuery.viewPadding.bottom, height),
+          bottom: math.max(
+            0,
+            mediaQuery.viewPadding.bottom - raised.viewPadding,
+          ),
         ),
       ),
-      child: child,
+      child: AdaptiveBottomBarInset(
+        height: 0,
+        child: _RaisedForTabs(
+          ownerRoute: null,
+          padding: 0,
+          viewPadding: 0,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  /// Whether the page at [context] was pushed on a navigator inside
+  /// [ownerRoute], rather than being the first page of each navigator in
+  /// between: the same rule the toolbar registry hides the tabs by.
+  static bool _pushedWithin(
+    BuildContext context,
+    ModalRoute<Object?> ownerRoute,
+  ) {
+    var route = ModalRoute.of(context);
+    var navigator = Navigator.maybeOf(context);
+    while (route != null && route != ownerRoute) {
+      if (!route.isFirst) return true;
+      final outer = navigator?.context;
+      if (outer == null) return false;
+      route = ModalRoute.of(outer);
+      navigator = outer.findAncestorStateOfType<NavigatorState>();
+    }
+    return false;
+  }
+}
+
+/// The bar a page draws itself with custom chrome, where the host's bar
+/// does not reach it: in a sheet, a dialog, or a column of a split view. In
+/// the iPhone Duo vertical bar pose it shows only the title, in the title
+/// band, as the host does: the controls are in the vertical bar.
+class _CustomInlineBar extends StatelessWidget {
+  const _CustomInlineBar({
+    required this.appBar,
+    required this.chrome,
+    required this.placement,
+    required this.showsControls,
+    required this.titleBand,
+    required this.hasTabs,
+  });
+
+  final AdaptiveAppBar appBar;
+  final AdaptiveChrome chrome;
+  final AdaptiveChromePlacement placement;
+  final bool showsControls;
+  final bool titleBand;
+  final bool hasTabs;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    final metrics = chrome.metrics;
+    final height = titleBand ? kDuoTitleBandHeight : top + metrics.toolbarHeight;
+    final centered = !titleBand && chrome.centersTitle(defaultTargetPlatform);
+    final title = chrome.titleBuilder(
+      context,
+      AdaptiveTitleSpec(
+        placement: placement,
+        title: appBar.title,
+        subtitle: appBar.subtitle,
+        titleWidget: appBar.titleWidget,
+        centered: centered,
+        data: appBar.chromeData,
+      ),
+    );
+    final background = appBar.showsBackdrop
+        ? chrome.barBackgroundBuilder?.call(
+            context,
+            AdaptiveBarBackgroundSpec(
+              placement: placement,
+              height: height,
+              color: appBar.backdropColor,
+              titleBand: titleBand,
+              data: appBar.chromeData,
+            ),
+          )
+        : null;
+    if (titleBand) {
+      return SizedBox(
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.none,
+          children: [
+            ?background,
+            DuoToolbarTitle(titleWidget: title),
+          ],
+        ),
+      );
+    }
+
+    final canPop = Navigator.maybeOf(context)?.canPop() ?? false;
+    final impliesBack =
+        showsControls &&
+        appBar.leading == null &&
+        !hasTabs &&
+        (appBar.onBack != null ||
+            (appBar.automaticallyImplyLeading && canPop)) &&
+        !AdaptiveSplitView.hidesBackButton(context);
+    final actions = showsControls
+        ? appBar.actions ?? const <AdaptiveAppBarAction>[]
+        : const <AdaptiveAppBarAction>[];
+    final leading = showsControls ? appBar.leading : null;
+    return SizedBox(
+      height: height,
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          ?background,
+          Padding(
+            padding: EdgeInsets.only(top: top),
+            child: NavigationToolbar(
+              leading: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 16),
+                child: leading ??
+                    (impliesBack
+                        ? chrome.backButtonBuilder(
+                            context,
+                            AdaptiveBackButtonSpec(
+                              placement: placement,
+                              style: appBar.backButtonStyle,
+                              data: appBar.chromeData,
+                              onPressed: () {
+                                AdaptiveSplitView.willGoBackFrom(context);
+                                final onBack = appBar.onBack;
+                                if (onBack != null) {
+                                  onBack();
+                                } else {
+                                  Navigator.of(context).maybePop();
+                                }
+                              },
+                            ),
+                          )
+                        : null),
+              ),
+              middle: title,
+              trailing: actions.isEmpty
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 16),
+                      child: chrome.actionsBuilder(
+                        context,
+                        AdaptiveActionsSpec(
+                          placement: placement,
+                          actions: actions,
+                          axis: Axis.horizontal,
+                          tint: appBar.tintColor,
+                          data: appBar.chromeData,
+                          onPressed: (action, anchor) => action.press(anchor),
+                        ),
+                      ),
+                    ),
+              centerMiddle: centered,
+              middleSpacing: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../widgets/adaptive_app_bar.dart';
@@ -30,6 +31,9 @@ class TopToolbarContent {
     this.backStyle = AdaptiveBackButtonStyle.back,
     this.backdrop = true,
     this.backdropColor,
+    this.subtitle,
+    this.titleWidget,
+    this.data,
   });
 
   /// No page owns the chrome, the page has no toolbar, or it draws a
@@ -56,6 +60,9 @@ class TopToolbarContent {
       backStyle: appBar.backButtonStyle,
       backdrop: appBar.showsBackdrop,
       backdropColor: appBar.backdropColor,
+      subtitle: appBar.subtitle,
+      titleWidget: appBar.titleWidget,
+      data: appBar.chromeData,
     );
   }
 
@@ -81,6 +88,14 @@ class TopToolbarContent {
   /// background.
   final Color? backdropColor;
 
+  /// What custom chrome draws the title from: the page's own subtitle and
+  /// title widget, unstyled, rather than [titleOverlay].
+  final String? subtitle;
+  final Widget? titleWidget;
+
+  /// [AdaptiveAppBar.chromeData], for custom chrome.
+  final Object? data;
+
   /// Whether the native bar has anything to show: a title it draws itself
   /// or bar buttons.
   bool get hasNativeItems =>
@@ -89,6 +104,7 @@ class TopToolbarContent {
   bool get isEmpty =>
       title == null &&
       titleOverlay == null &&
+      titleWidget == null &&
       customLeading == null &&
       !impliesBack &&
       actions.isEmpty;
@@ -103,17 +119,29 @@ class TopToolbarContent {
 /// outgoing items fade out before the incoming ones fade in, in step with the
 /// route transition and with a back swipe. A back button that both pages show
 /// is one control in a layer of its own and stays put.
+///
+/// With [chrome] the bar is the app's own: its title, actions, back button
+/// and backdrop, laid out and blended the same way.
 class HostedTopToolbar extends StatelessWidget {
   const HostedTopToolbar({
     super.key,
     required this.blend,
     this.titleOnly = false,
+    this.chrome,
+    this.placement = AdaptiveChromePlacement.bottom,
   });
 
   final ToolbarBlend blend;
 
   /// True on iPhone Duo, where the controls live in the vertical bar.
   final bool titleOnly;
+
+  /// The app's own bars, if any.
+  final AdaptiveChrome? chrome;
+
+  final AdaptiveChromePlacement placement;
+
+  double get _toolbarHeight => chrome?.metrics.toolbarHeight ?? kHostedToolbarHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +207,7 @@ class HostedTopToolbar extends StatelessWidget {
     final driver = blend.driver;
     // Pages of one colour have nothing to blend, which would redraw the
     // backdrop on every frame of the transition.
+    final backdropData = upperBackdrop ? upper.data : lower.data;
     final backdrop =
         upperBackdrop &&
             lowerBackdrop &&
@@ -186,17 +215,26 @@ class HostedTopToolbar extends StatelessWidget {
             upperColor != lowerColor
         ? AnimatedBuilder(
             animation: driver,
-            builder: (context, _) =>
-                _backdrop(Color.lerp(lowerColor, upperColor, driver.value)!),
+            builder: (context, _) => _backdrop(
+              context,
+              Color.lerp(lowerColor, upperColor, driver.value)!,
+              backdropData,
+              topInset,
+            ),
           )
-        : _backdrop(upperBackdrop ? upperColor : lowerColor);
+        : _backdrop(
+            context,
+            upperBackdrop ? upperColor : lowerColor,
+            backdropData,
+            topInset,
+          );
 
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
         height: titleOnly
             ? kDuoTitleBandHeight
-            : kHostedToolbarHeight + topInset,
+            : _toolbarHeight + topInset,
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
           child: FadeTransition(
@@ -291,6 +329,8 @@ class HostedTopToolbar extends StatelessWidget {
                   widthFactor: 1,
                   child: _BackButton(
                     content: back?.$1 ?? TopToolbarContent(backStyle: style),
+                    chrome: chrome,
+                    placement: placement,
                   ),
                 ),
               ),
@@ -301,8 +341,29 @@ class HostedTopToolbar extends StatelessWidget {
     );
   }
 
-  Widget _backdrop(Color color) =>
-      titleOnly ? DuoTitleBackdrop(color: color) : _Backdrop(color: color);
+  Widget _backdrop(
+    BuildContext context,
+    Color color,
+    Object? data,
+    double topInset,
+  ) {
+    final builder = chrome?.barBackgroundBuilder;
+    if (builder != null) {
+      return builder(
+        context,
+        AdaptiveBarBackgroundSpec(
+          placement: placement,
+          height: titleOnly ? kDuoTitleBandHeight : topInset + _toolbarHeight,
+          color: color,
+          titleBand: titleOnly,
+          data: data,
+        ),
+      );
+    }
+    return titleOnly
+        ? DuoTitleBackdrop(color: color)
+        : _Backdrop(color: color, toolbarHeight: _toolbarHeight);
+  }
 
   /// While [entry] is a page shown like a dialog that comes up or goes down:
   /// its route's animation, which the blend follows. Null otherwise.
@@ -345,7 +406,21 @@ class HostedTopToolbar extends StatelessWidget {
                 // controls are in the trailing bar, so there is no bar to draw.
                 ? DuoToolbarTitle(
                     title: content.title,
-                    titleWidget: content.titleOverlay,
+                    titleWidget: chrome != null
+                        ? _customTitle(context, content, centered: false)
+                        : content.titleOverlay,
+                  )
+                : chrome != null
+                ? _CustomBar(
+                    content: content,
+                    chrome: chrome!,
+                    placement: placement,
+                    title: _customTitle(
+                      context,
+                      content,
+                      centered: chrome!.centersTitle(defaultTargetPlatform),
+                    ),
+                    leadingInset: _hasWindowControls(context) ? 62 : 0,
                   )
                 : defaultTargetPlatform == TargetPlatform.iOS
                 ? IOS26NativeToolbar(
@@ -377,6 +452,22 @@ class HostedTopToolbar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _customTitle(
+    BuildContext context,
+    TopToolbarContent content, {
+    required bool centered,
+  }) => chrome!.titleBuilder(
+    context,
+    AdaptiveTitleSpec(
+      placement: placement,
+      title: content.title,
+      subtitle: content.subtitle,
+      titleWidget: content.titleWidget,
+      centered: centered,
+      data: content.data,
+    ),
+  );
 
   /// Whether the system's window controls take the bar's leading corner: in
   /// an iPad window smaller than the display. An iPhone Duo window in split
@@ -440,9 +531,10 @@ class _DialogSlide extends StatelessWidget {
 /// the page's [color]: invisible at rest, it fades out what scrolls under the
 /// bar.
 class _Backdrop extends StatelessWidget {
-  const _Backdrop({required this.color});
+  const _Backdrop({required this.color, this.toolbarHeight = kHostedToolbarHeight});
 
   final Color color;
+  final double toolbarHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -454,8 +546,7 @@ class _Backdrop extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => Container(
             // Runs on below the bar for a smooth fade into the content.
-            height:
-                HostedTopToolbar._barTop(context) + kHostedToolbarHeight + 30,
+            height: HostedTopToolbar._barTop(context) + toolbarHeight + 30,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -480,13 +571,31 @@ class _Backdrop extends StatelessWidget {
 /// pop of the page's own navigator, so nested navigators (tabs, shell routes)
 /// pop the right stack.
 class _BackButton extends StatelessWidget {
-  const _BackButton({required this.content});
+  const _BackButton({
+    required this.content,
+    this.chrome,
+    this.placement = AdaptiveChromePlacement.bottom,
+  });
 
   final TopToolbarContent content;
+  final AdaptiveChrome? chrome;
+  final AdaptiveChromePlacement placement;
 
   @override
   Widget build(BuildContext context) {
     final onBack = content.onBack;
+    final chrome = this.chrome;
+    if (chrome != null) {
+      return chrome.backButtonBuilder(
+        context,
+        AdaptiveBackButtonSpec(
+          placement: placement,
+          style: content.backStyle,
+          onPressed: onBack ?? () => content.navigator?.maybePop(),
+          data: content.data,
+        ),
+      );
+    }
     // A circle as tall as the bar, as the system's back button.
     return SizedBox.square(
       dimension: kHostedToolbarHeight,
@@ -498,6 +607,75 @@ class _BackButton extends StatelessWidget {
         sfSymbol: content.backStyle == AdaptiveBackButtonStyle.close
             ? const SFSymbol('xmark', size: 17, weight: FontWeight.w600)
             : const SFSymbol('chevron.left', size: 19, weight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// One page's part of the toolbar with custom chrome: its title, and its
+/// actions at the trailing end. The back button is drawn over it by the
+/// host; the bar keeps its room free.
+class _CustomBar extends StatelessWidget {
+  const _CustomBar({
+    required this.content,
+    required this.chrome,
+    required this.placement,
+    required this.title,
+    required this.leadingInset,
+  });
+
+  final TopToolbarContent content;
+  final AdaptiveChrome chrome;
+  final AdaptiveChromePlacement placement;
+  final Widget title;
+
+  /// Room the system's window controls take at the leading edge.
+  final double leadingInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final strip = DuoTopStripScope.of(context);
+    final metrics = chrome.metrics;
+    final start = 16 + leadingInset + (strip?.clusterLeft ?? 0);
+    final customLeading = content.customLeading;
+    final Widget leading = customLeading != null
+        ? Padding(
+            padding: EdgeInsetsDirectional.only(start: start),
+            child: customLeading,
+          )
+        : SizedBox(
+            width: content.impliesBack ? start + metrics.backButtonSize : start,
+          );
+    final actions = content.actions;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SizedBox(
+        height: metrics.toolbarHeight,
+        child: NavigationToolbar(
+          leading: leading,
+          middle: title,
+          trailing: Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: 16 + (strip?.clusterRight ?? 0),
+            ),
+            child: actions.isEmpty
+                ? null
+                : chrome.actionsBuilder(
+                    context,
+                    AdaptiveActionsSpec(
+                      placement: placement,
+                      actions: actions,
+                      axis: Axis.horizontal,
+                      tint: content.tint,
+                      data: content.data,
+                      onPressed: (action, anchor) =>
+                          action.press(anchor, navigator: content.navigator),
+                    ),
+                  ),
+          ),
+          centerMiddle: chrome.centersTitle(defaultTargetPlatform),
+          middleSpacing: 12,
+        ),
       ),
     );
   }
