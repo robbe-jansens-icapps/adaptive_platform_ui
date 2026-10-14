@@ -27,6 +27,7 @@ class AdaptiveBottomNavigationBar {
     this.unselectedItemColor,
     this.hidesWhenPushed = false,
     this.chromeData,
+    this.accessory,
   });
 
   /// Navigation items for bottom navigation bar
@@ -102,6 +103,15 @@ class AdaptiveBottomNavigationBar {
   /// to its tab bar builder as [AdaptiveTabBarSpec.data].
   final Object? chromeData;
 
+  /// Shown with the tabs, as the accessory of a tab bar on iOS 26 (Music's
+  /// mini player): above a tab bar at the bottom, floating at the bottom of
+  /// the content where the tabs are on the side or at the top, and at the
+  /// bottom of a sidebar. It keeps its state as it moves between them, and
+  /// comes and goes with the tabs. Only with custom chrome
+  /// ([AdaptiveToolbarHost.chrome]), which frames it
+  /// ([AdaptiveChrome.accessoryBuilder]).
+  final Widget? accessory;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -114,6 +124,7 @@ class AdaptiveBottomNavigationBar {
     Color? unselectedItemColor,
     bool? hidesWhenPushed,
     Object? chromeData,
+    Widget? accessory,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -126,6 +137,7 @@ class AdaptiveBottomNavigationBar {
       unselectedItemColor: unselectedItemColor ?? this.unselectedItemColor,
       hidesWhenPushed: hidesWhenPushed ?? this.hidesWhenPushed,
       chromeData: chromeData ?? this.chromeData,
+      accessory: accessory ?? this.accessory,
     );
   }
 }

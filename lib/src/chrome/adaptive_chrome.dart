@@ -67,6 +67,7 @@ class AdaptiveSidebarSpec {
     required this.overlaid,
     required this.onToggle,
     required this.padding,
+    this.accessory,
     this.data,
   });
 
@@ -90,8 +91,25 @@ class AdaptiveSidebarSpec {
   /// iPad window the window controls in its top corner.
   final EdgeInsets padding;
 
+  /// The tab layout's accessory ([AdaptiveBottomNavigationBar.accessory]),
+  /// already framed: dock it at the bottom of the sidebar. Keep it in the
+  /// tree as it is, so it keeps its state.
+  final Widget? accessory;
+
   /// [AdaptiveBottomNavigationBar.chromeData].
   final Object? data;
+}
+
+/// Where a tab accessory goes, for the frame the app draws around it.
+@immutable
+class AdaptiveAccessorySpec {
+  const AdaptiveAccessorySpec({required this.placement, required this.compact});
+
+  final AdaptiveChromePlacement placement;
+
+  /// Whether there is little room for it: beside the iPhone Duo's vertical
+  /// bar, or in a sidebar collapsed to a rail.
+  final bool compact;
 }
 
 /// A page's title, as the app's title draws it.
@@ -209,6 +227,7 @@ typedef AdaptiveBackButtonBuilder = Widget Function(BuildContext context, Adapti
 typedef AdaptiveActionsBuilder = Widget Function(BuildContext context, AdaptiveActionsSpec spec);
 typedef AdaptiveBarBackgroundBuilder = Widget Function(BuildContext context, AdaptiveBarBackgroundSpec spec);
 typedef AdaptiveSidebarBuilder = Widget Function(BuildContext context, AdaptiveSidebarSpec spec);
+typedef AdaptiveAccessoryBuilder = Widget Function(BuildContext context, AdaptiveAccessorySpec spec, Widget accessory);
 
 /// Sizes the custom chrome lays out with. The defaults are the system's.
 @immutable
@@ -287,6 +306,7 @@ class AdaptiveChrome {
     required this.actionsBuilder,
     this.barBackgroundBuilder,
     this.sidebarBuilder,
+    this.accessoryBuilder,
     this.centerTitle,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
@@ -316,6 +336,12 @@ class AdaptiveChrome {
   /// beside it. Null keeps the tab bar at the bottom at any width.
   final AdaptiveSidebarBuilder? sidebarBuilder;
 
+  /// The frame around a tab layout's accessory
+  /// ([AdaptiveBottomNavigationBar.accessory]), for each placement: a strip
+  /// above the tab bar, a floating capsule, a card in a sidebar. The
+  /// accessory as it is when null.
+  final AdaptiveAccessoryBuilder? accessoryBuilder;
+
   /// Whether titles are centred in the toolbar: on iOS when null, as the
   /// system does, and at the leading edge elsewhere.
   final bool? centerTitle;
@@ -339,6 +365,7 @@ class AdaptiveChromeScope extends InheritedWidget {
     required this.chrome,
     required this.placement,
     this.sidebarInset = const AlwaysStoppedListenable(0),
+    this.floatingAccessoryHeight = const AlwaysStoppedListenable(0),
     required super.child,
   });
 
@@ -350,6 +377,10 @@ class AdaptiveChromeScope extends InheritedWidget {
   /// How much room the sidebar takes at the leading edge of the pages in the
   /// tab layout, as it eases between its widths; 0 without one.
   final ValueListenable<double> sidebarInset;
+
+  /// The room a tab accessory floating at the bottom of the content takes
+  /// there, where the tabs are on the side or at the top; 0 without one.
+  final ValueListenable<double> floatingAccessoryHeight;
 
   /// [sidebarInset] of the host above; 0 without one.
   static ValueListenable<double> sidebarInsetOf(BuildContext context) =>
@@ -365,7 +396,10 @@ class AdaptiveChromeScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AdaptiveChromeScope oldWidget) =>
-      chrome != oldWidget.chrome || placement != oldWidget.placement || sidebarInset != oldWidget.sidebarInset;
+      chrome != oldWidget.chrome ||
+      placement != oldWidget.placement ||
+      sidebarInset != oldWidget.sidebarInset ||
+      floatingAccessoryHeight != oldWidget.floatingAccessoryHeight;
 }
 
 /// A [ValueListenable] that never changes.

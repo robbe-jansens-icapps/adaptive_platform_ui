@@ -334,7 +334,25 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     ModalRoute<Object?>? ownerRoute,
   }) {
     final ValueListenable<double> height;
-    if (_tabsInTrailingBar(context)) {
+    final custom = _customChrome != null;
+    final placement = AdaptiveChromeScope.placementOf(context);
+    if (custom && _usesFixedToolbar(context)) {
+      // Custom chrome: the tab bar and its accessory along the bottom, an
+      // accessory floating at the bottom of the content, or nothing beside
+      // a sidebar.
+      height = switch (placement) {
+        AdaptiveChromePlacement.bottom =>
+          ToolbarChromeScope.maybeOf(context)?.tabBarHeight ??
+              const AlwaysStoppedAnimation<double>(0),
+        AdaptiveChromePlacement.vertical ||
+        AdaptiveChromePlacement.topStrip => AdaptiveChromeScope.maybeOf(
+          context,
+        )!.floatingAccessoryHeight,
+        AdaptiveChromePlacement.sidebar => const AlwaysStoppedAnimation<double>(
+          0,
+        ),
+      };
+    } else if (_tabsInTrailingBar(context)) {
       height = const AlwaysStoppedAnimation<double>(0);
     } else if (_tabsHostedAtBottom(context)) {
       height =

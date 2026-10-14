@@ -87,6 +87,9 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   /// The height of the hosted tab bar, once measured.
   final ValueNotifier<double> _tabBarHeight = ValueNotifier<double>(0);
 
+  /// The room a tab accessory floating at the bottom of the content takes.
+  final ValueNotifier<double> _accessoryHeight = ValueNotifier<double>(0);
+
   /// The sidebar of custom chrome on a wide window: 0 collapsed to a rail,
   /// 1 at its full width.
   late final AnimationController _sidebar = AnimationController(
@@ -211,6 +214,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     _blend.dispose();
     _registry.dispose();
     _tabBarHeight.dispose();
+    _accessoryHeight.dispose();
     _sidebar.dispose();
     _sidebarInset.dispose();
     super.dispose();
@@ -279,8 +283,10 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
         pose == null &&
         MediaQuery.viewPaddingOf(context).top == 0;
     // In the iPhone Duo vertical bar poses the tabs are in that bar.
+    // Custom chrome keeps its tab layer in every placement: in the vertical
+    // bar pose for the accessory, which floats beside the bar.
     final hostsTabBar = chrome != null
-        ? pose == null
+        ? true
         : widget.hostsTabBar && hostsToolbar && pose == null;
 
     return FoldScope(
@@ -309,6 +315,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                     chrome: chrome,
                     placement: placement,
                     sidebarInset: _sidebarInset,
+                    floatingAccessoryHeight: _accessoryHeight,
                     child: AdaptiveGlassTheme(
                       style: chrome?.glass ?? const AdaptiveGlassStyle(),
                   // Toasts show above the bars.
@@ -365,6 +372,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                               height: _tabBarHeight,
                               chrome: chrome,
                               placement: placement,
+                              accessoryHeight: _accessoryHeight,
                               sidebar: sidebar
                                   ? HostedSidebar(
                                       progress: _sidebar,

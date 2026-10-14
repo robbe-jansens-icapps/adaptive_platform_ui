@@ -1,11 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../utils/size_reporter.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 import 'duo_top_strip.dart';
+import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
 import '../widgets/ios26/ios26_native_tab_bar.dart';
 import 'toolbar_blend.dart';
@@ -36,10 +40,15 @@ class HostedTabBar extends StatefulWidget {
     this.chrome,
     this.placement = AdaptiveChromePlacement.bottom,
     this.sidebar,
+    this.accessoryHeight,
   });
 
   /// The sidebar's state, while the tabs are in one.
   final HostedSidebar? sidebar;
+
+  /// Set to the room an accessory floating at the bottom of the content
+  /// takes, with custom chrome where the tabs are not at the bottom.
+  final ValueNotifier<double>? accessoryHeight;
 
   final ToolbarBlend blend;
 
@@ -116,6 +125,22 @@ class _HostedTabBarState extends State<HostedTabBar> {
     final blend = widget.blend;
     final registry = blend.registry;
     _built = _hosted();
+    _accessoryKeys.removeWhere(
+      (id, _) => !_built.any((entry) => entry.id == id),
+    );
+    // No accessory floats at the bottom of the content: none of its room is
+    // kept there any more. The bottom placement measures its own.
+    final floats =
+        widget.chrome != null &&
+        (widget.placement == AdaptiveChromePlacement.vertical ||
+            widget.placement == AdaptiveChromePlacement.topStrip) &&
+        _built.any((entry) => entry.tabBar?.accessory != null);
+    final accessoryHeight = widget.accessoryHeight;
+    if (!floats && accessoryHeight != null && accessoryHeight.value != 0) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => accessoryHeight.value = 0,
+      );
+    }
     // As the iPhone Duo vertical bar does: the tabs of the page coming in and
     // of the one going out, which are one and the same while the pages
     // within a tab layout change.
@@ -156,32 +181,21 @@ class _HostedTabBarState extends State<HostedTabBar> {
     required bool interactive,
   }) {
     final bar = entry.tabBar!;
-    final sidebar = widget.sidebar;
     final chrome = widget.chrome;
-    if (sidebar != null && chrome?.sidebarBuilder != null) {
-      return _sidebarLayer(
+    if (chrome != null) {
+      return _customLayer(
         entry,
         bar,
-        chrome!,
-        sidebar,
+        chrome,
         opacity: opacity,
         interactive: interactive,
       );
     }
-    // Custom tabs on the iPhone Duo held upright go in the strip along the
-    // top, beside the camera and status cluster, centred where the vertical
-    // bar's first control is in the other poses.
-    final strip = widget.chrome != null &&
-            widget.placement == AdaptiveChromePlacement.topStrip
-        ? DuoTopStripScope.of(context)
-        : null;
     return Positioned(
       key: ValueKey<(String, Object)>(('adaptive_hosted_tabs', entry.id)),
-      left: strip == null ? 0 : 16 + strip.clusterLeft,
-      right: strip == null ? 0 : 16 + strip.clusterRight,
-      top: strip == null ? null : DuoTopStrip.barTop,
-      height: strip == null ? null : kDuoTopStripBarHeight,
-      bottom: strip == null ? 0 : null,
+      left: 0,
+      right: 0,
+      bottom: 0,
       child: Offstage(
         offstage: opacity == null,
         child: IgnorePointer(
@@ -196,33 +210,189 @@ class _HostedTabBarState extends State<HostedTabBar> {
               // Laid out off stage too, so the height holds while a page
               // covers the tabs, and the tabs are not laid out again for it.
               child: SizeReporter(
-                onSizeChanged: (size) {
-                  if (strip == null) widget.height.value = size.height;
-                },
+                onSizeChanged: (size) => widget.height.value = size.height,
                 child: _Minimizable(
                   minimized: entry.tabBarMinimized,
-                  child: widget.chrome?.tabBarBuilder(
-                        context,
-                        AdaptiveTabBarSpec(
-                          placement: widget.placement,
-                          items: bar.items!,
-                          selectedIndex: bar.selectedIndex!,
-                          onTap: bar.onTap!,
-                          data: bar.chromeData,
-                        ),
-                      ) ??
-                      IOS26NativeTabBar(
-                        destinations: bar.items!,
-                        selectedIndex: bar.selectedIndex!,
-                        onTap: bar.onTap!,
-                        tint:
-                            bar.selectedItemColor ??
-                            CupertinoTheme.of(context).primaryColor,
-                        unselectedItemTint: bar.unselectedItemColor,
-                      ),
+                  child: IOS26NativeTabBar(
+                    destinations: bar.items!,
+                    selectedIndex: bar.selectedIndex!,
+                    onTap: bar.onTap!,
+                    tint:
+                        bar.selectedItemColor ??
+                        CupertinoTheme.of(context).primaryColor,
+                    unselectedItemTint: bar.unselectedItemColor,
+                  ),
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One tab layout's tabs and accessory with custom chrome, wherever the
+  /// placement puts them: both along the bottom; the tabs in the iPhone Duo's
+  /// top strip; the tabs in its vertical bar, drawn there by the host, with
+  /// the accessory floating at the bottom of the content; or both in a
+  /// sidebar.
+  Widget _customLayer(
+    ToolbarEntry entry,
+    AdaptiveBottomNavigationBar bar,
+    AdaptiveChrome chrome, {
+    required Animation<double>? opacity,
+    required bool interactive,
+  }) {
+    final placement = widget.placement;
+    final sidebar = widget.sidebar;
+    final inSidebar = sidebar != null && chrome.sidebarBuilder != null;
+    final accessory = _accessory(
+      entry,
+      bar,
+      chrome,
+      placement: placement,
+      compact:
+          placement == AdaptiveChromePlacement.vertical ||
+          (inSidebar && !sidebar.expanded),
+    );
+    if (inSidebar) {
+      return _sidebarLayer(
+        entry,
+        bar,
+        chrome,
+        sidebar,
+        accessory: accessory,
+        opacity: opacity,
+        interactive: interactive,
+      );
+    }
+    final tabs = placement == AdaptiveChromePlacement.vertical
+        ? null
+        : _Minimizable(
+            minimized: entry.tabBarMinimized,
+            child: chrome.tabBarBuilder(
+              context,
+              AdaptiveTabBarSpec(
+                placement: placement,
+                items: bar.items!,
+                selectedIndex: bar.selectedIndex!,
+                onTap: bar.onTap!,
+                data: bar.chromeData,
+              ),
+            ),
+          );
+    final children = <Widget>[];
+    if (placement == AdaptiveChromePlacement.topStrip ||
+        placement == AdaptiveChromePlacement.vertical) {
+      // Custom tabs on the iPhone Duo held upright go in the strip along the
+      // top, beside the camera and status cluster, centred where the vertical
+      // bar's first control is in the other poses.
+      final strip = DuoTopStripScope.of(context);
+      if (tabs != null && strip != null) {
+        children.add(
+          Positioned(
+            left: 16 + strip.clusterLeft,
+            right: 16 + strip.clusterRight,
+            top: DuoTopStrip.barTop,
+            height: kDuoTopStripBarHeight,
+            child: tabs,
+          ),
+        );
+      }
+      if (accessory != null) children.add(_floating(accessory));
+    } else {
+      children.add(
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          // Laid out off stage too, so the height holds while a page
+          // covers the tabs.
+          child: SizeReporter(
+            onSizeChanged: (size) => widget.height.value = size.height,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [?accessory, ?tabs],
+            ),
+          ),
+        ),
+      );
+    }
+    return Positioned.fill(
+      key: ValueKey<(String, Object)>(('adaptive_hosted_tabs', entry.id)),
+      child: Offstage(
+        offstage: opacity == null,
+        child: IgnorePointer(
+          ignoring: !interactive,
+          child: FadeTransition(
+            opacity: opacity ?? kAlwaysDismissedAnimation,
+            alwaysIncludeSemantics: true,
+            child: ExcludeSemantics(
+              excluding: !interactive,
+              child: Stack(children: children),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One [GlobalKey] per tab layout, so its accessory keeps its state (a
+  /// video playing) as it moves between placements.
+  final Map<Object, GlobalKey> _accessoryKeys = <Object, GlobalKey>{};
+
+  /// The tab layout's accessory in the app's frame for [placement], or null
+  /// when it has none.
+  Widget? _accessory(
+    ToolbarEntry entry,
+    AdaptiveBottomNavigationBar bar,
+    AdaptiveChrome chrome, {
+    required AdaptiveChromePlacement placement,
+    required bool compact,
+  }) {
+    final accessory = bar.accessory;
+    if (accessory == null) return null;
+    final frame = chrome.accessoryBuilder;
+    return KeyedSubtree(
+      key: _accessoryKeys.putIfAbsent(
+        entry.id,
+        () => GlobalKey(debugLabel: 'adaptive tab accessory'),
+      ),
+      child: frame == null
+          ? accessory
+          : frame(
+              context,
+              AdaptiveAccessorySpec(placement: placement, compact: compact),
+              accessory,
+            ),
+    );
+  }
+
+  /// The accessory floating at the bottom of the content, where the tabs are
+  /// not at the bottom: beside the iPhone Duo's vertical bar, or below a page
+  /// with its tabs in the top strip. Its height is the room the pages keep.
+  Widget _floating(Widget accessory) {
+    final pose = DuoPoseScope.of(context);
+    final band = pose?.bandWidth ?? 0;
+    final onLeft = pose?.onLeft ?? false;
+    final bottom = math.max(
+      MediaQuery.viewPaddingOf(context).bottom,
+      kFloatingAccessoryMargin,
+    );
+    return Positioned(
+      left: kFloatingAccessoryMargin + (onLeft ? band : 0),
+      right: kFloatingAccessoryMargin + (onLeft ? 0 : band),
+      bottom: bottom,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: kFloatingAccessoryMaxWidth,
+          ),
+          child: SizeReporter(
+            onSizeChanged: (size) =>
+                widget.accessoryHeight?.value = size.height + bottom,
+            child: accessory,
           ),
         ),
       ),
@@ -236,6 +406,7 @@ class _HostedTabBarState extends State<HostedTabBar> {
     AdaptiveBottomNavigationBar bar,
     AdaptiveChrome chrome,
     HostedSidebar sidebar, {
+    required Widget? accessory,
     required Animation<double>? opacity,
     required bool interactive,
   }) {
@@ -281,6 +452,7 @@ class _HostedTabBarState extends State<HostedTabBar> {
                     padding: padding.copyWith(
                       top: padding.top + (windowControls ? kHostedToolbarHeight : 0),
                     ),
+                    accessory: accessory,
                     data: bar.chromeData,
                   ),
                 ),
@@ -301,6 +473,12 @@ class _HostedTabBarState extends State<HostedTabBar> {
         (display.shortestSide - viewport.shortestSide).abs() > 1;
   }
 }
+
+/// How far a floating tab accessory keeps from the edges of the content.
+const double kFloatingAccessoryMargin = 12;
+
+/// The widest a floating tab accessory gets.
+const double kFloatingAccessoryMaxWidth = 420;
 
 /// The state of the sidebar the toolbar host keeps for custom chrome.
 @immutable

@@ -44,9 +44,27 @@ abstract final class TestChrome {
               onTap: () => spec.onTap(i),
               child: Text('side:${spec.items[i].label}${i == spec.selectedIndex ? '*' : ''}', style: const TextStyle(fontSize: 8)),
             ),
+          const Spacer(),
+          ?spec.accessory,
         ],
       ),
     );
+  }
+
+  static AdaptiveAccessorySpec? lastAccessorySpec;
+
+  static const AdaptiveChrome withFrames = AdaptiveChrome(
+    tabBarBuilder: _tabBar,
+    titleBuilder: _title,
+    backButtonBuilder: _back,
+    actionsBuilder: _actions,
+    sidebarBuilder: _sidebar,
+    accessoryBuilder: _frame,
+  );
+
+  static Widget _frame(BuildContext context, AdaptiveAccessorySpec spec, Widget accessory) {
+    lastAccessorySpec = spec;
+    return DecoratedBox(key: const ValueKey<String>('accessory frame'), decoration: const BoxDecoration(color: Color(0xFF444444)), child: accessory);
   }
 
   static AdaptiveChrome build({bool? centerTitle}) => AdaptiveChrome(
@@ -134,7 +152,10 @@ class TabsFixture {
     this.chrome = TestChrome.chrome,
     this.debugFold,
     this.debugVerticalBarEdge,
+    this.accessory,
   });
+
+  final Widget? accessory;
 
   final bool hidesWhenPushed;
   final List<AdaptiveAppBarAction> actions;
@@ -186,6 +207,7 @@ class TabsFixture {
           onTap: (i) => selected.value = i,
           hidesWhenPushed: hidesWhenPushed,
           chromeData: 'tabs',
+          accessory: accessory,
         ),
         body: IndexedStack(
           index: index,
@@ -217,3 +239,28 @@ FoldableData duo({List<ReservedRegion> regions = const <ReservedRegion>[]}) => F
   regions: regions,
   displayFeatures: const [],
 );
+
+/// A tab accessory with state of its own, like a mini player: a count that
+/// a tap raises, kept as long as its State lives.
+class CountingAccessory extends StatefulWidget {
+  const CountingAccessory({super.key, this.height = 50});
+
+  final double height;
+
+  @override
+  State<CountingAccessory> createState() => CountingAccessoryState();
+}
+
+class CountingAccessoryState extends State<CountingAccessory> {
+  int count = 0;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: () => setState(() => count++),
+    child: SizedBox(
+      key: const ValueKey<String>('accessory'),
+      height: widget.height,
+      child: Text('accessory $count', style: const TextStyle(fontSize: 8)),
+    ),
+  );
+}
