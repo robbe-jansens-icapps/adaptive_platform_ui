@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:adaptive_platform_ui/src/toolbar/toolbar_blend.dart' show kToolbarCoveredOpacity;
+
 import 'custom_chrome_fixture.dart';
 
 const landscape = Size(1180, 820);
@@ -44,6 +46,17 @@ void main() {
     expect(tabs.paddingOf('Tab 0').bottom, 20);
     expect(tabs.insetOf('Tab 0'), 0);
     expect(tester.getRect(find.text('title:Tab 0')).left, greaterThan(300));
+  });
+
+  testWidgets('under a dialog the sidebar stays in sight, dimmed as the toolbar is', (tester) async {
+    final tabs = await pumpTabs(tester, landscape);
+
+    showDialog<void>(context: tabs.navigators[0].currentContext!, builder: (_) => const Text('dialog'));
+    await tester.pumpAndSettle();
+
+    final fades = tester.widgetList<FadeTransition>(find.ancestor(of: find.byKey(TestChrome.sidebarKey), matching: find.byType(FadeTransition)));
+    final opacity = fades.fold<double>(1, (opacity, fade) => opacity * fade.opacity.value);
+    expect(opacity, closeTo(kToolbarCoveredOpacity, 0.01));
   });
 
   testWidgets('a narrower one has a rail of icons, which the user can expand over the content', (tester) async {

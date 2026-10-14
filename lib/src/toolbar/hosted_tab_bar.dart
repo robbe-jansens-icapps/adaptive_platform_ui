@@ -150,7 +150,9 @@ class _HostedTabBarState extends State<HostedTabBar> {
     return IgnorePointer(
       ignoring: blend.ownerIsCovered,
       child: FadeTransition(
-        opacity: _uncovered,
+        // A sidebar stays in sight under a dialog or popover, dimmed as the
+        // toolbar is; a bar along the bottom would show above it.
+        opacity: widget.sidebar != null ? blend.chromeOpacity : _uncovered,
         child: Stack(
           fit: StackFit.expand,
           children: [
