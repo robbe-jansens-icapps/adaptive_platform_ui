@@ -131,6 +131,7 @@ class HostedTopToolbar extends StatelessWidget {
     this.titleOnly = false,
     this.chrome,
     this.placement = AdaptiveChromePlacement.bottom,
+    this.sidebarInset = const AlwaysStoppedListenable<double>(0),
   });
 
   final ToolbarBlend blend;
@@ -138,12 +139,17 @@ class HostedTopToolbar extends StatelessWidget {
   /// True on iPhone Duo, where the controls live in the vertical bar.
   final bool titleOnly;
 
+  /// The room a sidebar of custom chrome takes beside the pages of the tab
+  /// layout: their part of the bar starts beside it.
+  final ValueListenable<double> sidebarInset;
+
   /// The app's own bars, if any.
   final AdaptiveChrome? chrome;
 
   final AdaptiveChromePlacement placement;
 
-  double get _toolbarHeight => chrome?.metrics.toolbarHeight ?? kHostedToolbarHeight;
+  double get _toolbarHeight =>
+      chrome?.metrics.toolbarHeight ?? kHostedToolbarHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +173,12 @@ class HostedTopToolbar extends StatelessWidget {
         : topInset;
     final upperTop = topOf(upperEntry);
     final lowerTop = topOf(lowerEntry);
+    // Beside a sidebar: pages in the tab layout, which keeps its sidebar.
+    bool besideSidebar(ToolbarEntry? entry) =>
+        placement == AdaptiveChromePlacement.sidebar &&
+        blend.registry.tabBarOwnerFor(entry) != null;
+    final upperBeside = besideSidebar(upperEntry);
+    final lowerBeside = besideSidebar(lowerEntry);
     final upper = TopToolbarContent.of(upperEntry, titleOnly: titleOnly);
     final lower = TopToolbarContent.of(lowerEntry, titleOnly: titleOnly);
     final upperOwns = blend.upperOwns;
@@ -283,7 +295,14 @@ class HostedTopToolbar extends StatelessWidget {
                   // page's dimmed barrier it would show as a lighter band.
                   child: FadeTransition(
                     opacity: ReverseAnimation(blend.cover),
-                    child: _DialogSlide(driver: backdropSlide, child: backdrop),
+                    child: _DialogSlide(
+                      driver: backdropSlide,
+                      child: _BesideSidebar(
+                        inset: sidebarInset,
+                        enabled: upperBackdrop ? upperBeside : lowerBeside,
+                        child: backdrop,
+                      ),
+                    ),
                   ),
                 ),
                 if (lowerEntry != null && !lower.isEmpty)
@@ -294,6 +313,7 @@ class HostedTopToolbar extends StatelessWidget {
                     opacity: lowerOpacity,
                     interactive: !upperOwns,
                     top: lowerTop,
+                    besideSidebar: lowerBeside,
                   ),
                 if (upperEntry != null && !upper.isEmpty)
                   _layer(
@@ -304,6 +324,7 @@ class HostedTopToolbar extends StatelessWidget {
                     interactive: upperOwns,
                     slide: upperSlide,
                     top: upperTop,
+                    besideSidebar: upperBeside,
                   ),
                 // One back button of each look, always in place: shown when a
                 // page has one, kept alive but off stage otherwise, so its
@@ -317,6 +338,9 @@ class HostedTopToolbar extends StatelessWidget {
                           .where((b) => b.$1.backStyle == style)
                           .firstOrNull,
                       topInset: topInset,
+                      // The back button belongs to the page in front, or to
+                      // the one leaving with it.
+                      besideSidebar: upperOwns ? upperBeside : lowerBeside,
                     ),
               ],
             ),
@@ -338,6 +362,7 @@ class HostedTopToolbar extends StatelessWidget {
     )?
     back,
     required double topInset,
+    bool besideSidebar = false,
   }) {
     final top = back?.$5 ?? topInset;
     // Beside the status cluster only while the bar is in the strip.
@@ -348,7 +373,7 @@ class HostedTopToolbar extends StatelessWidget {
       key: ValueKey<Object>(('adaptive_toolbar_back', style)),
       left:
           16 +
-          (_hasWindowControls(context) ? 62 : 0) +
+          (_hasWindowControls(context) && !besideSidebar ? 62 : 0) +
           (inStrip ? DuoTopStripScope.of(context)?.clusterLeft ?? 0 : 0),
       top: top,
       height: _toolbarHeight,
@@ -366,13 +391,17 @@ class HostedTopToolbar extends StatelessWidget {
               driver: back?.$4,
               child: IgnorePointer(
                 ignoring: !(back?.$3 ?? false),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: 1,
-                  child: _BackButton(
-                    content: back?.$1 ?? TopToolbarContent(backStyle: style),
-                    chrome: chrome,
-                    placement: placement,
+                child: _BesideSidebar(
+                  inset: sidebarInset,
+                  enabled: besideSidebar,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: 1,
+                    child: _BackButton(
+                      content: back?.$1 ?? TopToolbarContent(backStyle: style),
+                      chrome: chrome,
+                      placement: placement,
+                    ),
                   ),
                 ),
               ),
@@ -427,6 +456,7 @@ class HostedTopToolbar extends StatelessWidget {
     required Animation<double> opacity,
     required bool interactive,
     required double top,
+    bool besideSidebar = false,
     Animation<double>? slide,
   }) {
     // alwaysIncludeSemantics: a layer that fades to zero during a back swipe
@@ -454,20 +484,27 @@ class HostedTopToolbar extends StatelessWidget {
                         : content.titleOverlay,
                   )
                 : chrome != null
-                ? Padding(
-                    padding: EdgeInsets.only(top: top),
-                    child: _CustomBar(
-                      content: content,
-                      chrome: chrome!,
-                      placement: placement,
-                      title: _customTitle(
-                        context,
-                        content,
-                        centered: chrome!.centersTitle(defaultTargetPlatform),
+                ? _BesideSidebar(
+                    inset: sidebarInset,
+                    enabled: besideSidebar,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: top),
+                      child: _CustomBar(
+                        content: content,
+                        chrome: chrome!,
+                        placement: placement,
+                        title: _customTitle(
+                          context,
+                          content,
+                          centered: chrome!.centersTitle(defaultTargetPlatform),
+                        ),
+                        leadingInset:
+                            _hasWindowControls(context) && !besideSidebar
+                            ? 62
+                            : 0,
+                        // Below the strip it is clear of the status cluster.
+                        inStrip: top == _barTop(context),
                       ),
-                      leadingInset: _hasWindowControls(context) ? 62 : 0,
-                      // Below the strip it is clear of the status cluster.
-                      inStrip: top == _barTop(context),
                     ),
                   )
                 : defaultTargetPlatform == TargetPlatform.iOS
@@ -537,6 +574,34 @@ class HostedTopToolbar extends StatelessWidget {
         MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
     return (display.longestSide - viewport.longestSide).abs() > 1 ||
         (display.shortestSide - viewport.shortestSide).abs() > 1;
+  }
+}
+
+/// Starts [child] beside the sidebar of custom chrome while [enabled]: a
+/// page's part of the bar in the tab layout that keeps the sidebar.
+class _BesideSidebar extends StatelessWidget {
+  const _BesideSidebar({
+    required this.inset,
+    required this.enabled,
+    required this.child,
+  });
+
+  final ValueListenable<double> inset;
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: enabled
+          ? inset
+          : const AlwaysStoppedListenable<double>(0),
+      child: child,
+      builder: (context, inset, child) => Padding(
+        padding: EdgeInsets.only(left: inset),
+        child: child,
+      ),
+    );
   }
 }
 

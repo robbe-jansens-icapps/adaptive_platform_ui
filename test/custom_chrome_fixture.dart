@@ -20,6 +20,35 @@ abstract final class TestChrome {
     actionsBuilder: _actions,
   );
 
+  static const sidebarKey = ValueKey<String>('test sidebar');
+  static AdaptiveSidebarSpec? lastSidebarSpec;
+
+  static const AdaptiveChrome withSidebar = AdaptiveChrome(
+    tabBarBuilder: _tabBar,
+    titleBuilder: _title,
+    backButtonBuilder: _back,
+    actionsBuilder: _actions,
+    sidebarBuilder: _sidebar,
+  );
+
+  static Widget _sidebar(BuildContext context, AdaptiveSidebarSpec spec) {
+    lastSidebarSpec = spec;
+    return ColoredBox(
+      key: sidebarKey,
+      color: const Color(0xFF202020),
+      child: Column(
+        children: [
+          GestureDetector(onTap: spec.onToggle, child: const Text('toggle', style: TextStyle(fontSize: 8))),
+          for (var i = 0; i < spec.items.length; i++)
+            GestureDetector(
+              onTap: () => spec.onTap(i),
+              child: Text('side:${spec.items[i].label}${i == spec.selectedIndex ? '*' : ''}', style: const TextStyle(fontSize: 8)),
+            ),
+        ],
+      ),
+    );
+  }
+
   static AdaptiveChrome build({bool? centerTitle}) => AdaptiveChrome(
     tabBarBuilder: _tabBar,
     titleBuilder: _title,

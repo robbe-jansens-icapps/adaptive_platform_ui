@@ -2,8 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
 import '../chrome/adaptive_chrome.dart';
+import '../platform/platform_info.dart';
 import '../utils/size_reporter.dart';
+import '../widgets/adaptive_bottom_navigation_bar.dart';
 import 'duo_top_strip.dart';
+import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
 import '../widgets/ios26/ios26_native_tab_bar.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
@@ -32,7 +35,11 @@ class HostedTabBar extends StatefulWidget {
     required this.height,
     this.chrome,
     this.placement = AdaptiveChromePlacement.bottom,
+    this.sidebar,
   });
+
+  /// The sidebar's state, while the tabs are in one.
+  final HostedSidebar? sidebar;
 
   final ToolbarBlend blend;
 
@@ -149,6 +156,18 @@ class _HostedTabBarState extends State<HostedTabBar> {
     required bool interactive,
   }) {
     final bar = entry.tabBar!;
+    final sidebar = widget.sidebar;
+    final chrome = widget.chrome;
+    if (sidebar != null && chrome?.sidebarBuilder != null) {
+      return _sidebarLayer(
+        entry,
+        bar,
+        chrome!,
+        sidebar,
+        opacity: opacity,
+        interactive: interactive,
+      );
+    }
     // Custom tabs on the iPhone Duo held upright go in the strip along the
     // top, beside the camera and status cluster, centred where the vertical
     // bar's first control is in the other poses.
@@ -209,6 +228,100 @@ class _HostedTabBarState extends State<HostedTabBar> {
       ),
     );
   }
+
+  /// The tabs of one tab layout in the sidebar along the leading edge,
+  /// easing between a rail of icons and its full width.
+  Widget _sidebarLayer(
+    ToolbarEntry entry,
+    AdaptiveBottomNavigationBar bar,
+    AdaptiveChrome chrome,
+    HostedSidebar sidebar, {
+    required Animation<double>? opacity,
+    required bool interactive,
+  }) {
+    final metrics = chrome.metrics;
+    final padding = MediaQuery.viewPaddingOf(context);
+    // An iPad window has its controls in the top corner, over the sidebar.
+    final windowControls = PlatformInfo.isIPad && _isWindowed(context);
+    return Positioned(
+      key: ValueKey<(String, Object)>(('adaptive_hosted_sidebar', entry.id)),
+      left: 0,
+      top: 0,
+      bottom: 0,
+      child: Offstage(
+        offstage: opacity == null,
+        child: IgnorePointer(
+          ignoring: !interactive,
+          child: FadeTransition(
+            opacity: opacity ?? kAlwaysDismissedAnimation,
+            alwaysIncludeSemantics: true,
+            child: ExcludeSemantics(
+              excluding: !interactive,
+              child: AnimatedBuilder(
+                animation: sidebar.progress,
+                builder: (context, child) => SizedBox(
+                  width:
+                      metrics.sidebarCollapsedWidth +
+                      (metrics.sidebarWidth - metrics.sidebarCollapsedWidth) *
+                          sidebar.progress.value,
+                  child: child,
+                ),
+                child: chrome.sidebarBuilder!(
+                  context,
+                  AdaptiveSidebarSpec(
+                    items: bar.items!,
+                    selectedIndex: bar.selectedIndex!,
+                    onTap: (index) {
+                      bar.onTap!(index);
+                      sidebar.onTabTapped();
+                    },
+                    expanded: sidebar.expanded,
+                    overlaid: sidebar.overlaid,
+                    onToggle: sidebar.onToggle,
+                    padding: padding.copyWith(
+                      top: padding.top + (windowControls ? kHostedToolbarHeight : 0),
+                    ),
+                    data: bar.chromeData,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Whether the app runs in a window smaller than the display.
+  static bool _isWindowed(BuildContext context) {
+    final display = View.of(context).display.size;
+    final viewport =
+        MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
+    return (display.longestSide - viewport.longestSide).abs() > 1 ||
+        (display.shortestSide - viewport.shortestSide).abs() > 1;
+  }
+}
+
+/// The state of the sidebar the toolbar host keeps for custom chrome.
+@immutable
+class HostedSidebar {
+  const HostedSidebar({
+    required this.progress,
+    required this.expanded,
+    required this.overlaid,
+    required this.onToggle,
+    required this.onTabTapped,
+  });
+
+  /// 0 collapsed to a rail, 1 at its full width.
+  final Animation<double> progress;
+  final bool expanded;
+  final bool overlaid;
+  final VoidCallback onToggle;
+
+  /// Called after a tab is picked in the sidebar: one expanded over the
+  /// content closes.
+  final VoidCallback onTabTapped;
 }
 
 /// Shrinks the bar while its tab layout scrolls, as `minimizeBehavior` asks.

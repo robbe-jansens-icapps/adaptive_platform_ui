@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
 import '../toolbar/duo_top_strip.dart';
@@ -52,6 +53,45 @@ class AdaptiveTabBarSpec {
 
   /// Vertical in the iPhone Duo's vertical bar, horizontal anywhere else.
   Axis get axis => placement == AdaptiveChromePlacement.vertical ? Axis.vertical : Axis.horizontal;
+}
+
+/// The tabs as the app's sidebar draws them, along the leading edge of a
+/// wide window.
+@immutable
+class AdaptiveSidebarSpec {
+  const AdaptiveSidebarSpec({
+    required this.items,
+    required this.selectedIndex,
+    required this.onTap,
+    required this.expanded,
+    required this.overlaid,
+    required this.onToggle,
+    required this.padding,
+    this.data,
+  });
+
+  final List<AdaptiveNavigationDestination> items;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  /// Whether the sidebar is at its full width, with room for labels, rather
+  /// than a slim rail of icons. It eases between the two: draw for the
+  /// width the sidebar is given.
+  final bool expanded;
+
+  /// Whether the user expanded it over the content of a window too narrow to
+  /// keep it beside it. A tap outside it, or on a tab, collapses it again.
+  final bool overlaid;
+
+  /// Expands or collapses the sidebar, for a control of the app's own.
+  final VoidCallback onToggle;
+
+  /// What to keep clear of: the status bar, the home indicator, and on an
+  /// iPad window the window controls in its top corner.
+  final EdgeInsets padding;
+
+  /// [AdaptiveBottomNavigationBar.chromeData].
+  final Object? data;
 }
 
 /// A page's title, as the app's title draws it.
@@ -168,11 +208,19 @@ typedef AdaptiveTitleBuilder = Widget Function(BuildContext context, AdaptiveTit
 typedef AdaptiveBackButtonBuilder = Widget Function(BuildContext context, AdaptiveBackButtonSpec spec);
 typedef AdaptiveActionsBuilder = Widget Function(BuildContext context, AdaptiveActionsSpec spec);
 typedef AdaptiveBarBackgroundBuilder = Widget Function(BuildContext context, AdaptiveBarBackgroundSpec spec);
+typedef AdaptiveSidebarBuilder = Widget Function(BuildContext context, AdaptiveSidebarSpec spec);
 
 /// Sizes the custom chrome lays out with. The defaults are the system's.
 @immutable
 class AdaptiveChromeMetrics {
-  const AdaptiveChromeMetrics({this.toolbarHeight = kHostedToolbarHeight, this.backButtonSize = kHostedToolbarHeight});
+  const AdaptiveChromeMetrics({
+    this.toolbarHeight = kHostedToolbarHeight,
+    this.backButtonSize = kHostedToolbarHeight,
+    this.sidebarMinWindowWidth = 700,
+    this.sidebarExpandedWindowWidth = 1024,
+    this.sidebarWidth = 300,
+    this.sidebarCollapsedWidth = 88,
+  });
 
   /// Height of the toolbar along the top, below the status bar.
   final double toolbarHeight;
@@ -180,12 +228,41 @@ class AdaptiveChromeMetrics {
   /// The room the back button takes, square.
   final double backButtonSize;
 
-  @override
-  bool operator ==(Object other) =>
-      other is AdaptiveChromeMetrics && other.toolbarHeight == toolbarHeight && other.backButtonSize == backButtonSize;
+  /// From this window width on, the tabs are in a sidebar
+  /// ([AdaptiveChrome.sidebarBuilder]): an iPad, an unfolded foldable. The
+  /// iPhone Duo keeps its own placements at any width.
+  final double sidebarMinWindowWidth;
+
+  /// From this window width on, the sidebar is at its full width by default;
+  /// below it, a slim rail of icons that the user can expand over the
+  /// content.
+  final double sidebarExpandedWindowWidth;
+
+  /// The sidebar at its full width.
+  final double sidebarWidth;
+
+  /// The sidebar collapsed to a rail of icons.
+  final double sidebarCollapsedWidth;
 
   @override
-  int get hashCode => Object.hash(toolbarHeight, backButtonSize);
+  bool operator ==(Object other) =>
+      other is AdaptiveChromeMetrics &&
+      other.toolbarHeight == toolbarHeight &&
+      other.backButtonSize == backButtonSize &&
+      other.sidebarMinWindowWidth == sidebarMinWindowWidth &&
+      other.sidebarExpandedWindowWidth == sidebarExpandedWindowWidth &&
+      other.sidebarWidth == sidebarWidth &&
+      other.sidebarCollapsedWidth == sidebarCollapsedWidth;
+
+  @override
+  int get hashCode => Object.hash(
+    toolbarHeight,
+    backButtonSize,
+    sidebarMinWindowWidth,
+    sidebarExpandedWindowWidth,
+    sidebarWidth,
+    sidebarCollapsedWidth,
+  );
 }
 
 /// Bars drawn by the app, placed by the toolbar host: custom chrome.
@@ -209,6 +286,7 @@ class AdaptiveChrome {
     required this.backButtonBuilder,
     required this.actionsBuilder,
     this.barBackgroundBuilder,
+    this.sidebarBuilder,
     this.centerTitle,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
@@ -232,6 +310,12 @@ class AdaptiveChrome {
   /// behind the native bar.
   final AdaptiveBarBackgroundBuilder? barBackgroundBuilder;
 
+  /// The tabs in a sidebar along the leading edge of a wide window
+  /// ([AdaptiveChromeMetrics.sidebarMinWindowWidth]). It stays while pages
+  /// are pushed inside the tab layout, and the pages and their toolbar sit
+  /// beside it. Null keeps the tab bar at the bottom at any width.
+  final AdaptiveSidebarBuilder? sidebarBuilder;
+
   /// Whether titles are centred in the toolbar: on iOS when null, as the
   /// system does, and at the leading edge elsewhere.
   final bool? centerTitle;
@@ -250,12 +334,26 @@ class AdaptiveChrome {
 /// has any. Always there below a host, so the tree does not change shape
 /// between placements.
 class AdaptiveChromeScope extends InheritedWidget {
-  const AdaptiveChromeScope({super.key, required this.chrome, required this.placement, required super.child});
+  const AdaptiveChromeScope({
+    super.key,
+    required this.chrome,
+    required this.placement,
+    this.sidebarInset = const AlwaysStoppedListenable(0),
+    required super.child,
+  });
 
   /// The app's bars; null where the host draws the native ones.
   final AdaptiveChrome? chrome;
 
   final AdaptiveChromePlacement placement;
+
+  /// How much room the sidebar takes at the leading edge of the pages in the
+  /// tab layout, as it eases between its widths; 0 without one.
+  final ValueListenable<double> sidebarInset;
+
+  /// [sidebarInset] of the host above; 0 without one.
+  static ValueListenable<double> sidebarInsetOf(BuildContext context) =>
+      maybeOf(context)?.sidebarInset ?? const AlwaysStoppedListenable(0);
 
   static AdaptiveChromeScope? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AdaptiveChromeScope>();
 
@@ -266,13 +364,36 @@ class AdaptiveChromeScope extends InheritedWidget {
   static AdaptiveChromePlacement placementOf(BuildContext context) => maybeOf(context)?.placement ?? AdaptiveChromePlacement.bottom;
 
   @override
-  bool updateShouldNotify(AdaptiveChromeScope oldWidget) => chrome != oldWidget.chrome || placement != oldWidget.placement;
+  bool updateShouldNotify(AdaptiveChromeScope oldWidget) =>
+      chrome != oldWidget.chrome || placement != oldWidget.placement || sidebarInset != oldWidget.sidebarInset;
+}
+
+/// A [ValueListenable] that never changes.
+class AlwaysStoppedListenable<T> implements ValueListenable<T> {
+  const AlwaysStoppedListenable(this.value);
+
+  @override
+  final T value;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }
 
 /// The one placement the host settles on: the iPhone Duo's own poses first,
-/// then the bottom.
-AdaptiveChromePlacement resolveChromePlacement({required DuoPose? pose, required DuoTopStrip? strip}) {
+/// then a sidebar on a wide window, then the bottom.
+AdaptiveChromePlacement resolveChromePlacement({
+  required DuoPose? pose,
+  required DuoTopStrip? strip,
+  double width = 0,
+  AdaptiveChrome? chrome,
+}) {
   if (pose != null) return AdaptiveChromePlacement.vertical;
   if (strip != null) return AdaptiveChromePlacement.topStrip;
+  if (chrome?.sidebarBuilder != null && width >= chrome!.metrics.sidebarMinWindowWidth) {
+    return AdaptiveChromePlacement.sidebar;
+  }
   return AdaptiveChromePlacement.bottom;
 }

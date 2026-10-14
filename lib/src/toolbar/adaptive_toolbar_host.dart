@@ -87,6 +87,51 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   /// The height of the hosted tab bar, once measured.
   final ValueNotifier<double> _tabBarHeight = ValueNotifier<double>(0);
 
+  /// The sidebar of custom chrome on a wide window: 0 collapsed to a rail,
+  /// 1 at its full width.
+  late final AnimationController _sidebar = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  )..addListener(_updateSidebarInset);
+
+  /// Whether the user switched the sidebar from the width the window gives
+  /// it by default.
+  bool _sidebarToggled = false;
+
+  /// Whether the window is wide enough for the full sidebar by default.
+  bool? _sidebarWide;
+  bool _hasSidebar = false;
+
+  /// The room the sidebar takes beside the pages of the tab layout.
+  final ValueNotifier<double> _sidebarInset = ValueNotifier<double>(0);
+
+  bool get _sidebarExpanded => (_sidebarWide ?? false) != _sidebarToggled;
+
+  /// Expanded over the content of a window too narrow to keep it beside it.
+  bool get _sidebarOverlaid => !(_sidebarWide ?? false) && _sidebarToggled;
+
+  void _updateSidebarInset() {
+    final metrics = widget.chrome?.metrics;
+    if (!_hasSidebar || metrics == null) {
+      _sidebarInset.value = 0;
+      return;
+    }
+    final collapsed = metrics.sidebarCollapsedWidth;
+    _sidebarInset.value = _sidebarOverlaid
+        ? collapsed
+        : collapsed + (metrics.sidebarWidth - collapsed) * _sidebar.value;
+  }
+
+  void _toggleSidebar() {
+    setState(() => _sidebarToggled = !_sidebarToggled);
+    _updateSidebarInset();
+    _sidebar.animateTo(_sidebarExpanded ? 1 : 0, curve: Curves.easeInOutCubic);
+  }
+
+  void _collapseOverlaidSidebar() {
+    if (_sidebarOverlaid) _toggleSidebar();
+  }
+
   /// Latest fold / size-class reading; null until the first one arrives and
   /// on platforms where the chrome is never drawn.
   FoldableData? _fold;
@@ -136,6 +181,17 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
       PlatformInfo.loadDisplayCornerRadius();
     }
     _windowSize = size;
+    // A window that changes width class starts from its own default width
+    // of the sidebar, at once.
+    final metrics = widget.chrome?.metrics;
+    if (metrics != null) {
+      final wide = size.width >= metrics.sidebarExpandedWindowWidth;
+      if (wide != _sidebarWide) {
+        _sidebarWide = wide;
+        _sidebarToggled = false;
+        _sidebar.value = wide ? 1 : 0;
+      }
+    }
   }
 
   void _onFoldChanged(FoldableData data) {
@@ -155,6 +211,8 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     _blend.dispose();
     _registry.dispose();
     _tabBarHeight.dispose();
+    _sidebar.dispose();
+    _sidebarInset.dispose();
     super.dispose();
   }
 
@@ -185,7 +243,19 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
             fold: fold,
           )
         : null;
-    final placement = resolveChromePlacement(pose: pose, strip: strip);
+    final placement = resolveChromePlacement(
+      pose: pose,
+      strip: strip,
+      width: MediaQuery.sizeOf(context).width,
+      chrome: chrome,
+    );
+    final sidebar = placement == AdaptiveChromePlacement.sidebar;
+    // Tabs in a sidebar stay while pages are pushed inside the tab layout.
+    _registry.keepsTabsOnPush = sidebar;
+    if (sidebar != _hasSidebar) {
+      _hasSidebar = sidebar;
+      _updateSidebarInset();
+    }
     assert(() {
       // Pose bugs only reproduce on a Duo; this makes a report actionable.
       if (edge != _loggedEdge || pose != _loggedPose || strip != _loggedStrip) {
@@ -238,6 +308,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                   child: AdaptiveChromeScope(
                     chrome: chrome,
                     placement: placement,
+                    sidebarInset: _sidebarInset,
                     child: AdaptiveGlassTheme(
                       style: chrome?.glass ?? const AdaptiveGlassStyle(),
                   // Toasts show above the bars.
@@ -261,6 +332,28 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                               titleOnly: pose != null,
                               chrome: chrome,
                               placement: placement,
+                              sidebarInset: _sidebarInset,
+                            ),
+                          ),
+                        // A sidebar expanded over the content closes with a
+                        // tap outside it.
+                        if (sidebar)
+                          Positioned.fill(
+                            key: const ValueKey<String>('adaptive_sidebar_scrim'),
+                            child: IgnorePointer(
+                              ignoring: !_sidebarOverlaid,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _collapseOverlaidSidebar,
+                                child: FadeTransition(
+                                  opacity: _sidebarOverlaid
+                                      ? _sidebar
+                                      : kAlwaysDismissedAnimation,
+                                  child: const ColoredBox(
+                                    color: Color(0x33000000),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         if (hostsTabBar)
@@ -272,6 +365,15 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                               height: _tabBarHeight,
                               chrome: chrome,
                               placement: placement,
+                              sidebar: sidebar
+                                  ? HostedSidebar(
+                                      progress: _sidebar,
+                                      expanded: _sidebarExpanded,
+                                      overlaid: _sidebarOverlaid,
+                                      onToggle: _toggleSidebar,
+                                      onTabTapped: _collapseOverlaidSidebar,
+                                    )
+                                  : null,
                             ),
                           ),
                         if (pose != null)

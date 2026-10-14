@@ -1254,7 +1254,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         hidesWhenPushed: tabs.hidesWhenPushed,
         child: _withBottomBarInset(
           context,
-          body,
+          placement == AdaptiveChromePlacement.sidebar
+              ? _BesideSidebarBody(child: body)
+              : body,
           ownerRoute: ModalRoute.of(context),
         ),
       );
@@ -1725,6 +1727,40 @@ class _RaisedForTabs extends InheritedWidget {
       ownerRoute != oldWidget.ownerRoute ||
       padding != oldWidget.padding ||
       viewPadding != oldWidget.viewPadding;
+}
+
+/// The pages of a tab layout beside the sidebar of custom chrome, following
+/// its width as it eases between a rail and its full width. What the sidebar
+/// covers of the window's padding at that edge is taken from it.
+class _BesideSidebarBody extends StatelessWidget {
+  const _BesideSidebarBody({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: AdaptiveChromeScope.sidebarInsetOf(context),
+      child: child,
+      builder: (context, inset, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return Padding(
+          padding: EdgeInsets.only(left: inset),
+          child: MediaQuery(
+            data: mediaQuery.copyWith(
+              padding: mediaQuery.padding.copyWith(
+                left: math.max(0, mediaQuery.padding.left - inset),
+              ),
+              viewPadding: mediaQuery.viewPadding.copyWith(
+                left: math.max(0, mediaQuery.viewPadding.left - inset),
+              ),
+            ),
+            child: child!,
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// The tab layout a page is in, from the scaffold that owns the tabs: the
