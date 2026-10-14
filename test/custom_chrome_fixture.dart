@@ -264,3 +264,20 @@ class CountingAccessoryState extends State<CountingAccessory> {
     ),
   );
 }
+
+extension CopyWithGlass on AdaptiveChrome {
+  /// This chrome with another glass, for tests of surfaces that take it.
+  AdaptiveChrome copyWithGlass(AdaptiveGlassStyle glass) => AdaptiveChrome(
+    tabBarBuilder: tabBarBuilder,
+    titleBuilder: titleBuilder,
+    backButtonBuilder: backButtonBuilder,
+    actionsBuilder: actionsBuilder,
+    barBackgroundBuilder: barBackgroundBuilder,
+    sidebarBuilder: sidebarBuilder,
+    accessoryBuilder: accessoryBuilder,
+    popoverBuilder: popoverBuilder,
+    centerTitle: centerTitle,
+    glass: glass,
+    metrics: metrics,
+  );
+}

@@ -7,9 +7,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../../chrome/adaptive_chrome.dart';
 import '../../platform/platform_info.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../utils/size_reporter.dart';
+import '../adaptive_glass.dart';
 import '../ios26/ios26_glass_surface.dart';
 import 'adaptive_sheet_detent.dart';
 
@@ -622,7 +624,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   @override
   Widget build(BuildContext context) {
-    final material = PlatformInfo.isAndroid;
+    // Custom chrome floats the sheet on its own glass on every platform.
+    final material =
+        PlatformInfo.isAndroid && AdaptiveChromeScope.chromeOf(context) == null;
     final rtl = Directionality.maybeOf(context) == TextDirection.rtl;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -787,6 +791,14 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     }
     final sidePanel = metrics.sidePanel;
     const radius = 30.0;
+    if (AdaptiveChromeScope.chromeOf(context) != null) {
+      return AdaptiveGlass(
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(sidePanel ? 28 : radius),
+        ),
+        child: content,
+      );
+    }
     return IOS26GlassSurface(
       cornerRadius: sidePanel ? 28 : radius,
       corners: sidePanel
