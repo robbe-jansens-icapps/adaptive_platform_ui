@@ -1293,14 +1293,22 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         (hosted || (inColumn && AdaptiveSplitView.handsControlsToBar(context)));
     final ownBar = appBar != null && !hosted;
 
+    // In the iPhone Duo's vertical bar poses the window has no inset at the
+    // top. A page there starts below the title band if it has a title, and
+    // otherwise still keeps clear of the window's rounded top edge, level
+    // with the bar's first control. That is a floor rather than an addition,
+    // so a page inside a tab layout that already kept it adds nothing.
+    final inBarPose =
+        pose != null &&
+        (appBar == null ? _usesFixedToolbar(context) : hosted || controlsInBar);
+    final double? topFloor = !inBarPose
+        ? null
+        : appBar != null && hasTitle
+        ? kDuoTitleBandHeight
+        : kDuoBarEdgeMargin;
     final double topInset;
-    if (appBar == null) {
+    if (appBar == null || inBarPose) {
       topInset = 0;
-    } else if (pose != null && (hosted || controlsInBar)) {
-      // Without a title the page still keeps clear of the window's top edge,
-      // where the vertical bar pose has no inset: it starts level with the
-      // bar's first control.
-      topInset = hasTitle ? kDuoTitleBandHeight : kDuoBarEdgeMargin;
     } else if (strip != null && hosted) {
       // The bar is in the strip, or below it while the tabs are in it.
       topInset =
@@ -1360,12 +1368,16 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         return MediaQuery(
           data: inner.copyWith(
             padding: inner.padding.copyWith(
-              top: inner.padding.top + topInset,
+              top: topFloor != null
+                  ? math.max(inner.padding.top, topFloor)
+                  : inner.padding.top + topInset,
               left: barOnLeft ? inner.padding.left - sideInset : inner.padding.left,
               right: barOnLeft ? inner.padding.right : inner.padding.right - sideInset,
             ),
             viewPadding: inner.viewPadding.copyWith(
-              top: inner.viewPadding.top + topInset,
+              top: topFloor != null
+                  ? math.max(inner.viewPadding.top, topFloor)
+                  : inner.viewPadding.top + topInset,
             ),
           ),
           child: body,

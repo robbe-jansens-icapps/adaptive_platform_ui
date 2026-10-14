@@ -93,6 +93,41 @@ void main() {
       expect(padding.top, kDuoBarEdgeMargin);
     });
 
+    testWidgets('a page without a bar keeps clear of the top edge too, once, also inside the tab layout', (tester) async {
+      window(tester, cover, const FakeViewPadding(right: 84));
+      late EdgeInsets padding;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => AdaptiveToolbarHost(chrome: TestChrome.chrome, debugFold: duo(regions: [coverCluster]), child: child!),
+          home: AdaptiveScaffold(
+            bottomNavigationBar: AdaptiveBottomNavigationBar(
+              items: const [
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
+                AdaptiveNavigationDestination(icon: Icons.circle, label: 'B'),
+              ],
+              selectedIndex: 0,
+              onTap: (_) {},
+            ),
+            body: Navigator(
+              onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                builder: (_) => AdaptiveScaffold(
+                  body: Builder(
+                    builder: (context) {
+                      padding = MediaQuery.paddingOf(context);
+                      return const SizedBox.expand();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(padding.top, kDuoBarEdgeMargin);
+    });
+
     testWidgets('a pushed page\'s back button tops the bar, below the camera; the tabs leave', (tester) async {
       window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
       final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), hidesWhenPushed: true);
