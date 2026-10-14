@@ -41,6 +41,7 @@ class IOS26GlassSurface extends StatefulWidget {
     this.cornerRadius = 0,
     this.corners = GlassSurfaceCorners.fixed,
     this.tint,
+    this.fill,
     this.clear = false,
     this.interactive = false,
     this.child,
@@ -49,8 +50,14 @@ class IOS26GlassSurface extends StatefulWidget {
   final double cornerRadius;
   final GlassSurfaceCorners corners;
 
-  /// Tints the glass, like `UIGlassEffect.tintColor`.
+  /// Tints the glass, like `UIGlassEffect.tintColor`. The glass stays as see
+  /// through: even an opaque tint lets what is behind it show.
   final Color? tint;
+
+  /// Laid over the glass, in its shape, under [child]. A partly opaque one
+  /// lets less of what is behind the glass show through, so content on it
+  /// reads better over a busy page, while the glass keeps its edge and blur.
+  final Color? fill;
 
   /// The clear glass style, for surfaces over rich content such as photos.
   final bool clear;
@@ -129,6 +136,7 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
     'style': widget.clear ? 'clear' : 'regular',
     'interactive': widget.interactive,
     if (widget.tint != null) 'tint': widget.tint!.toARGB32(),
+    if (widget.fill != null) 'fill': widget.fill!.toARGB32(),
   };
 
   @override
@@ -318,12 +326,14 @@ class _StandIn extends StatelessWidget {
     final base = dark ? const Color(0xE6303034) : const Color(0xE6FAFAFC);
     final tint = widget.tint;
     // A tint is what the glass mostly shows; a light one lets it through.
-    final color = tint == null
+    final tinted = tint == null
         ? base
         : Color.alphaBlend(
             tint.withValues(alpha: tint.a < 0.5 ? tint.a : 0.92),
             base,
           );
+    final fill = widget.fill;
+    final color = fill == null ? tinted : Color.alphaBlend(fill, tinted);
     return LayoutBuilder(
       builder: (context, constraints) {
         final radius = widget.corners == GlassSurfaceCorners.capsule
@@ -375,9 +385,12 @@ class _Frosted extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
             child: ColoredBox(
-              color: tint == null
-                  ? base
-                  : Color.alphaBlend(tint.withValues(alpha: 0.35), base),
+              color: Color.alphaBlend(
+                widget.fill ?? const Color(0x00000000),
+                tint == null
+                    ? base
+                    : Color.alphaBlend(tint.withValues(alpha: 0.35), base),
+              ),
             ),
           ),
         );

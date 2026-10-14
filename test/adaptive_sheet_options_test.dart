@@ -19,6 +19,7 @@ Widget sheetApp({
   EdgeInsets? floatingMargin,
   VoidCallback? onDismissed,
   double contentHeight = 200,
+  Color? glassFill,
 }) => MaterialApp(
   home: Stack(
     children: [
@@ -30,6 +31,7 @@ Widget sheetApp({
           scrollable: scrollable,
           floatingMargin: floatingMargin,
           onDismissed: onDismissed,
+          glassFill: glassFill,
           child: SizedBox(
             height: contentHeight,
             child: const Align(
@@ -52,6 +54,21 @@ Finder get grabber => find.byWidgetPredicate(
 );
 
 void main() {
+  testWidgets('lays its glass fill over the glass', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+    IOS26GlassSurface glass() =>
+        tester.widget<IOS26GlassSurface>(find.byType(IOS26GlassSurface));
+    expect(glass().fill, isNull);
+
+    const fill = Color(0x80FFFFFF);
+    await tester.pumpWidget(sheetApp(glassFill: fill));
+    await tester.pumpAndSettle();
+
+    expect(glass().fill, fill);
+  });
+
   testWidgets('without a grabber its content starts at the top', (
     tester,
   ) async {

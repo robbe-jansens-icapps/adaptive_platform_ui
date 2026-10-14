@@ -35,6 +35,9 @@ class iOS26GlassSurfaceFactory: NSObject, FlutterPlatformViewFactory {
 class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
     private let container = UIView()
     private let effectView = UIVisualEffectView(effect: nil)
+    /// Over the glass, in its shape: a partly opaque fill lets less of what is
+    /// behind the glass show through.
+    private let fillView = UIView()
     private let channel: FlutterMethodChannel
 
     init(
@@ -57,6 +60,12 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
         effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         effectView.isUserInteractionEnabled = false
         container.addSubview(effectView)
+
+        fillView.frame = effectView.contentView.bounds
+        fillView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        fillView.isUserInteractionEnabled = false
+        fillView.isHidden = true
+        effectView.contentView.addSubview(fillView)
 
         if let params = args as? [String: Any] {
             apply(params)
@@ -82,21 +91,29 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
 
         let radius = (params["cornerRadius"] as? NSNumber)?.doubleValue ?? 0
         let tint = (params["tint"] as? NSNumber).map { color(argb: $0.intValue) }
+        let fill = (params["fill"] as? NSNumber).map { color(argb: $0.intValue) }
+        fillView.backgroundColor = fill
+        fillView.isHidden = fill == nil
 
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect(style: params["style"] as? String == "clear" ? .clear : .regular)
             glass.tintColor = tint
             glass.isInteractive = params["interactive"] as? Bool ?? false
             effectView.effect = glass
+            let corners: UICornerConfiguration
             switch params["corners"] as? String {
             case "capsule":
-                effectView.cornerConfiguration = .capsule()
+                corners = .capsule()
             case "concentric":
                 // Follows the corners of the display, never below `radius`.
-                effectView.cornerConfiguration = .corners(radius: .containerConcentric(minimum: radius))
+                corners = .corners(radius: .containerConcentric(minimum: radius))
             default:
-                effectView.cornerConfiguration = .corners(radius: .fixed(radius))
+                corners = .corners(radius: .fixed(radius))
             }
+            effectView.cornerConfiguration = corners
+            // Inside the glass, concentric corners follow the glass's own: the
+            // fill has the glass's shape.
+            fillView.cornerConfiguration = corners
         } else {
             effectView.effect = UIBlurEffect(style: .systemThinMaterial)
             effectView.layer.cornerRadius = radius

@@ -84,6 +84,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.showsGrabber = true,
     this.scrollable = true,
     this.onDismissed,
+    this.glassFill,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -141,6 +142,13 @@ class AdaptiveSheet extends StatefulWidget {
   /// Lets the sheet be dragged down out of view, after which it calls this.
   /// Without it, a drag below the lowest detent springs back.
   final VoidCallback? onDismissed;
+
+  /// Laid over the iOS glass, under the content (see
+  /// [IOS26GlassSurface.fill]): a light, partly opaque one lets less of the
+  /// page show through, so text on the sheet reads better over a busy page
+  /// such as a map, while the glass keeps its edge and its blur. The Material
+  /// sheet is opaque already and has none.
+  final Color? glassFill;
 
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
@@ -792,6 +800,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       corners: sidePanel
           ? GlassSurfaceCorners.fixed
           : GlassSurfaceCorners.concentric,
+      fill: widget.glassFill,
       // The content is clipped on its own, as a sibling of the glass: a clip
       // around the glass would break it.
       child: ClipRSuperellipse(
