@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../utils/size_reporter.dart';
+import 'duo_top_strip.dart';
 import '../widgets/ios26/ios26_native_tab_bar.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
@@ -148,11 +149,20 @@ class _HostedTabBarState extends State<HostedTabBar> {
     required bool interactive,
   }) {
     final bar = entry.tabBar!;
+    // Custom tabs on the iPhone Duo held upright go in the strip along the
+    // top, beside the camera and status cluster, centred where the vertical
+    // bar's first control is in the other poses.
+    final strip = widget.chrome != null &&
+            widget.placement == AdaptiveChromePlacement.topStrip
+        ? DuoTopStripScope.of(context)
+        : null;
     return Positioned(
       key: ValueKey<(String, Object)>(('adaptive_hosted_tabs', entry.id)),
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: strip == null ? 0 : 16 + strip.clusterLeft,
+      right: strip == null ? 0 : 16 + strip.clusterRight,
+      top: strip == null ? null : DuoTopStrip.barTop,
+      height: strip == null ? null : kDuoTopStripBarHeight,
+      bottom: strip == null ? 0 : null,
       child: Offstage(
         offstage: opacity == null,
         child: IgnorePointer(
@@ -167,7 +177,9 @@ class _HostedTabBarState extends State<HostedTabBar> {
               // Laid out off stage too, so the height holds while a page
               // covers the tabs, and the tabs are not laid out again for it.
               child: SizeReporter(
-                onSizeChanged: (size) => widget.height.value = size.height,
+                onSizeChanged: (size) {
+                  if (strip == null) widget.height.value = size.height;
+                },
                 child: _Minimizable(
                   minimized: entry.tabBarMinimized,
                   child: widget.chrome?.tabBarBuilder(

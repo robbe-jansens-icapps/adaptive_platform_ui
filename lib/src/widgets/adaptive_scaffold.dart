@@ -496,7 +496,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         shownInPlace: Visibility.of(context),
         tabBar: _nativeTabBar,
         tabBarHidden: widget.tabBarHidden,
-        tabBarHosted: _tabsHostedAtBottom(context),
+        // Custom chrome draws the tabs of every tab layout, wherever they go.
+        tabBarHosted: _customChrome != null
+            ? _nativeTabBar != null && _usesFixedToolbar(context)
+            : _tabsHostedAtBottom(context),
         tabBarMinimized: _tabBarMinimized,
       ),
     );
@@ -1224,7 +1227,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     } else if (pose != null && (hosted || controlsInBar)) {
       topInset = hasTitle ? kDuoTitleBandHeight : 0;
     } else if (strip != null && hosted) {
-      topInset = strip.overhang;
+      // The bar is in the strip, or below it while the tabs are in it.
+      topInset = _TabLayout.showsTabs(context) || _nativeTabBar != null
+          ? chrome.metrics.toolbarHeight
+          : strip.overhang;
     } else {
       topInset = chrome.metrics.toolbarHeight;
     }
@@ -1243,7 +1249,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     final tabs = _nativeTabBar;
     final ownsTabs = tabs != null && _usesFixedToolbar(context);
     if (ownsTabs) {
-      body = _withBottomBarInset(context, body, ownerRoute: ModalRoute.of(context));
+      body = _TabLayout(
+        ownerRoute: ModalRoute.of(context),
+        hidesWhenPushed: tabs.hidesWhenPushed,
+        child: _withBottomBarInset(
+          context,
+          body,
+          ownerRoute: ModalRoute.of(context),
+        ),
+      );
       if (_tabsHostedAtBottom(context) &&
           widget.minimizeBehavior != TabBarMinimizeBehavior.never) {
         body = NotificationListener<ScrollNotification>(
@@ -1711,6 +1725,39 @@ class _RaisedForTabs extends InheritedWidget {
       ownerRoute != oldWidget.ownerRoute ||
       padding != oldWidget.padding ||
       viewPadding != oldWidget.viewPadding;
+}
+
+/// The tab layout a page is in, from the scaffold that owns the tabs: the
+/// route of that scaffold, and whether its tabs leave for pages pushed
+/// inside it.
+class _TabLayout extends InheritedWidget {
+  const _TabLayout({
+    required this.ownerRoute,
+    required this.hidesWhenPushed,
+    required super.child,
+  });
+
+  final ModalRoute<Object?>? ownerRoute;
+  final bool hidesWhenPushed;
+
+  /// Whether the tabs show while the page at [context] is in front: it is
+  /// in a tab layout, and is not a page pushed inside one whose tabs leave
+  /// for it. The same rule the toolbar registry follows.
+  static bool showsTabs(BuildContext context) {
+    final layout = context.dependOnInheritedWidgetOfExactType<_TabLayout>();
+    if (layout == null) return false;
+    final ownerRoute = layout.ownerRoute;
+    if (!layout.hidesWhenPushed || ownerRoute == null) return true;
+    if (ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false) {
+      return true;
+    }
+    return !_TabsLeaveWhenPushed._pushedWithin(context, ownerRoute);
+  }
+
+  @override
+  bool updateShouldNotify(_TabLayout oldWidget) =>
+      ownerRoute != oldWidget.ownerRoute ||
+      hidesWhenPushed != oldWidget.hidesWhenPushed;
 }
 
 /// Gives a page pushed inside a tab layout whose tabs leave for it

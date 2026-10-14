@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
@@ -152,6 +154,19 @@ class HostedTopToolbar extends StatelessWidget {
     final topInset = _barTop(context);
     final upperEntry = blend.upper;
     final lowerEntry = blend.lower;
+    // Custom chrome on the iPhone Duo held upright puts the tabs in the top
+    // strip: a page that shows them has its bar below the strip, one without
+    // them has it in the strip, beside the status cluster.
+    final strip = DuoTopStripScope.of(context);
+    double topOf(ToolbarEntry? entry) =>
+        chrome != null &&
+            strip != null &&
+            !titleOnly &&
+            blend.registry.tabBarOwnerFor(entry) != null
+        ? strip.height
+        : topInset;
+    final upperTop = topOf(upperEntry);
+    final lowerTop = topOf(lowerEntry);
     final upper = TopToolbarContent.of(upperEntry, titleOnly: titleOnly);
     final lower = TopToolbarContent.of(lowerEntry, titleOnly: titleOnly);
     final upperOwns = blend.upperOwns;
@@ -170,12 +185,27 @@ class HostedTopToolbar extends StatelessWidget {
     // stays put. Otherwise each page's own comes and goes with the page and
     // keeps its look: a cross does not turn into a chevron on its way out.
     final backs =
-        <(TopToolbarContent, Animation<double>, bool, Animation<double>?)>[
+        <
+          (
+            TopToolbarContent,
+            Animation<double>,
+            bool,
+            Animation<double>?,
+            double,
+          )
+        >[
           if (upperBack && lowerBack && upper.backStyle == lower.backStyle)
-            (upperOwns ? upper : lower, kAlwaysCompleteAnimation, true, null)
+            (
+              upperOwns ? upper : lower,
+              kAlwaysCompleteAnimation,
+              true,
+              null,
+              upperOwns ? upperTop : lowerTop,
+            )
           else ...[
-            if (lowerBack) (lower, lowerOpacity, !upperOwns, null),
-            if (upperBack) (upper, upperOpacity, upperOwns, upperSlide),
+            if (lowerBack) (lower, lowerOpacity, !upperOwns, null, lowerTop),
+            if (upperBack)
+              (upper, upperOpacity, upperOwns, upperSlide, upperTop),
           ],
         ];
 
@@ -208,6 +238,7 @@ class HostedTopToolbar extends StatelessWidget {
     // Pages of one colour have nothing to blend, which would redraw the
     // backdrop on every frame of the transition.
     final backdropData = upperBackdrop ? upper.data : lower.data;
+    final backdropTop = upperBackdrop ? upperTop : lowerTop;
     final backdrop =
         upperBackdrop &&
             lowerBackdrop &&
@@ -219,14 +250,14 @@ class HostedTopToolbar extends StatelessWidget {
               context,
               Color.lerp(lowerColor, upperColor, driver.value)!,
               backdropData,
-              topInset,
+              backdropTop,
             ),
           )
         : _backdrop(
             context,
             upperBackdrop ? upperColor : lowerColor,
             backdropData,
-            topInset,
+            backdropTop,
           );
 
     return Align(
@@ -234,7 +265,7 @@ class HostedTopToolbar extends StatelessWidget {
       child: SizedBox(
         height: titleOnly
             ? kDuoTitleBandHeight
-            : _toolbarHeight + topInset,
+            : _toolbarHeight + math.max(upperTop, lowerTop),
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
           child: FadeTransition(
@@ -262,6 +293,7 @@ class HostedTopToolbar extends StatelessWidget {
                     content: lower,
                     opacity: lowerOpacity,
                     interactive: !upperOwns,
+                    top: lowerTop,
                   ),
                 if (upperEntry != null && !upper.isEmpty)
                   _layer(
@@ -271,6 +303,7 @@ class HostedTopToolbar extends StatelessWidget {
                     opacity: upperOpacity,
                     interactive: upperOwns,
                     slide: upperSlide,
+                    top: upperTop,
                   ),
                 // One back button of each look, always in place: shown when a
                 // page has one, kept alive but off stage otherwise, so its
@@ -296,10 +329,19 @@ class HostedTopToolbar extends StatelessWidget {
   Widget _backSlot(
     BuildContext context, {
     required AdaptiveBackButtonStyle style,
-    required (TopToolbarContent, Animation<double>, bool, Animation<double>?)?
+    required (
+      TopToolbarContent,
+      Animation<double>,
+      bool,
+      Animation<double>?,
+      double,
+    )?
     back,
     required double topInset,
   }) {
+    final top = back?.$5 ?? topInset;
+    // Beside the status cluster only while the bar is in the strip.
+    final inStrip = top == topInset;
     return Positioned(
       // Keyed by its look, so a back button carries on as the same control
       // from one page to the next.
@@ -307,9 +349,9 @@ class HostedTopToolbar extends StatelessWidget {
       left:
           16 +
           (_hasWindowControls(context) ? 62 : 0) +
-          (DuoTopStripScope.of(context)?.clusterLeft ?? 0),
-      top: topInset,
-      bottom: 0,
+          (inStrip ? DuoTopStripScope.of(context)?.clusterLeft ?? 0 : 0),
+      top: top,
+      height: _toolbarHeight,
       child: Offstage(
         offstage: back == null,
         child: FadeTransition(
@@ -362,7 +404,7 @@ class HostedTopToolbar extends StatelessWidget {
     }
     return titleOnly
         ? DuoTitleBackdrop(color: color)
-        : _Backdrop(color: color, toolbarHeight: _toolbarHeight);
+        : _Backdrop(color: color, height: topInset + _toolbarHeight);
   }
 
   /// While [entry] is a page shown like a dialog that comes up or goes down:
@@ -384,6 +426,7 @@ class HostedTopToolbar extends StatelessWidget {
     required TopToolbarContent content,
     required Animation<double> opacity,
     required bool interactive,
+    required double top,
     Animation<double>? slide,
   }) {
     // alwaysIncludeSemantics: a layer that fades to zero during a back swipe
@@ -411,16 +454,21 @@ class HostedTopToolbar extends StatelessWidget {
                         : content.titleOverlay,
                   )
                 : chrome != null
-                ? _CustomBar(
-                    content: content,
-                    chrome: chrome!,
-                    placement: placement,
-                    title: _customTitle(
-                      context,
-                      content,
-                      centered: chrome!.centersTitle(defaultTargetPlatform),
+                ? Padding(
+                    padding: EdgeInsets.only(top: top),
+                    child: _CustomBar(
+                      content: content,
+                      chrome: chrome!,
+                      placement: placement,
+                      title: _customTitle(
+                        context,
+                        content,
+                        centered: chrome!.centersTitle(defaultTargetPlatform),
+                      ),
+                      leadingInset: _hasWindowControls(context) ? 62 : 0,
+                      // Below the strip it is clear of the status cluster.
+                      inStrip: top == _barTop(context),
                     ),
-                    leadingInset: _hasWindowControls(context) ? 62 : 0,
                   )
                 : defaultTargetPlatform == TargetPlatform.iOS
                 ? IOS26NativeToolbar(
@@ -531,10 +579,12 @@ class _DialogSlide extends StatelessWidget {
 /// the page's [color]: invisible at rest, it fades out what scrolls under the
 /// bar.
 class _Backdrop extends StatelessWidget {
-  const _Backdrop({required this.color, this.toolbarHeight = kHostedToolbarHeight});
+  const _Backdrop({required this.color, required this.height});
 
   final Color color;
-  final double toolbarHeight;
+
+  /// How far down the bar reaches from the top of the window.
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -546,7 +596,7 @@ class _Backdrop extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => Container(
             // Runs on below the bar for a smooth fade into the content.
-            height: HostedTopToolbar._barTop(context) + toolbarHeight + 30,
+            height: height + 30,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -622,6 +672,7 @@ class _CustomBar extends StatelessWidget {
     required this.placement,
     required this.title,
     required this.leadingInset,
+    this.inStrip = true,
   });
 
   final TopToolbarContent content;
@@ -632,9 +683,13 @@ class _CustomBar extends StatelessWidget {
   /// Room the system's window controls take at the leading edge.
   final double leadingInset;
 
+  /// Whether the bar is in the iPhone Duo's top strip, beside its status
+  /// cluster, rather than below it.
+  final bool inStrip;
+
   @override
   Widget build(BuildContext context) {
-    final strip = DuoTopStripScope.of(context);
+    final strip = inStrip ? DuoTopStripScope.of(context) : null;
     final metrics = chrome.metrics;
     final start = 16 + leadingInset + (strip?.clusterLeft ?? 0);
     final customLeading = content.customLeading;
@@ -648,7 +703,7 @@ class _CustomBar extends StatelessWidget {
           );
     final actions = content.actions;
     return Align(
-      alignment: Alignment.bottomCenter,
+      alignment: Alignment.topCenter,
       child: SizedBox(
         height: metrics.toolbarHeight,
         child: NavigationToolbar(

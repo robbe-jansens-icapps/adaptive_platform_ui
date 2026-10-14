@@ -224,7 +224,12 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
             child: ToolbarChromeScope(
               hostsToolbar: hostsToolbar,
               hostsDuoControls: pose != null,
-              hostsBottomTabBar: hostsTabBar,
+              // Custom tabs in the iPhone Duo's top strip take no room at
+              // the bottom.
+              hostsBottomTabBar:
+                  hostsTabBar &&
+                  (chrome == null ||
+                      placement == AdaptiveChromePlacement.bottom),
               tabBarHeight: _tabBarHeight,
               child: DuoPoseScope(
                 pose: pose,
