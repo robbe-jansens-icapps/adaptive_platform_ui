@@ -99,11 +99,11 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         var tint: UIColor? = nil
         var bg: UIColor? = nil
         var minimize: Int = 3 // automatic
+        var hidden = false
 
         var unselectedTint: UIColor? = nil
 
         if let dict = args as? [String: Any] {
-            NSLog("📦 TabBar init dict keys: \(dict.keys)")
             labels = (dict["labels"] as? [String]) ?? []
             symbols = (dict["sfSymbols"] as? [String]) ?? []
             selectedSymbols = (dict["selectedSfSymbols"] as? [String]) ?? []
@@ -133,13 +133,15 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             if let n = dict["tint"] as? NSNumber { tint = Self.colorFromARGB(n.intValue) }
             if let n = dict["unselectedItemTint"] as? NSNumber {
                 unselectedTint = Self.colorFromARGB(n.intValue)
-                NSLog("🎨 Parsed unselectedItemTint from dict: \(unselectedTint!)")
             }
             if let n = dict["backgroundColor"] as? NSNumber { bg = Self.colorFromARGB(n.intValue) }
             if let m = dict["minimizeBehavior"] as? NSNumber { minimize = m.intValue }
+            if let v = dict["hidden"] as? NSNumber { hidden = v.boolValue }
         }
 
         super.init()
+
+        container.isHidden = hidden
 
         container.backgroundColor = .clear
         if #available(iOS 13.0, *) {
@@ -188,7 +190,6 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             bar.backgroundImage = UIImage()
             bar.shadowImage = UIImage()
             bar.backgroundColor = .clear
-            NSLog("📱 iOS 26+ detected - using direct properties only")
         }
         // iOS 13-25 - Use appearance
         else if #available(iOS 13.0, *) {
@@ -223,8 +224,6 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             if #available(iOS 15.0, *) {
                 bar.scrollEdgeAppearance = appearance
             }
-
-            NSLog("🎨 iOS 13-25: Applied appearance - normal: \(unselColor), selected: \(selColor)")
         } else {
             // iOS 10-12 fallback
             bar.isTranslucent = true
@@ -237,11 +236,9 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         if #available(iOS 10.0, *) {
             if let unselTint = unselectedTint {
                 bar.unselectedItemTintColor = unselTint
-                NSLog("✅ Direct unselectedItemTintColor: \(unselTint)")
             }
             if let tint = tint {
                 bar.tintColor = tint
-                NSLog("✅ Direct tintColor: \(tint)")
             }
         }
 
@@ -354,8 +351,11 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             max(labels.count, symbols.count),
             max(max(assetIcons.count, fileIcons.count), networkIcons.count)
         )
-        bar.items = buildItems(0..<count)
-        applyAppFont(to: bar)
+        // Given the app font before they go into the bar, so they are measured
+        // in it from the start.
+        let items = buildItems(0..<count)
+        applyAppFont(to: items)
+        bar.items = items
 
         // Note: spacerFlags are received but not yet implemented for UITabBar
         // UITabBar doesn't natively support flexible spacing between items like UIToolbar does
@@ -419,10 +419,12 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         guard let bar = self.tabBar else { return }
 
         // A standalone UITabBar hosted in a platform view can lay out once
-        // before it has its final width. Rebuild against the real container
-        // width so item labels and spacing are computed from the final bounds.
+        // before it has its final width. Install the items again against the
+        // real container width so item labels and spacing are computed from
+        // the final bounds. The same items: building them again (images and
+        // all) costs more and lays out no differently.
         if #available(iOS 26.0, *) {
-            rebuildItemsWithCurrentState()
+            reinstallItems(of: bar)
         }
 
         bar.setNeedsLayout()
@@ -464,6 +466,23 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             let badgeTexts: [String?] = (args["badgeTexts"] as? [Any?])?.map { $0 as? String } ?? []
             let badgeColors: [Int?] = (args["badgeColors"] as? [NSNumber?])?.map { $0?.intValue } ?? []
             let badgeTextColors: [Int?] = (args["badgeTextColors"] as? [NSNumber?])?.map { $0?.intValue } ?? []
+
+            // The same items again: only the selection can have changed.
+            if let bar = self.tabBar, let items = bar.items,
+               labels == currentLabels, symbols == currentSymbols,
+               selectedSymbols == currentSelectedSymbols,
+               assetIcons == currentAssetIcons, selectedAssetIcons == currentSelectedAssetIcons,
+               fileIcons == currentFileIcons, selectedFileIcons == currentSelectedFileIcons,
+               networkIcons == currentNetworkIcons, selectedNetworkIcons == currentSelectedNetworkIcons,
+               searchFlags == currentSearchFlags, badgeCounts == currentBadgeCounts,
+               badgeTexts == currentBadgeTexts, badgeColors == currentBadgeColors,
+               badgeTextColors == currentBadgeTextColors {
+                if selectedIndex >= 0, selectedIndex < items.count {
+                    bar.selectedItem = items[selectedIndex]
+                }
+                result(nil)
+                return
+            }
 
             self.currentLabels = labels
             self.currentSymbols = symbols
@@ -591,9 +610,10 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             }
 
             if let bar = self.tabBar {
-                bar.items = buildItems(0..<count)
-                applyAppFont(to: bar)
-                if let items = bar.items, selectedIndex >= 0, selectedIndex < items.count {
+                let items = buildItems(0..<count)
+                applyAppFont(to: items)
+                bar.items = items
+                if selectedIndex >= 0, selectedIndex < items.count {
                     bar.selectedItem = items[selectedIndex]
                 }
             }
@@ -627,9 +647,8 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             }
             if let n = args["unselectedItemTint"] as? NSNumber {
                 let c = Self.colorFromARGB(n.intValue)
-                if #available(iOS 10.0, *) {
+                if #available(iOS 10.0, *), self.tabBar?.unselectedItemTintColor != c {
                     self.tabBar?.unselectedItemTintColor = c
-                    NSLog("✅ setStyle: unselectedItemTintColor set to \(c)")
 
                     // iOS 26+: Rebuild items with current state so untinted
                     // and tinted icon variants are regenerated consistently.
@@ -840,8 +859,8 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             items.append(item)
         }
 
+        applyAppFont(to: items)
         bar.items = items
-        applyAppFont(to: bar)
 
         if currentSelectedIndex < items.count {
             bar.selectedItem = items[currentSelectedIndex]

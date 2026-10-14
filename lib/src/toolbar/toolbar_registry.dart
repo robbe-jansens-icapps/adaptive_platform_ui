@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -19,6 +20,9 @@ class ToolbarEntry {
     required this.visible,
     this.shownInPlace = true,
     this.tabBar,
+    this.tabBarHidden = false,
+    this.tabBarHosted = false,
+    this.tabBarMinimized,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
   });
@@ -60,13 +64,27 @@ class ToolbarEntry {
   /// pushed on its own navigator does, and only these routes reveal it.
   final List<ModalRoute<Object?>> enclosingRoutes;
 
-  /// The tab bar the registering scaffold shows, if any. On iPhone Duo the
-  /// chrome draws it at the bottom of the trailing bar instead.
+  /// The native tab bar of the registering scaffold, if any. On iPhone Duo
+  /// the chrome draws it at the bottom of the trailing bar instead, and with
+  /// [tabBarHosted] at the bottom of the screen.
   final AdaptiveBottomNavigationBar? tabBar;
+
+  /// Whether the scaffold hides its tab bar for now
+  /// (`AdaptiveScaffold.tabBarHidden`), as under a sheet of its own.
+  final bool tabBarHidden;
+
+  /// Whether the chrome draws [tabBar] at the bottom of the screen, above the
+  /// navigator, where it stays put while pages come and go, instead of the
+  /// scaffold drawing it in its page.
+  final bool tabBarHosted;
+
+  /// Whether the hosted [tabBar] is shrunk out of the way of the content, as
+  /// the scaffold's `minimizeBehavior` asks when its page scrolls.
+  final ValueListenable<bool>? tabBarMinimized;
 
   /// Whether the registering scaffold shows a tab bar. Such a scaffold is the
   /// root of a tab layout and never gets an automatic back button.
-  bool get hasTabBar => tabBar?.items?.isNotEmpty ?? false;
+  bool get hasTabBar => !tabBarHidden && (tabBar?.items?.isNotEmpty ?? false);
 
   bool get _isOnTop =>
       (route?.isCurrent ?? true) && enclosingRoutes.every((r) => r.isCurrent);

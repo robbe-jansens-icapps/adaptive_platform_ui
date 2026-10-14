@@ -41,6 +41,7 @@ class IOS26Scaffold extends StatefulWidget {
     this.useHeroBackButton = true,
     this.useFixedToolbar = true,
     this.tabBarHidden = false,
+    this.tabsHosted = false,
     this.resizeToAvoidBottomInset,
     this.backgroundColor,
     @visibleForTesting this.debugVerticalBarEdge,
@@ -77,6 +78,11 @@ class IOS26Scaffold extends StatefulWidget {
   /// Page background; null keeps the Cupertino theme's scaffold colour.
   final Color? backgroundColor;
   final bool tabBarHidden;
+
+  /// Whether the toolbar host draws the native tab bar at the bottom of the
+  /// screen, above the navigator. The page then draws none, and leaves
+  /// minimizing it on scroll to the scaffold around it.
+  final bool tabsHosted;
   final bool? resizeToAvoidBottomInset;
   final List<Widget> children;
 
@@ -99,6 +105,12 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
   /// Null until the first snapshot arrives; stays null on non-iOS.
   FoldableData? _fold;
   StreamSubscription<FoldableData>? _foldSub;
+
+  /// Whether the last build read [_fold]: only a page without a host above
+  /// it does. Under a host a fold snapshot arriving (as one does for every
+  /// page, just as it is pushed) changes nothing on screen, so it does not
+  /// rebuild the page in the middle of its transition.
+  bool _usesFold = true;
 
   /// The system's vertical bar edge, for a page that draws its own bar and so
   /// has no host to ask. Null off iOS 26, where no channel answers.
@@ -135,8 +147,9 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
   }
 
   void _onFoldChanged(FoldableData data) {
-    if (!mounted) return;
-    setState(() => _fold = data);
+    if (!mounted || data == _fold) return;
+    _fold = data;
+    if (_usesFold) setState(() {});
   }
 
   @override
@@ -376,6 +389,7 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
     final hasTabs = tabs?.items?.isNotEmpty ?? false;
     final showDuoSideBar =
         duoVerticalPose && (hasControls || hasTabs) && chrome == null;
+    _usesFold = (stripScope == null && pose == null) || showDuoSideBar;
 
     // The Liquid Glass toolbar is drawn as a Positioned overlay on top of the
     // body (see below), so, unlike CupertinoPageScaffold with a translucent
@@ -518,8 +532,10 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
             ),
           ),
         // Tab bar - only show if destinations exist
-        // On iPhone Duo the tabs are at the bottom of the trailing bar instead.
+        // On iPhone Duo the tabs are at the bottom of the trailing bar
+        // instead, and the toolbar host may draw them for the page.
         if (!duoVerticalPose &&
+            !widget.tabsHosted &&
             widget.bottomNavigationBar?.items != null &&
             widget.bottomNavigationBar!.items!.isNotEmpty &&
             widget.bottomNavigationBar!.selectedIndex != null &&
@@ -585,7 +601,7 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
       // keyboard window (higher z-order) covers the tab bar naturally.
       resizeToAvoidBottomInset:
           widget.resizeToAvoidBottomInset ?? !hasBottomNav,
-      child: hasBottomNav
+      child: hasBottomNav && !widget.tabsHosted
           ? NotificationListener<ScrollNotification>(
               onNotification: _handleScrollNotification,
               child: scoped,

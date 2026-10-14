@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_native_tab_bar.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter/foundation.dart' show ValueListenable, internal;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../platform/platform_info.dart';
@@ -304,24 +304,53 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   ToolbarRegistry? _toolbarRegistry;
 
   /// Height the native tab bar covers at the bottom of the body, once
-  /// measured.
-  double _tabBarHeight = 0;
+  /// measured, while the page draws the bar itself.
+  final ValueNotifier<double> _ownTabBarHeight = ValueNotifier<double>(0);
+
+  /// Whether the native tab bar is shrunk while the page scrolls, for the bar
+  /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
+  final ValueNotifier<bool> _tabBarMinimized = ValueNotifier<bool>(false);
 
   void _onTabBarSizeChanged(Size size) {
-    if (!mounted || size.height == _tabBarHeight) return;
-    setState(() => _tabBarHeight = size.height);
+    if (mounted) _ownTabBarHeight.value = size.height;
   }
 
   /// Lets the body keep its content clear of the native tab bar floating over
   /// it: raises the bottom padding to the bar's height and publishes that
   /// height through [AdaptiveBottomBarInset]. The body still runs underneath
   /// the bar, so a map or a list can show through its glass.
-  Widget _withBottomBarInset(Widget body, {required bool barShown}) {
-    final height = barShown && !widget.tabBarHidden ? _tabBarHeight : 0.0;
-    return AdaptiveBottomBarInset(
+  ///
+  /// The height comes from the bar the host draws, from the page's own bar,
+  /// or is 0 while the tabs are in the iPhone Duo trailing bar. Only the
+  /// inset follows it: the body is not built again when it changes, or when
+  /// the bar moves between the page and the host.
+  Widget _withBottomBarInset(BuildContext context, Widget body) {
+    final ValueListenable<double> height;
+    if (_tabsInTrailingBar(context)) {
+      height = const AlwaysStoppedAnimation<double>(0);
+    } else if (_tabsHostedAtBottom(context)) {
+      height =
+          ToolbarChromeScope.maybeOf(context)?.tabBarHeight ?? _ownTabBarHeight;
+    } else {
+      height = _ownTabBarHeight;
+    }
+    return _BottomBarInset(
       height: height,
-      child: _BottomBarPadding(height: height, child: body),
+      hidden: widget.tabBarHidden,
+      child: body,
     );
+  }
+
+  /// Shrinks or restores the tab bar that the host draws as the page scrolls,
+  /// as [AdaptiveScaffold.minimizeBehavior] asks.
+  bool _minimizeHostedTabBar(ScrollNotification notification) {
+    final minimized = _tabBarMinimizedAfter(
+      notification,
+      widget.minimizeBehavior,
+      minimized: _tabBarMinimized.value,
+    );
+    if (minimized != null) _tabBarMinimized.value = minimized;
+    return false;
   }
 
   @override
@@ -339,11 +368,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         oldWidget.bottomNavigationBar != widget.bottomNavigationBar) {
       _syncToolbarEntry();
     }
+    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never) {
+      _tabBarMinimized.value = false;
+    }
   }
 
   @override
   void dispose() {
+    // Out of the registry first: the host stops listening to the notifiers
+    // below once it sees the entry gone.
     _toolbarRegistry?.remove(this);
+    _ownTabBarHeight.dispose();
+    _tabBarMinimized.dispose();
     super.dispose();
   }
 
@@ -372,15 +408,19 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     return route == null || route is PageRoute;
   }
 
-  /// The tab bar the fixed chrome may draw in the iPhone Duo trailing bar:
-  /// only the native one. A custom `CupertinoTabBar` or bottom widget
-  /// (`useNativeBottomBar: false`) is the app's own and stays where it is.
-  AdaptiveBottomNavigationBar? get _tabBarForChrome {
+  /// The tab bar the fixed chrome may draw, in the iPhone Duo trailing bar or
+  /// at the bottom of the screen: only the native one. A custom
+  /// `CupertinoTabBar` or bottom widget (`useNativeBottomBar: false`) is the
+  /// app's own and stays where it is. Hidden or not
+  /// ([AdaptiveScaffold.tabBarHidden]): a hidden native bar is kept, off
+  /// stage, for when it shows again.
+  AdaptiveBottomNavigationBar? get _nativeTabBar {
     final bar = widget.bottomNavigationBar;
-    if (bar == null || widget.tabBarHidden || !bar.useNativeBottomBar) {
-      return null;
-    }
-    if (bar.items == null || bar.selectedIndex == null || bar.onTap == null) {
+    if (bar == null || !bar.useNativeBottomBar) return null;
+    if (bar.items == null ||
+        bar.items!.isEmpty ||
+        bar.selectedIndex == null ||
+        bar.onTap == null) {
       return null;
     }
     return bar;
@@ -389,6 +429,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   bool _tabsInTrailingBar(BuildContext context) =>
       _usesFixedToolbar(context) &&
       (ToolbarChromeScope.maybeOf(context)?.hostsDuoControls ?? false);
+
+  /// Whether the toolbar host draws this page's native tab bar at the bottom
+  /// of the screen, above the navigator (see
+  /// [ToolbarChromeScope.hostsBottomTabBar]), so the page draws none.
+  bool _tabsHostedAtBottom(BuildContext context) =>
+      PlatformInfo.isIOS26OrHigher() &&
+      _nativeTabBar != null &&
+      _usesFixedToolbar(context) &&
+      (ToolbarChromeScope.maybeOf(context)?.hostsBottomTabBar ?? false);
 
   void _syncToolbarEntry() {
     final registry = ToolbarRegistry.maybeOf(context);
@@ -426,7 +475,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         // ignore: deprecated_member_use
         visible: TickerMode.of(context) && Visibility.of(context),
         shownInPlace: Visibility.of(context),
-        tabBar: _tabBarForChrome,
+        tabBar: _nativeTabBar,
+        tabBarHidden: widget.tabBarHidden,
+        tabBarHosted: _tabsHostedAtBottom(context),
+        tabBarMinimized: _tabBarMinimized,
       ),
     );
   }
@@ -577,33 +629,40 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         }).toList();
       }
 
-      return _wrapWithDrawerIfNeeded(
-        IOS26Scaffold(
-          bottomNavigationBar: widget.bottomNavigationBar,
-          title: widget.appBar?.title,
-          actions: widget.appBar?.actions,
-          leading: widget.appBar?.leading,
-          onBack: widget.appBar?.onBack,
-          backButtonStyle:
-              widget.appBar?.backButtonStyle ?? AdaptiveBackButtonStyle.back,
-          automaticallyImplyLeading:
-              widget.appBar?.automaticallyImplyLeading ?? true,
-          tintColor: widget.appBar?.tintColor,
-          titleWidget: _buildIOS26TitleOverlay(),
-          minimizeBehavior: widget.minimizeBehavior,
-          enableBlur: widget.enableBlur,
-          backgroundColor: widget.backgroundColor,
-          useHeroBackButton: widget.useHeroBackButton,
-          // In a column of a split view the page draws its own bar, as told
-          // by the column's chrome.
-          useFixedToolbar:
-              _usesFixedToolbar(context) ||
-              AdaptiveSplitView.isInColumn(context),
-          tabBarHidden: widget.tabBarHidden,
-          resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
-          children: childrenList,
-        ),
+      final tabsHosted = _tabsHostedAtBottom(context);
+      Widget scaffold = IOS26Scaffold(
+        bottomNavigationBar: widget.bottomNavigationBar,
+        title: widget.appBar?.title,
+        actions: widget.appBar?.actions,
+        leading: widget.appBar?.leading,
+        onBack: widget.appBar?.onBack,
+        backButtonStyle:
+            widget.appBar?.backButtonStyle ?? AdaptiveBackButtonStyle.back,
+        automaticallyImplyLeading:
+            widget.appBar?.automaticallyImplyLeading ?? true,
+        tintColor: widget.appBar?.tintColor,
+        titleWidget: _buildIOS26TitleOverlay(),
+        minimizeBehavior: widget.minimizeBehavior,
+        enableBlur: widget.enableBlur,
+        backgroundColor: widget.backgroundColor,
+        useHeroBackButton: widget.useHeroBackButton,
+        // In a column of a split view the page draws its own bar, as told
+        // by the column's chrome.
+        useFixedToolbar:
+            _usesFixedToolbar(context) || AdaptiveSplitView.isInColumn(context),
+        tabBarHidden: widget.tabBarHidden,
+        tabsHosted: tabsHosted,
+        resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+        children: childrenList,
       );
+      if (tabsHosted &&
+          widget.minimizeBehavior != TabBarMinimizeBehavior.never) {
+        scaffold = NotificationListener<ScrollNotification>(
+          onNotification: _minimizeHostedTabBar,
+          child: scaffold,
+        );
+      }
+      return _wrapWithDrawerIfNeeded(scaffold);
     }
 
     // iOS <26 (iOS 18 and below) OR iOS 26+ with useNativeToolbar: false
@@ -733,6 +792,14 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           }
         }
 
+        // On iPhone Duo the fixed chrome shows the tabs at the bottom of the
+        // trailing bar instead, and elsewhere on iOS 26 the toolbar host
+        // draws them at the bottom of the screen, above the navigator: the
+        // page then draws no bar of its own.
+        final tabsHosted =
+            _tabsInTrailingBar(context) || _tabsHostedAtBottom(context);
+        final tabsHostedAtBottom = _tabsHostedAtBottom(context);
+
         // Wrap body with Stack if floatingActionButton is provided
         Widget bodyWidget = Column(
           children: [
@@ -741,9 +808,13 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                 onNotification: (notification) {
                   // Forward scroll notifications to _MinimizableTabBar state (iOS 26+ native only)
                   if (PlatformInfo.isIOS26OrHigher() && useNativeBottomBar) {
-                    _tabBarKey.currentState?.handleScrollNotification(
-                      notification,
-                    );
+                    if (tabsHostedAtBottom) {
+                      _minimizeHostedTabBar(notification);
+                    } else {
+                      _tabBarKey.currentState?.handleScrollNotification(
+                        notification,
+                      );
+                    }
                   }
                   return false; // Let it bubble up
                 },
@@ -751,13 +822,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                     ? Stack(
                         children: [
                           _withBottomBarInset(
+                            context,
                             widget.body ?? const SizedBox.shrink(),
-                            barShown: !_tabsInTrailingBar(context),
                           ),
-                          // On iPhone Duo the fixed chrome shows the tabs at
-                          // the bottom of the trailing bar instead, so the
-                          // bottom bar is not built at all.
-                          if (!_tabsInTrailingBar(context))
+                          if (!tabsHosted)
                             Positioned(
                               left: 0,
                               right: 0,
@@ -1232,44 +1300,15 @@ class _MinimizableTabBarState extends State<_MinimizableTabBar>
 
   // Called from parent's NotificationListener
   void handleScrollNotification(ScrollNotification notification) {
-    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never) {
-      return;
-    }
-
-    if (notification is ScrollUpdateNotification) {
-      final delta = notification.scrollDelta ?? 0;
-      final metrics = notification.metrics;
-
-      // Check if we're in overscroll territory (pull-to-refresh or bottom bounce)
-      // When pixels < minScrollExtent, user is pulling down beyond top (overscroll)
-      // When pixels > maxScrollExtent, user is pulling up beyond bottom (overscroll)
-      // Add tolerance (50px) to make it more stable - ignore scroll events near boundaries
-      const overscrollTolerance = 50.0;
-      final isOverscrolling =
-          metrics.pixels < (metrics.minScrollExtent + overscrollTolerance) ||
-          metrics.pixels > (metrics.maxScrollExtent - overscrollTolerance);
-
-      // Ignore scroll events during overscroll to prevent tab bar animation during bounce
-      if (isOverscrolling) {
-        return;
-      }
-
-      if (widget.minimizeBehavior == TabBarMinimizeBehavior.onScrollDown ||
-          widget.minimizeBehavior == TabBarMinimizeBehavior.automatic) {
-        // Minimize when scrolling down (positive delta)
-        if (delta > 0 && !_isMinimized) {
-          _minimizeTabBar();
-        } else if (delta < 0 && _isMinimized) {
-          _expandTabBar();
-        }
-      } else if (widget.minimizeBehavior == TabBarMinimizeBehavior.onScrollUp) {
-        // Minimize when scrolling up (negative delta)
-        if (delta < 0 && !_isMinimized) {
-          _minimizeTabBar();
-        } else if (delta > 0 && _isMinimized) {
-          _expandTabBar();
-        }
-      }
+    final minimized = _tabBarMinimizedAfter(
+      notification,
+      widget.minimizeBehavior,
+      minimized: _isMinimized,
+    );
+    if (minimized == true) {
+      _minimizeTabBar();
+    } else if (minimized == false) {
+      _expandTabBar();
     }
   }
 
@@ -1384,6 +1423,76 @@ class _AnimatedBackButtonState extends State<_AnimatedBackButton>
           sfSymbol: SFSymbol("chevron.left", size: 20),
         ),
       ),
+    );
+  }
+}
+
+/// Whether a native tab bar that [behavior] shrinks while the page scrolls
+/// should be minimized after [notification]: true or false when that
+/// changes, null when it stays as it is.
+bool? _tabBarMinimizedAfter(
+  ScrollNotification notification,
+  TabBarMinimizeBehavior behavior, {
+  required bool minimized,
+}) {
+  if (behavior == TabBarMinimizeBehavior.never) return null;
+  if (notification is! ScrollUpdateNotification) return null;
+  final delta = notification.scrollDelta ?? 0;
+  final metrics = notification.metrics;
+
+  // Check if we're in overscroll territory (pull-to-refresh or bottom bounce)
+  // When pixels < minScrollExtent, user is pulling down beyond top (overscroll)
+  // When pixels > maxScrollExtent, user is pulling up beyond bottom (overscroll)
+  // Add tolerance (50px) to make it more stable - ignore scroll events near boundaries
+  const overscrollTolerance = 50.0;
+  final isOverscrolling =
+      metrics.pixels < (metrics.minScrollExtent + overscrollTolerance) ||
+      metrics.pixels > (metrics.maxScrollExtent - overscrollTolerance);
+
+  // Ignore scroll events during overscroll to prevent tab bar animation during bounce
+  if (isOverscrolling) return null;
+
+  if (behavior == TabBarMinimizeBehavior.onScrollDown ||
+      behavior == TabBarMinimizeBehavior.automatic) {
+    // Minimize when scrolling down (positive delta)
+    if (delta > 0 && !minimized) return true;
+    if (delta < 0 && minimized) return false;
+  } else if (behavior == TabBarMinimizeBehavior.onScrollUp) {
+    // Minimize when scrolling up (negative delta)
+    if (delta < 0 && !minimized) return true;
+    if (delta > 0 && minimized) return false;
+  }
+  return null;
+}
+
+/// Raises the body's bottom padding to the native tab bar's [height] and
+/// publishes it through [AdaptiveBottomBarInset], following the height as it
+/// is measured: only this is built again when it changes, not the body.
+class _BottomBarInset extends StatelessWidget {
+  const _BottomBarInset({
+    required this.height,
+    required this.hidden,
+    required this.child,
+  });
+
+  final ValueListenable<double> height;
+
+  /// The bar is hidden for now ([AdaptiveScaffold.tabBarHidden]): no inset.
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: height,
+      child: child,
+      builder: (context, height, child) {
+        final inset = hidden ? 0.0 : height;
+        return AdaptiveBottomBarInset(
+          height: inset,
+          child: _BottomBarPadding(height: inset, child: child!),
+        );
+      },
     );
   }
 }

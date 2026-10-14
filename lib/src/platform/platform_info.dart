@@ -114,7 +114,13 @@ class PlatformInfo {
     if (!isIOS) return 0;
     final versionOverride = debugIOSVersionOverride;
     if (versionOverride != null) return versionOverride;
+    // Read on every build of every page: the OS string is parsed once.
+    return _detectedIOSVersion ??= _parseIOSVersion();
+  }
 
+  static int? _detectedIOSVersion;
+
+  static int _parseIOSVersion() {
     try {
       final version = Platform.operatingSystemVersion;
       // Extract major version from string like "Version 26.1.2 (Build 20A123)"

@@ -177,7 +177,13 @@ class HostedTopToolbar extends StatelessWidget {
     final upperColor = upper.backdropColor ?? systemBackground;
     final lowerColor = lower.backdropColor ?? systemBackground;
     final driver = blend.driver;
-    final backdrop = upperBackdrop && lowerBackdrop && driver != null
+    // Pages of one colour have nothing to blend, which would redraw the
+    // backdrop on every frame of the transition.
+    final backdrop =
+        upperBackdrop &&
+            lowerBackdrop &&
+            driver != null &&
+            upperColor != lowerColor
         ? AnimatedBuilder(
             animation: driver,
             builder: (context, _) =>

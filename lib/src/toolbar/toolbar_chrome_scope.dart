@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Tells the pages below an [AdaptiveToolbarHost] which parts of the toolbar
@@ -11,6 +12,8 @@ class ToolbarChromeScope extends InheritedWidget {
     super.key,
     required this.hostsToolbar,
     required this.hostsDuoControls,
+    this.hostsBottomTabBar = false,
+    this.tabBarHeight,
     required super.child,
   });
 
@@ -24,6 +27,17 @@ class ToolbarChromeScope extends InheritedWidget {
   /// (see `DuoPose`). Pages then keep only their title at the top.
   final bool hostsDuoControls;
 
+  /// True while the host draws the native tab bar of a tab layout at the
+  /// bottom of the screen, above the navigator: it stays put while pages are
+  /// pushed over the tabs and popped, and fades out and in with them, instead
+  /// of moving with the page under a page that slides over it. The scaffold
+  /// with the tabs then draws no tab bar of its own.
+  final bool hostsBottomTabBar;
+
+  /// The height the hosted tab bar covers at the bottom of the screen, once
+  /// measured, for the tab layout to keep its content clear of it.
+  final ValueListenable<double>? tabBarHeight;
+
   /// The nearest scope, or null when no host is installed and the page must
   /// draw its whole toolbar itself.
   static ToolbarChromeScope? maybeOf(BuildContext context) =>
@@ -32,5 +46,7 @@ class ToolbarChromeScope extends InheritedWidget {
   @override
   bool updateShouldNotify(ToolbarChromeScope oldWidget) =>
       hostsToolbar != oldWidget.hostsToolbar ||
-      hostsDuoControls != oldWidget.hostsDuoControls;
+      hostsDuoControls != oldWidget.hostsDuoControls ||
+      hostsBottomTabBar != oldWidget.hostsBottomTabBar ||
+      tabBarHeight != oldWidget.tabBarHeight;
 }

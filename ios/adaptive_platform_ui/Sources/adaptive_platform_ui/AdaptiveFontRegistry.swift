@@ -51,18 +51,34 @@ final class AdaptiveFontRegistry {
     }
 }
 
-/// Draws the item titles of `bar` in the app font, if one is registered.
-func applyAppFont(to bar: UITabBar) {
-    guard let font = AdaptiveFontRegistry.shared.font(weight: 400, size: 10),
-          let items = bar.items
-    else { return }
+/// Draws the titles of `items` in the app font, if one is registered, and
+/// tells whether it did. Items given the font before they go into a bar are
+/// measured in it from the start.
+@discardableResult
+func applyAppFont(to items: [UITabBarItem]) -> Bool {
+    guard let font = AdaptiveFontRegistry.shared.font(weight: 400, size: 10)
+    else { return false }
     for item in items {
         item.setTitleTextAttributes([.font: font], for: .normal)
         item.setTitleTextAttributes([.font: font], for: .selected)
     }
+    return true
+}
+
+/// Draws the titles of the items already in `bar` in the app font, if one is
+/// registered: for a bar made before the app font was.
+func applyAppFont(to bar: UITabBar) {
+    guard let items = bar.items, applyAppFont(to: items) else { return }
     // Titles of items that are already in the bar keep the width they were
     // measured at in the system font, which truncates a wider face. Installed
     // again, they are laid out in the app font.
+    reinstallItems(of: bar)
+}
+
+/// Installs the items of `bar` again, keeping the selection, so they are laid
+/// out anew from their current titles and the bar's current width.
+func reinstallItems(of bar: UITabBar) {
+    guard let items = bar.items else { return }
     let selected = bar.selectedItem
     bar.items = nil
     bar.items = items

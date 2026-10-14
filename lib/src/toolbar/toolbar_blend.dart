@@ -203,6 +203,45 @@ class ToolbarBlend extends ChangeNotifier {
     }
 
     _forgetUnused();
+    // Every focus change and every page republishing itself during a push or
+    // a pop lands here, mostly with nothing new to show.
+    if (_showsWhatItDid()) return;
+    _notify();
+  }
+
+  ToolbarEntry? _shownUpper;
+  ToolbarEntry? _shownLower;
+  ToolbarEntry? _shownOwner;
+  ToolbarEntry? _shownUpperTabs;
+  ToolbarEntry? _shownLowerTabs;
+  bool _shownCovered = false;
+  int _shownBlendCount = -1;
+  bool _shownBlending = false;
+
+  /// Whether the listeners last saw just what there is to show now. Entries
+  /// are compared by identity: a page that republishes itself with anything
+  /// changed is a new entry. The tabs come from a page of their own (the tab
+  /// layout around the page), which can change while the page does not.
+  bool _showsWhatItDid() =>
+      identical(upper, _shownUpper) &&
+      identical(lower, _shownLower) &&
+      identical(owner, _shownOwner) &&
+      identical(registry.tabBarOwnerFor(upper), _shownUpperTabs) &&
+      identical(registry.tabBarOwnerFor(lower), _shownLowerTabs) &&
+      ownerIsCovered == _shownCovered &&
+      blendCount == _shownBlendCount &&
+      isBlending == _shownBlending;
+
+  /// Tells the listeners, and notes what they were shown.
+  void _notify() {
+    _shownUpper = upper;
+    _shownLower = lower;
+    _shownOwner = owner;
+    _shownUpperTabs = registry.tabBarOwnerFor(upper);
+    _shownLowerTabs = registry.tabBarOwnerFor(lower);
+    _shownCovered = ownerIsCovered;
+    _shownBlendCount = blendCount;
+    _shownBlending = isBlending;
     notifyListeners();
   }
 
@@ -228,7 +267,7 @@ class ToolbarBlend extends ChangeNotifier {
         lower: registry.below(owner),
         gesture: true,
       );
-      notifyListeners();
+      _notify();
     } else {
       // Released: the route now either settles back or pops.
       _endBlendIfSettled();
@@ -273,7 +312,7 @@ class ToolbarBlend extends ChangeNotifier {
     _stopBlend();
     _publishRouteTransition();
     _forgetUnused();
-    notifyListeners();
+    _notify();
   }
 
   void _forgetUnused() {
