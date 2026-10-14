@@ -190,4 +190,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(pressed, ['A7']);
   });
+
+  testWidgets('the app\'s surface gets the chromeData the popover was opened with', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+    window(tester, const Size(1000, 800));
+    Object? seen;
+    const chrome = AdaptiveChrome(
+      tabBarBuilder: _none,
+      titleBuilder: _noneTitle,
+      backButtonBuilder: _noneBack,
+      actionsBuilder: _noneActions,
+      popoverBuilder: _surface,
+    );
+    _seen = (data) => seen = data;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => AdaptiveToolbarHost(chrome: chrome, child: child!),
+        home: Center(
+          child: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => AdaptivePopover.show<void>(anchor: context, chromeData: 'dark', builder: (_) => const Text('inside')),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('inside'), findsOneWidget);
+    expect(seen, 'dark');
+  });
+}
+
+void Function(Object?) _seen = (_) {};
+Widget _none(BuildContext context, AdaptiveTabBarSpec spec) => const SizedBox();
+Widget _noneTitle(BuildContext context, AdaptiveTitleSpec spec) => const SizedBox();
+Widget _noneBack(BuildContext context, AdaptiveBackButtonSpec spec) => const SizedBox();
+Widget _noneActions(BuildContext context, AdaptiveActionsSpec spec) => const SizedBox();
+Widget _surface(BuildContext context, AdaptivePopoverSpec spec, Widget content) {
+  _seen(spec.data);
+  return content;
 }

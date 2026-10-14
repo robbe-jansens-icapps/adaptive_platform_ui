@@ -43,6 +43,7 @@ abstract final class AdaptivePopover {
     bool barrierDismissible = true,
     Color barrierColor = const Color(0x14000000),
     String? barrierLabel,
+    Object? chromeData,
   }) {
     final root = navigator != null
         ? Navigator.of(navigator.context, rootNavigator: true)
@@ -60,6 +61,7 @@ abstract final class AdaptivePopover {
         barrierLabel: barrierLabel,
         builder: (context) => _Surface(
           sheet: true,
+          data: chromeData,
           child: SafeArea(top: false, child: builder(context)),
         ),
       );
@@ -78,6 +80,7 @@ abstract final class AdaptivePopover {
         maxSize: maxSize,
         dismissible: barrierDismissible,
         color: barrierColor,
+        data: chromeData,
         label:
             barrierLabel ??
             MaterialLocalizations.of(anchor).modalBarrierDismissLabel,
@@ -92,11 +95,13 @@ abstract final class AdaptivePopover {
     required List<AdaptivePopupMenuEntry> items,
     Rect? anchorRect,
     NavigatorState? navigator,
+    Object? chromeData,
   }) {
     return show<int>(
       anchor: anchor,
       anchorRect: anchorRect,
       navigator: navigator,
+      chromeData: chromeData,
       maxSize: const Size(320, 560),
       builder: (context) => _PopoverMenu(items: items),
     );
@@ -114,17 +119,22 @@ abstract final class AdaptivePopover {
 /// The surface a popover or its sheet sits on: the custom chrome's, or
 /// glass.
 class _Surface extends StatelessWidget {
-  const _Surface({required this.sheet, required this.child});
+  const _Surface({required this.sheet, required this.child, this.data});
 
   final bool sheet;
   final Widget child;
+  final Object? data;
 
   @override
   Widget build(BuildContext context) {
     final content = Material(type: MaterialType.transparency, child: child);
     final builder = AdaptiveChromeScope.chromeOf(context)?.popoverBuilder;
     if (builder != null) {
-      return builder(context, AdaptivePopoverSpec(sheet: sheet), content);
+      return builder(
+        context,
+        AdaptivePopoverSpec(sheet: sheet, data: data),
+        content,
+      );
     }
     return AdaptiveGlass(
       shape: RoundedRectangleBorder(
@@ -145,8 +155,10 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     required this.dismissible,
     required this.color,
     required this.label,
+    this.data,
   });
 
+  final Object? data;
   final Rect anchor;
   final WidgetBuilder builder;
   final Size maxSize;
@@ -189,7 +201,11 @@ class _PopoverRoute<T> extends PopupRoute<T> {
               : (onLeft: pose.onLeft, width: pose.bandWidth),
           fold: _foldOf(context),
         ),
-        child: _Surface(sheet: false, child: Builder(builder: builder)),
+        child: _Surface(
+          sheet: false,
+          data: data,
+          child: Builder(builder: builder),
+        ),
       ),
     );
   }

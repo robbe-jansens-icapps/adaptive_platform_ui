@@ -116,11 +116,15 @@ class AdaptiveAccessorySpec {
 /// ([AdaptiveChrome.popoverBuilder]).
 @immutable
 class AdaptivePopoverSpec {
-  const AdaptivePopoverSpec({required this.sheet});
+  const AdaptivePopoverSpec({required this.sheet, this.data});
 
   /// Whether it opens as a sheet from the bottom, on a compact window,
   /// rather than anchored to its control.
   final bool sheet;
+
+  /// What the code that opened it handed `AdaptivePopover.show` as
+  /// `chromeData`, such as a dark or a light look.
+  final Object? data;
 }
 
 /// A page's title, as the app's title draws it.
