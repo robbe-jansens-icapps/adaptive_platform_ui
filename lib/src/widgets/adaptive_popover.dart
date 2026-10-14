@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../toolbar/duo_vertical_bar.dart';
@@ -9,17 +10,31 @@ import '../toolbar/fold_scope.dart';
 import 'adaptive_glass.dart';
 import 'ios26/ios26_popup_menu_button.dart';
 
+/// Where a popover goes relative to the control that opens it.
+enum AdaptivePopoverPlacement {
+  /// Next to the control: below it, or above it where there is no room. On a
+  /// window narrower than [AdaptivePopover.compactWidth] it opens as a sheet
+  /// from the bottom instead, as popovers do on an iPhone.
+  beside,
+
+  /// In the control's place, on a window of any size: it grows out of the
+  /// control and covers it, from the control's edge nearest the window's
+  /// (one in a bar along the bottom opens upwards from it). For content a
+  /// bar opens out of itself, such as a menu of everything behind a tab.
+  over,
+}
+
 /// Content anchored to the control that opened it, as a popover on iPad:
 /// filters next to their button, a menu next to an action, a preview next
 /// to a row.
 ///
 /// Drawn by Flutter, it looks the same on every platform: in the custom
 /// chrome's popover surface ([AdaptiveChrome.popoverBuilder]) or else on
-/// [AdaptiveGlass]. It keeps to the half of a partly open foldable that
+/// [AdaptiveGlass]. Its surface grows out of the control and shrinks back
+/// into it, as the system's popovers and menus do, and its content fades in
+/// as the surface opens. It keeps to the half of a partly open foldable that
 /// holds its anchor, clear of the fold, and out of the iPhone Duo's vertical
-/// bar, opening beside it for a control in it. On a window narrower than
-/// [compactWidth] it opens as a sheet from the bottom instead, as popovers
-/// do on an iPhone.
+/// bar, opening beside it for a control in it.
 abstract final class AdaptivePopover {
   /// Narrower than this, a popover opens as a sheet.
   static const double compactWidth = 600;
@@ -44,13 +59,16 @@ abstract final class AdaptivePopover {
     Color barrierColor = const Color(0x14000000),
     String? barrierLabel,
     Object? chromeData,
+    AdaptivePopoverPlacement placement = AdaptivePopoverPlacement.beside,
   }) {
     final root = navigator != null
         ? Navigator.of(navigator.context, rootNavigator: true)
         : Navigator.of(anchor, rootNavigator: true);
     final rect = anchorRect ?? rectOf(anchor);
     final overlayContext = root.overlay?.context ?? root.context;
-    final compact = MediaQuery.sizeOf(overlayContext).width < compactWidth;
+    final compact =
+        placement == AdaptivePopoverPlacement.beside &&
+        MediaQuery.sizeOf(overlayContext).width < compactWidth;
     if (compact || rect == null) {
       return showModalBottomSheet<T>(
         context: root.context,
@@ -81,6 +99,7 @@ abstract final class AdaptivePopover {
         dismissible: barrierDismissible,
         color: barrierColor,
         data: chromeData,
+        placement: placement,
         label:
             barrierLabel ??
             MaterialLocalizations.of(anchor).modalBarrierDismissLabel,
@@ -119,15 +138,21 @@ abstract final class AdaptivePopover {
 /// The surface a popover or its sheet sits on: the custom chrome's, or
 /// glass.
 class _Surface extends StatelessWidget {
-  const _Surface({required this.sheet, required this.child, this.data});
+  const _Surface({required this.sheet, this.child, this.data});
 
   final bool sheet;
-  final Widget child;
+
+  /// The content; none for the surface of a popover, which grows on its own
+  /// with the content drawn over it.
+  final Widget? child;
   final Object? data;
 
   @override
   Widget build(BuildContext context) {
-    final content = Material(type: MaterialType.transparency, child: child);
+    final child = this.child;
+    final content = child == null
+        ? const SizedBox.expand()
+        : Material(type: MaterialType.transparency, child: child);
     final builder = AdaptiveChromeScope.chromeOf(context)?.popoverBuilder;
     if (builder != null) {
       return builder(
@@ -155,10 +180,12 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     required this.dismissible,
     required this.color,
     required this.label,
+    required this.placement,
     this.data,
   });
 
   final Object? data;
+  final AdaptivePopoverPlacement placement;
   final Rect anchor;
   final WidgetBuilder builder;
   final Size maxSize;
@@ -176,10 +203,10 @@ class _PopoverRoute<T> extends PopupRoute<T> {
   String? get barrierLabel => label;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 220);
+  Duration get transitionDuration => const Duration(milliseconds: 420);
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 160);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 260);
 
   @override
   Widget buildPage(
@@ -191,19 +218,23 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     return MediaQuery.removeViewInsets(
       context: context,
       removeBottom: false,
-      child: CustomSingleChildLayout(
-        delegate: _PopoverLayout(
+      child: _PopoverMorph(
+        animation: animation,
+        anchor: anchor,
+        reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+        layout: _PopoverLayout(
           anchor: anchor,
           maxSize: maxSize,
+          placement: placement,
           padding: MediaQuery.paddingOf(context),
           band: pose == null
               ? null
               : (onLeft: pose.onLeft, width: pose.bandWidth),
           fold: _foldOf(context),
         ),
-        child: _Surface(
-          sheet: false,
-          data: data,
+        surface: _Surface(sheet: false, data: data),
+        content: Material(
+          type: MaterialType.transparency,
           child: Builder(builder: builder),
         ),
       ),
@@ -216,23 +247,7 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) {
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
-      return FadeTransition(opacity: curved, child: child);
-    }
-    return FadeTransition(
-      opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.94, end: 1).animate(curved),
-        child: child,
-      ),
-    );
-  }
+  ) => child;
 
   /// The fold of a partly open foldable: the iPhone Duo's from the toolbar
   /// host, an Android hinge or half-opened fold from the media query.
@@ -261,10 +276,12 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
     required this.padding,
     required this.band,
     required this.fold,
+    this.placement = AdaptivePopoverPlacement.beside,
   });
 
   final Rect anchor;
   final Size maxSize;
+  final AdaptivePopoverPlacement placement;
   final EdgeInsets padding;
   final ({bool onLeft, double width})? band;
   final Rect? fold;
@@ -294,6 +311,16 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
               math.min(region.right, size.width - band.width - _gap),
               region.bottom,
             );
+    }
+    // Over its control it may take the control's own room above and below,
+    // which a bar along the top or bottom has within the window's padding.
+    if (placement == AdaptivePopoverPlacement.over) {
+      region = Rect.fromLTRB(
+        region.left,
+        math.min(region.top, anchor.top),
+        region.right,
+        math.max(region.bottom, anchor.bottom),
+      );
     }
     final fold = this.fold;
     if (fold != null) {
@@ -352,12 +379,26 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final region = _region(size);
-    double clampX(double x) =>
-        x.clamp(region.left, math.max(region.left, region.right - childSize.width));
+    double clampX(double x) => x.clamp(
+      region.left,
+      math.max(region.left, region.right - childSize.width),
+    );
     double clampY(double y) => y.clamp(
       region.top,
       math.max(region.top, region.bottom - childSize.height),
     );
+    if (placement == AdaptivePopoverPlacement.over) {
+      // From the control's edge nearest the window's: upwards from a bar
+      // along the bottom, downwards from one along the top.
+      final x = _inBand(size)
+          ? (band!.onLeft ? region.left : region.right - childSize.width)
+          : clampX(anchor.center.dx - childSize.width / 2);
+      final upwards = anchor.center.dy > size.height / 2;
+      return Offset(
+        x,
+        clampY(upwards ? anchor.bottom - childSize.height : anchor.top),
+      );
+    }
     if (_inBand(size)) {
       // Beside the vertical bar, level with the control.
       final x = band!.onLeft ? region.left : region.right - childSize.width;
@@ -377,10 +418,267 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
   @override
   bool shouldRelayout(_PopoverLayout oldDelegate) =>
       anchor != oldDelegate.anchor ||
+      placement != oldDelegate.placement ||
       maxSize != oldDelegate.maxSize ||
       padding != oldDelegate.padding ||
       band != oldDelegate.band ||
       fold != oldDelegate.fold;
+}
+
+/// A popover's [surface] growing out of its anchor into the place
+/// [layout] gives the [content], and shrinking back into it, with the
+/// content fading in as the surface opens.
+///
+/// The content is laid out once, at its own size, and only clipped to the
+/// growing surface, so it is not laid out again on every frame.
+class _PopoverMorph extends MultiChildRenderObjectWidget {
+  _PopoverMorph({
+    required this.animation,
+    required this.anchor,
+    required this.layout,
+    required this.reduceMotion,
+    required Widget surface,
+    required Widget content,
+  }) : super(children: <Widget>[surface, content]);
+
+  final Animation<double> animation;
+  final Rect anchor;
+  final _PopoverLayout layout;
+
+  /// Fades the popover in and out in place instead.
+  final bool reduceMotion;
+
+  @override
+  _RenderPopoverMorph createRenderObject(BuildContext context) =>
+      _RenderPopoverMorph(
+        animation: animation,
+        anchor: anchor,
+        layout: layout,
+        reduceMotion: reduceMotion,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPopoverMorph renderObject,
+  ) {
+    renderObject
+      ..animation = animation
+      ..anchor = anchor
+      ..placement = layout
+      ..reduceMotion = reduceMotion;
+  }
+}
+
+class _MorphParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPopoverMorph extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _MorphParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _MorphParentData> {
+  _RenderPopoverMorph({
+    required Animation<double> animation,
+    required Rect anchor,
+    required _PopoverLayout layout,
+    required bool reduceMotion,
+  }) : _animation = animation,
+       _anchor = anchor,
+       _layout = layout,
+       _reduceMotion = reduceMotion;
+
+  /// The surface overshoots its place a little and settles, as the system's
+  /// popovers do; it closes without.
+  static const Curve _grow = Cubic(0.2, 0.9, 0.3, 1.06);
+  static const Curve _shrink = Curves.easeInCubic;
+
+  /// The corners the content is clipped to while the surface grows.
+  static const double _radius = 20;
+
+  Animation<double> _animation;
+  set animation(Animation<double> value) {
+    if (identical(value, _animation)) return;
+    if (attached) _animation.removeListener(markNeedsLayout);
+    _animation = value;
+    if (attached) _animation.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  Rect _anchor;
+  set anchor(Rect value) {
+    if (value == _anchor) return;
+    _anchor = value;
+    markNeedsLayout();
+  }
+
+  _PopoverLayout _layout;
+  set placement(_PopoverLayout value) {
+    if (identical(value, _layout)) return;
+    final relayout = value.shouldRelayout(_layout);
+    _layout = value;
+    if (relayout) markNeedsLayout();
+  }
+
+  bool _reduceMotion;
+  set reduceMotion(bool value) {
+    if (value == _reduceMotion) return;
+    _reduceMotion = value;
+    markNeedsLayout();
+  }
+
+  Rect _target = Rect.zero;
+  Rect _surface = Rect.zero;
+
+  final LayerHandle<ClipRRectLayer> _clip = LayerHandle<ClipRRectLayer>();
+  final LayerHandle<TransformLayer> _transform = LayerHandle<TransformLayer>();
+  final LayerHandle<OpacityLayer> _opacity = LayerHandle<OpacityLayer>();
+
+  double get _t => _animation.value.clamp(0.0, 1.0);
+
+  bool get _closing => _animation.status == AnimationStatus.reverse;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _MorphParentData) {
+      child.parentData = _MorphParentData();
+    }
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsLayout);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    _transform.layer = null;
+    _opacity.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void performLayout() {
+    size = constraints.biggest;
+    final surface = firstChild!;
+    final content = childAfter(surface)!;
+    content.layout(
+      _layout.getConstraintsForChild(BoxConstraints.loose(size)),
+      parentUsesSize: true,
+    );
+    final offset = _layout.getPositionForChild(size, content.size);
+    (content.parentData! as _MorphParentData).offset = offset;
+    _target = offset & content.size;
+    final progress = (_closing ? _shrink : _grow).transform(_t);
+    _surface = _reduceMotion ? _target : Rect.lerp(_anchor, _target, progress)!;
+    surface.layout(
+      BoxConstraints.tight(
+        Size(math.max(0, _surface.width), math.max(0, _surface.height)),
+      ),
+    );
+    (surface.parentData! as _MorphParentData).offset = _surface.topLeft;
+  }
+
+  /// Where the content grows from: the point of its place nearest the
+  /// anchor.
+  Offset get _origin => Offset(
+    _anchor.center.dx.clamp(_target.left, _target.right),
+    _anchor.center.dy.clamp(_target.top, _target.bottom),
+  );
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final surface = firstChild!;
+    final content = childAfter(surface)!;
+    final t = _t;
+    if (t == 0) {
+      _clip.layer = null;
+      _transform.layer = null;
+      _opacity.layer = null;
+      return;
+    }
+    final surfaceData = surface.parentData! as _MorphParentData;
+    final contentData = content.parentData! as _MorphParentData;
+    if (_reduceMotion) {
+      context.paintChild(surface, offset + surfaceData.offset);
+      _clip.layer = null;
+      _transform.layer = null;
+      _opacity.layer = context.pushOpacity(
+        offset,
+        (t * 255).round(),
+        (context, offset) =>
+            context.paintChild(content, offset + contentData.offset),
+        oldLayer: _opacity.layer,
+      );
+      return;
+    }
+    context.paintChild(surface, offset + surfaceData.offset);
+    final reveal = _closing
+        ? Curves.easeIn.transform(((t - 0.35) / 0.65).clamp(0.0, 1.0))
+        : Curves.easeOut.transform(((t - 0.25) / 0.75).clamp(0.0, 1.0));
+    if (reveal == 0) {
+      _clip.layer = null;
+      _transform.layer = null;
+      _opacity.layer = null;
+      return;
+    }
+    final radius = math.min(_radius, _surface.shortestSide / 2);
+    final scale = 0.92 + 0.08 * Curves.easeOut.transform(t);
+    final origin = _origin;
+    final matrix = Matrix4.identity()
+      ..translateByDouble(origin.dx, origin.dy, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1)
+      ..translateByDouble(-origin.dx, -origin.dy, 0, 1);
+    _clip.layer = context.pushClipRRect(
+      needsCompositing,
+      offset,
+      _surface,
+      RRect.fromRectAndRadius(_surface, Radius.circular(radius)),
+      (context, offset) {
+        _transform.layer = context.pushTransform(
+          needsCompositing,
+          offset,
+          matrix,
+          (context, offset) {
+            _opacity.layer = context.pushOpacity(
+              offset,
+              (reveal * 255).round(),
+              (context, offset) =>
+                  context.paintChild(content, offset + contentData.offset),
+              oldLayer: _opacity.layer,
+            );
+          },
+          oldLayer: _transform.layer,
+        );
+      },
+      oldLayer: _clip.layer,
+    );
+  }
+
+  @override
+  bool hitTestSelf(Offset position) => _surface.contains(position);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    // Only the open popover's content takes taps; on its way in or out the
+    // surface takes them, so they reach neither the content nor what is
+    // behind it.
+    if (_animation.status != AnimationStatus.completed) return false;
+    final content = lastChild!;
+    final data = content.parentData! as _MorphParentData;
+    return result.addWithPaintOffset(
+      offset: data.offset,
+      position: position,
+      hitTest: (result, transformed) =>
+          content.hitTest(result, position: transformed),
+    );
+  }
 }
 
 /// A menu of [items] in a popover: a row per item, which pops the popover
@@ -393,7 +691,8 @@ class _PopoverMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textStyle = theme.textTheme.bodyLarge ?? const TextStyle(fontSize: 16);
+    final textStyle =
+        theme.textTheme.bodyLarge ?? const TextStyle(fontSize: 16);
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 200),
       child: IntrinsicWidth(

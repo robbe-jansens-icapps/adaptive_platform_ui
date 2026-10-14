@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: `AdaptivePopover` grows out of the control that opened it and shrinks back into it, as the system's popovers and menus do, with its content fading in as the surface opens; the content is laid out once and only takes taps once the popover is open. `AdaptivePopoverPlacement.over` opens it in the control's place on a window of any size, from the control's edge nearest the window's (upwards from a bar along the bottom, beside the iPhone Duo's vertical bar for a control in it), for content a bar opens out of itself
 * **IMPROVEMENT**: Custom chrome: the app's bars form a semantics container of their own, as a page's route does, so their controls are reported to accessibility services, and to UI test drivers, in their own place rather than merged into a node that spans the window
 * **FIX**: Custom chrome: the app's bars sit in a transparent `Material`, as a page's content does. Above the navigator they had none, so their text showed Flutter's yellow underlined fallback style and ink effects had nowhere to draw
 * **NEW**: `AdaptivePopover.show` and `showMenu` take `chromeData`, handed to the app's popover surface (`AdaptivePopoverSpec.data`), so one app can open popovers in more than one look

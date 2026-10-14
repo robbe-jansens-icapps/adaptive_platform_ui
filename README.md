@@ -335,9 +335,12 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
   state survives folding and rotating.
 - **Glass**: `AdaptiveGlass` is frosted glass in your colours, drawn by
   Flutter; sheets (`AdaptiveSheet`) and popovers take the chrome's.
-- **Popovers**: `AdaptivePopover.show` anchors content to a control, keeps to
-  the side of a fold that holds it and out of the iPhone Duo's bar, and is a
-  sheet on a compact window; the menus of your actions open that way.
+- **Popovers**: `AdaptivePopover.show` grows out of a control and shrinks back
+  into it, keeps to the side of a fold that holds it and out of the iPhone
+  Duo's bar, and is a sheet on a compact window; the menus of your actions
+  open that way. With `placement: AdaptivePopoverPlacement.over` it takes the
+  control's place instead, on any window: a bar that opens a menu out of
+  itself.
 - **Split views** (`AdaptiveSplitView`) work as with the native bars; a page
   in a column draws its own bar with your builders.
 

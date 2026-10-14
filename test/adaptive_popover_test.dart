@@ -99,6 +99,151 @@ void main() {
     expect(rect.left, greaterThanOrEqualTo(505 + AdaptivePopover.gap));
   });
 
+  testWidgets('its surface grows out of its control and shrinks back into it, and the content only takes taps once open', (tester) async {
+    window(tester, const Size(1000, 800));
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              Positioned(
+                left: 400,
+                top: 100,
+                child: Builder(
+                  builder: (context) => GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => AdaptivePopover.show<void>(
+                      anchor: context,
+                      builder: (_) => GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => taps++,
+                        child: const SizedBox(key: content, width: 200, height: 120),
+                      ),
+                    ),
+                    child: const SizedBox(key: ValueKey('button'), width: 44, height: 44),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final button = tester.getRect(find.byKey(const ValueKey('button')));
+    await tester.tap(find.byKey(const ValueKey('button')), warnIfMissed: false);
+    await tester.pump();
+    expect(tester.getRect(find.byType(AdaptiveGlass)), button);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tapAt(tester.getCenter(find.byKey(content)));
+    expect(taps, 0);
+    expect(find.byKey(content), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    final open = tester.getRect(find.byKey(content));
+    expect(tester.getRect(find.byType(AdaptiveGlass)), open);
+    await tester.tapAt(open.center);
+    expect(taps, 1);
+
+    Navigator.of(tester.element(find.byKey(content))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.getRect(find.byType(AdaptiveGlass)).width, lessThan(open.width));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveGlass), findsNothing);
+  });
+
+  testWidgets('over its control, it grows out of a bar along the bottom and covers it, on a compact window too', (tester) async {
+    window(tester, const Size(390, 844));
+    tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+    tester.view.viewPadding = const FakeViewPadding(top: 47, bottom: 34);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: [
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 20,
+                height: 64,
+                child: Builder(
+                  builder: (context) => GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => AdaptivePopover.show<void>(
+                      anchor: context,
+                      placement: AdaptivePopoverPlacement.over,
+                      maxSize: const Size(358, 600),
+                      builder: (_) => const SizedBox(key: content, width: 358, height: 400),
+                    ),
+                    child: const SizedBox.expand(key: ValueKey('bar')),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final bar = tester.getRect(find.byKey(const ValueKey('bar')));
+    await tester.tap(find.byKey(const ValueKey('bar')));
+    await tester.pump();
+    expect(tester.getRect(find.byType(AdaptiveGlass)), bar);
+    await tester.pump(const Duration(milliseconds: 60));
+    final growing = tester.getRect(find.byType(AdaptiveGlass));
+    expect(growing.bottom, closeTo(bar.bottom, 1));
+    expect(growing.height, greaterThan(bar.height));
+
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    final rect = tester.getRect(find.byKey(content));
+    expect(rect.bottom, bar.bottom);
+    expect(rect.center.dx, bar.center.dx);
+    expect(rect.height, 400);
+  });
+
+  testWidgets('over a control in the iPhone Duo\'s vertical bar, it grows beside the bar, from the control\'s bottom', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+    PlatformInfo.debugIOSVersionOverride = 26;
+    window(tester, const Size(466, 678));
+    tester.view.padding = const FakeViewPadding(right: 84);
+    tester.view.viewPadding = const FakeViewPadding(right: 84);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => AdaptiveToolbarHost(debugFold: duo(), child: child!),
+        home: Stack(
+          children: [
+            Positioned(
+              right: 18,
+              bottom: 24,
+              width: 48,
+              height: 260,
+              child: Builder(
+                builder: (context) => GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => AdaptivePopover.show<void>(
+                    anchor: context,
+                    placement: AdaptivePopoverPlacement.over,
+                    builder: (_) => const SizedBox(key: content, width: 300, height: 400),
+                  ),
+                  child: const SizedBox.expand(key: ValueKey('tabs')),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final tabs = tester.getRect(find.byKey(const ValueKey('tabs')));
+    await tester.tap(find.byKey(const ValueKey('tabs')));
+    await tester.pumpAndSettle();
+
+    final rect = tester.getRect(find.byKey(content));
+    expect(rect.bottom, tabs.bottom);
+    expect(rect.right, lessThanOrEqualTo(466 - 84 - kDuoVerticalBarBezelInset - AdaptivePopover.gap));
+  });
+
   testWidgets('showMenu resolves to the item picked; a tap outside closes it with nothing', (tester) async {
     window(tester, const Size(1000, 800));
     int? picked = -1;
