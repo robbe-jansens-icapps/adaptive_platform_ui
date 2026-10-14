@@ -444,9 +444,13 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// stage, for when it shows again.
   AdaptiveBottomNavigationBar? get _nativeTabBar {
     final bar = widget.bottomNavigationBar;
-    // Custom chrome draws any tab bar the page describes.
+    // Custom chrome draws any tab bar the page describes, and so does the
+    // iPhone Duo's vertical bar: the page's own bar would have nowhere to go.
     final custom = _customChrome != null;
-    if (bar == null || (!bar.useNativeBottomBar && !custom)) return null;
+    if (bar == null ||
+        (!bar.useNativeBottomBar && !custom && !_tabsInDuoBar)) {
+      return null;
+    }
     if (bar.items == null ||
         bar.items!.isEmpty ||
         bar.selectedIndex == null ||
@@ -473,8 +477,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// per dependency change, as the registry is.
   AdaptiveChrome? _customChrome;
 
+  /// Whether the toolbar host holds the controls and tabs in the iPhone
+  /// Duo's vertical bar, as of the last dependency change.
+  bool _tabsInDuoBar = false;
+
   void _syncToolbarEntry() {
     _customChrome = AdaptiveChromeScope.chromeOf(context);
+    _tabsInDuoBar =
+        _usesFixedToolbar(context) &&
+        (ToolbarChromeScope.maybeOf(context)?.hostsDuoControls ?? false);
     final registry = ToolbarRegistry.maybeOf(context);
     if (registry == null) return;
     final inColumn = AdaptiveSplitView.isInColumn(context);
@@ -883,8 +894,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                     : widget.body ?? const SizedBox.shrink(),
               ),
             ),
-            // Show tab bar at bottom for non-native cases
-            if (!PlatformInfo.isIOS26OrHigher() || !useNativeBottomBar) tabBar!,
+            // Show tab bar at bottom for non-native cases, unless the iPhone
+            // Duo's vertical bar holds the tabs.
+            if ((!PlatformInfo.isIOS26OrHigher() || !useNativeBottomBar) &&
+                !_tabsInTrailingBar(context))
+              tabBar!,
           ],
         );
 
