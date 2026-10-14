@@ -1297,7 +1297,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     if (appBar == null) {
       topInset = 0;
     } else if (pose != null && (hosted || controlsInBar)) {
-      topInset = hasTitle ? kDuoTitleBandHeight : 0;
+      // Without a title the page still keeps clear of the window's top edge,
+      // where the vertical bar pose has no inset: it starts level with the
+      // bar's first control.
+      topInset = hasTitle ? kDuoTitleBandHeight : kDuoBarEdgeMargin;
     } else if (strip != null && hosted) {
       // The bar is in the strip, or below it while the tabs are in it.
       topInset =

@@ -63,6 +63,36 @@ void main() {
       expect(tester.getRect(find.byKey(const ValueKey('body Tab 0'))).right, innerLandscape.width - 84);
     });
 
+    testWidgets('a page with a back button and no title keeps clear of the top edge, level with the bar\'s first control', (tester) async {
+      window(tester, cover, const FakeViewPadding(right: 84));
+      late EdgeInsets padding;
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          builder: (context, child) => AdaptiveToolbarHost(chrome: TestChrome.chrome, debugFold: duo(regions: [coverCluster]), child: child!),
+          home: const AdaptiveScaffold(appBar: AdaptiveAppBar(title: 'Start'), body: SizedBox.expand()),
+        ),
+      );
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdaptiveScaffold(
+            appBar: const AdaptiveAppBar(),
+            body: Builder(
+              builder: (context) {
+                padding = MediaQuery.paddingOf(context);
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('back'), findsOneWidget);
+      expect(padding.top, kDuoBarEdgeMargin);
+    });
+
     testWidgets('a pushed page\'s back button tops the bar, below the camera; the tabs leave', (tester) async {
       window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
       final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), hidesWhenPushed: true);
