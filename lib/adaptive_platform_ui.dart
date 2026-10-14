@@ -102,6 +102,7 @@ export 'src/widgets/adaptive_floating_action_button.dart';
 export 'src/widgets/adaptive_form_section.dart';
 export 'src/widgets/adaptive_expansion_tile.dart';
 export 'src/widgets/adaptive_blur_view.dart';
+export 'src/widgets/adaptive_glass.dart';
 export 'src/widgets/sheet/adaptive_sheet.dart';
 export 'src/widgets/sheet/adaptive_sheet_detent.dart';
 
