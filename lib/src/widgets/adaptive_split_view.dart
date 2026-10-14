@@ -773,11 +773,23 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
           child: ToolbarChromeScope(
             hostsToolbar: false,
             hostsDuoControls: duoControls,
-            child: MediaQuery.removePadding(
-              context: context,
-              removeLeft: removeLeft,
-              removeRight: removeRight,
-              child: child,
+            // A column is the window its pages have: they lay out for its
+            // width, as a column of a split view controller has a compact
+            // width of its own.
+            child: LayoutBuilder(
+              builder: (context, constraints) => MediaQuery.removePadding(
+                context: context,
+                removeLeft: removeLeft,
+                removeRight: removeRight,
+                child: Builder(
+                  builder: (context) => MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(size: constraints.biggest),
+                    child: child,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

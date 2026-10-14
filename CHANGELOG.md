@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: Each column of an `AdaptiveSplitView` is the window its pages have: their media query has the column's size, so a page beside another lays out for its own width (a phone's layout in a 380 point column), as a column of a split view controller has a compact width of its own
 * **NEW**: `TabBarMinimizeBehavior.onScrollDownUntilTop` minimizes the tab bar as the page scrolls down and keeps it minimized until the page is back at its top, rather than restoring it on any scroll up. The native tab bar, which has no such behavior, minimizes on scrolling down
 * **IMPROVEMENT**: Custom chrome hands the tab layout's `minimizeBehavior` to the app's tab bar (`AdaptiveTabBarSpec.minimized`), which draws its own smaller form while the page scrolls, instead of the host scaling it to 70% and half its opacity. Picking another tab brings any minimized tab bar back at full size
 * **FIX**: `minimizeBehavior` no longer minimizes the tab bar while a carousel or pager scrolls sideways; only the page scrolling up and down does

@@ -77,6 +77,8 @@ class FadingTabs extends StatelessWidget {
 }
 
 void main() {
+  _columnSizes();
+
   void setSize(WidgetTester tester, Size size) {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -280,5 +282,30 @@ void main() {
 
       expect(pushed, isEmpty);
     });
+  });
+}
+
+void _columnSizes() {
+  testWidgets('each column is the window its pages have: they lay out for its width', (tester) async {
+    tester.view.physicalSize = wide;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Size? list;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AdaptiveSplitView(
+          onGenerateDetailRoute: onGenerateRoute,
+          master: Builder(
+            builder: (context) {
+              list = MediaQuery.sizeOf(context);
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(list!.width, closeTo(wide.width * 0.38, 0.5));
+    expect(list!.height, wide.height);
   });
 }
