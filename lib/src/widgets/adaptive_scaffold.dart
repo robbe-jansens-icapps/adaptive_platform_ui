@@ -17,6 +17,7 @@ import 'adaptive_app_bar_action.dart';
 import 'adaptive_badge.dart';
 import 'adaptive_bottom_navigation_bar.dart';
 import 'adaptive_button.dart';
+import 'adaptive_popover.dart';
 import 'adaptive_split_view.dart';
 import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
@@ -1354,7 +1355,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           ? chrome.metrics.toolbarHeight
           : strip.overhang;
     } else {
-      topInset = chrome.metrics.toolbarHeight;
+      topInset =
+          chrome.metrics.toolbarHeight +
+          (ownBar && AdaptivePopover.isIn(context)
+              ? AdaptivePopover.barInset
+              : 0);
     }
 
     final tabs = _nativeTabBar;
@@ -2062,7 +2067,11 @@ class _CustomInlineBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final top = MediaQuery.paddingOf(context).top;
+    final top =
+        MediaQuery.paddingOf(context).top +
+        (!titleBand && AdaptivePopover.isIn(context)
+            ? AdaptivePopover.barInset
+            : 0);
     final metrics = chrome.metrics;
     final height = titleBand
         ? kDuoTitleBandHeight

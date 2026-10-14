@@ -88,6 +88,34 @@ void main() {
     expect(rect.center.dy, 142);
   });
 
+  testWidgets('its content keeps none of the window\'s padding, as it sits inside the safe area', (tester) async {
+    window(tester, const Size(1000, 800));
+    tester.view.padding = const FakeViewPadding(top: 24, bottom: 20, left: 10, right: 10);
+    EdgeInsets? padding;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => AdaptivePopover.show<void>(
+              anchor: context,
+              anchorRect: const Rect.fromLTWH(400, 100, 44, 44),
+              builder: (context) {
+                padding = MediaQuery.paddingOf(context);
+                return const SizedBox(width: 200, height: 120);
+              },
+            ),
+            child: const SizedBox.expand(key: ValueKey('button')),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('button')));
+    await tester.pumpAndSettle();
+    expect(padding, EdgeInsets.zero);
+  });
+
   testWidgets('opens as a sheet from the bottom on a compact window', (tester) async {
     window(tester, const Size(390, 844));
     await pumpButton(tester, const Offset(100, 100));
@@ -320,6 +348,27 @@ void main() {
     await tester.tap(find.text('Oldest'));
     await tester.pumpAndSettle();
     expect(selected, [1]);
+  });
+
+  testWidgets('a page in a popover keeps its bar clear of the popover\'s rounded top, its content below the bar', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+    window(tester, const Size(1000, 800));
+    tester.view.padding = const FakeViewPadding(top: 24);
+    final tabs = TabsFixture();
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    AdaptivePopover.show<void>(
+      anchor: tabs.navigators[0].currentContext!,
+      anchorRect: const Rect.fromLTWH(400, 100, 44, 44),
+      builder: (_) => SizedBox(key: content, width: 300, height: 300, child: tabs.pageWidget('Pop')),
+    );
+    await tester.pumpAndSettle();
+
+    final surface = tester.getRect(find.byKey(content));
+    final title = tester.getRect(find.text('title:Pop'));
+    expect(title.center.dy - surface.top, AdaptivePopover.barInset + TestChrome.chrome.metrics.toolbarHeight / 2);
+    expect(tabs.paddingOf('Pop').top, AdaptivePopover.barInset + TestChrome.chrome.metrics.toolbarHeight);
   });
 
   testWidgets('the overflow control of the iPhone Duo bar opens its menu beside the bar', (tester) async {

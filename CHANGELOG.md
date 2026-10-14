@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **FIX**: `AdaptivePopover`: its content no longer keeps the window's padding. A page in a popover (a bar, a list) left room for the status bar at its top, an empty band above its title, though the popover sits inside the safe area. A page's bar in a popover or its sheet keeps `AdaptivePopover.barInset` above itself instead, clear of the surface's rounded corners, with the page's content below it (`AdaptivePopover.isIn`)
 * **FIX**: Custom chrome: a title at the leading edge with no control beside it lines up with the page's 16 point margin, in the hosted bar and in the bar inside a column, sheet or popover, where it sat 12 points further in (`kToolbarTitleSpacing`, the room kept between a title and the controls beside it)
 * **IMPROVEMENT**: `AdaptivePopover` too tall to open above or below its control opens beside it, on the side with more room and level with it, so it still comes out of the control instead of covering it
 * **IMPROVEMENT**: Custom chrome: a tab accessory with a frame (`AdaptiveChrome.accessoryBuilder`) floating at the bottom of the content gets the content's whole width and its frame places it, such as a small video in the corner beside the iPhone Duo's vertical bar. One without a frame is centred at most `kFloatingAccessoryMaxWidth` wide, as before

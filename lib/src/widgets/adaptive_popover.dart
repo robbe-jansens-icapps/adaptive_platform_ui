@@ -41,6 +41,14 @@ abstract final class AdaptivePopover {
   /// Room kept between the popover and its anchor, and the window's edges.
   static const double gap = 8;
 
+  /// Room a page's bar keeps above itself at the top of a popover or its
+  /// sheet, clear of the surface's rounded corners.
+  static const double barInset = 8;
+
+  /// Whether [context] is in the content of a popover or its sheet.
+  static bool isIn(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_PopoverScope>() != null;
+
   /// Shows [builder]'s content anchored to [anchor], a control on screen,
   /// or to [anchorRect] in global coordinates. Resolves to what the content
   /// pops with.
@@ -79,7 +87,9 @@ abstract final class AdaptivePopover {
         builder: (context) => _Surface(
           sheet: true,
           data: chromeData,
-          child: SafeArea(top: false, child: builder(context)),
+          child: _PopoverScope(
+            child: SafeArea(top: false, child: builder(context)),
+          ),
         ),
       );
     }
@@ -132,6 +142,13 @@ abstract final class AdaptivePopover {
     if (box is! RenderBox || !box.hasSize || !box.attached) return null;
     return box.localToGlobal(Offset.zero) & box.size;
   }
+}
+
+class _PopoverScope extends InheritedWidget {
+  const _PopoverScope({required super.child});
+
+  @override
+  bool updateShouldNotify(_PopoverScope oldWidget) => false;
 }
 
 /// The surface a popover or its sheet sits on: the custom chrome's, or
@@ -232,9 +249,19 @@ class _PopoverRoute<T> extends PopupRoute<T> {
           fold: FoldScope.foldOf(context),
         ),
         surface: _Surface(sheet: false, data: data),
-        content: Material(
-          type: MaterialType.transparency,
-          child: Builder(builder: builder),
+        // The popover sits inside the window's safe area, so its content
+        // keeps none of the window's padding (the status bar, the home
+        // indicator) for itself.
+        content: MediaQuery.removePadding(
+          context: context,
+          removeLeft: true,
+          removeTop: true,
+          removeRight: true,
+          removeBottom: true,
+          child: Material(
+            type: MaterialType.transparency,
+            child: _PopoverScope(child: Builder(builder: builder)),
+          ),
         ),
       ),
     );
