@@ -46,9 +46,30 @@ export 'src/widgets/adaptive_app.dart';
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
-export 'src/toolbar/duo_top_strip.dart' show DuoTopStrip, DuoTopStripScope;
+export 'src/toolbar/duo_top_strip.dart'
+    show
+        DuoTopStrip,
+        DuoTopStripScope,
+        kDuoStatusClusterFallbackWidth,
+        kDuoTopStripBarHeight;
 export 'src/toolbar/duo_vertical_bar.dart'
-    show DuoBarSide, DuoLayout, DuoPose, DuoPoseScope;
+    show
+        DuoBarSide,
+        DuoLayout,
+        DuoPose,
+        DuoPoseScope,
+        DuoTitleBackdrop,
+        kDuoBarBottomMargin,
+        kDuoBarEdgeMargin,
+        kDuoBarGroupSpacing,
+        kDuoBarOnlyTopMargin,
+        kDuoBarRegionGap,
+        kDuoStatusClusterFallbackHeight,
+        kDuoTitleBandHeight,
+        kDuoVerticalBarBezelInset,
+        kDuoVerticalBarWidth;
+export 'src/toolbar/fold_scope.dart';
+export 'src/toolbar/hosted_top_toolbar.dart' show kHostedToolbarHeight;
 export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
 export 'src/widgets/adaptive_app_bar.dart';
