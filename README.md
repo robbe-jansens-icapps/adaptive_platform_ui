@@ -272,6 +272,21 @@ AdaptiveAppBarAction(
 )
 ```
 
+- **Folds.** `FoldScope.foldOf(context)` gives the fold of a partly open
+  foldable, the iPhone Duo's (which iOS does not put in the media query) or
+  an Android hinge or half-opened fold. `AdaptiveTwoPane` lays two panes of
+  a full screen page out around it: side by side on a book, above and below
+  on a table (a video above the fold, its chat below), and by a proportion
+  without a fold. The panes keep their state as the device folds:
+
+```dart
+AdaptiveTwoPane(
+  direction: Axis.vertical, // without a fold
+  start: player,
+  end: showsChat || AdaptiveTwoPane.hasFoldAcross(context) ? chat : null,
+)
+```
+
 Not using `AdaptiveApp`? Install the host yourself, around the navigator
 (see [Migrating to 1.0.0](#migrating-to-100)):
 

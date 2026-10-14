@@ -1,3 +1,5 @@
+import 'dart:ui' show DisplayFeatureState, DisplayFeatureType;
+
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
@@ -26,6 +28,22 @@ class FoldScope extends InheritedWidget {
 
   static Rect? hingeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<FoldScope>()?.hinge;
+
+  /// The fold of a partly open foldable, in window coordinates: the iPhone
+  /// Duo's from the toolbar host, an Android hinge or half-opened fold from
+  /// the media query. Null while the device lies flat or has no fold.
+  static Rect? foldOf(BuildContext context) {
+    final hinge = hingeOf(context);
+    if (hinge != null) return hinge;
+    for (final feature in MediaQuery.displayFeaturesOf(context)) {
+      if (feature.type == DisplayFeatureType.hinge ||
+          (feature.type == DisplayFeatureType.fold &&
+              feature.state == DisplayFeatureState.postureHalfOpened)) {
+        return feature.bounds;
+      }
+    }
+    return null;
+  }
 
   @override
   bool updateShouldNotify(FoldScope oldWidget) => hinge != oldWidget.hinge;

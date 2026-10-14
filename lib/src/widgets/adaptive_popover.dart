@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' show DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -230,7 +229,7 @@ class _PopoverRoute<T> extends PopupRoute<T> {
           band: pose == null
               ? null
               : (onLeft: pose.onLeft, width: pose.bandWidth),
-          fold: _foldOf(context),
+          fold: FoldScope.foldOf(context),
         ),
         surface: _Surface(sheet: false, data: data),
         content: Material(
@@ -249,20 +248,6 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     Widget child,
   ) => child;
 
-  /// The fold of a partly open foldable: the iPhone Duo's from the toolbar
-  /// host, an Android hinge or half-opened fold from the media query.
-  static Rect? _foldOf(BuildContext context) {
-    final hinge = FoldScope.hingeOf(context);
-    if (hinge != null) return hinge;
-    for (final feature in MediaQuery.displayFeaturesOf(context)) {
-      if (feature.type == DisplayFeatureType.hinge ||
-          (feature.type == DisplayFeatureType.fold &&
-              feature.state == DisplayFeatureState.postureHalfOpened)) {
-        return feature.bounds;
-      }
-    }
-    return null;
-  }
 }
 
 /// Places a popover next to its anchor: below it, or above it when there is
