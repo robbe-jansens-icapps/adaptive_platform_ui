@@ -433,7 +433,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         oldWidget.backgroundColor != widget.backgroundColor) {
       _syncToolbarEntry();
     }
-    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never) {
+    // Another tab shows a page of its own: the bar is back at full size.
+    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never ||
+        oldWidget.bottomNavigationBar?.selectedIndex !=
+            widget.bottomNavigationBar?.selectedIndex) {
       _tabBarMinimized.value = false;
     }
   }
@@ -1694,6 +1697,8 @@ bool? _tabBarMinimizedAfter(
   if (notification is! ScrollUpdateNotification) return null;
   final delta = notification.scrollDelta ?? 0;
   final metrics = notification.metrics;
+  // A carousel or a pager scrolling sideways says nothing about the page.
+  if (metrics.axis != Axis.vertical) return null;
 
   // Check if we're in overscroll territory (pull-to-refresh or bottom bounce)
   // When pixels < minScrollExtent, user is pulling down beyond top (overscroll)

@@ -42,6 +42,7 @@ class AdaptiveTabBarSpec {
     required this.items,
     required this.selectedIndex,
     required this.onTap,
+    this.minimized = const AlwaysStoppedListenable<bool>(false),
     this.data,
   });
 
@@ -49,6 +50,11 @@ class AdaptiveTabBarSpec {
   final List<AdaptiveNavigationDestination> items;
   final int selectedIndex;
   final ValueChanged<int> onTap;
+
+  /// Whether the bar should make itself smaller for now, as the tab layout's
+  /// `AdaptiveScaffold.minimizeBehavior` asks while its page scrolls. The
+  /// app's bar draws that itself; the host does not shrink it.
+  final ValueListenable<bool> minimized;
 
   /// [AdaptiveBottomNavigationBar.chromeData], for the app's own settings.
   final Object? data;

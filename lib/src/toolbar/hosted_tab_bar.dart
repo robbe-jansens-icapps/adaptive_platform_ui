@@ -268,17 +268,17 @@ class _HostedTabBarState extends State<HostedTabBar> {
     }
     final tabs = placement == AdaptiveChromePlacement.vertical
         ? null
-        : _Minimizable(
-            minimized: entry.tabBarMinimized,
-            child: chrome.tabBarBuilder(
-              context,
-              AdaptiveTabBarSpec(
-                placement: placement,
-                items: bar.items!,
-                selectedIndex: bar.selectedIndex!,
-                onTap: bar.onTap!,
-                data: bar.chromeData,
-              ),
+        : chrome.tabBarBuilder(
+            context,
+            AdaptiveTabBarSpec(
+              placement: placement,
+              items: bar.items!,
+              selectedIndex: bar.selectedIndex!,
+              onTap: bar.onTap!,
+              minimized:
+                  entry.tabBarMinimized ??
+                  const AlwaysStoppedListenable<bool>(false),
+              data: bar.chromeData,
             ),
           );
     final children = <Widget>[];
