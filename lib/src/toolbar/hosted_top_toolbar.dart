@@ -798,9 +798,12 @@ class _CustomBar extends StatelessWidget {
             child: customLeading,
           )
         : SizedBox(
-            width: content.impliesBack ? start + metrics.backButtonSize : start,
+            width: content.impliesBack
+                ? start + metrics.backButtonSize
+                : start - kToolbarTitleSpacing,
           );
     final actions = content.actions;
+    final end = 16 + (strip?.clusterRight ?? 0.0);
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
@@ -810,7 +813,7 @@ class _CustomBar extends StatelessWidget {
           middle: title,
           trailing: Padding(
             padding: EdgeInsetsDirectional.only(
-              end: 16 + (strip?.clusterRight ?? 0),
+              end: actions.isEmpty ? end - kToolbarTitleSpacing : end,
             ),
             child: actions.isEmpty
                 ? null
@@ -829,7 +832,7 @@ class _CustomBar extends StatelessWidget {
                   ),
           ),
           centerMiddle: chrome.centersTitle(defaultTargetPlatform),
-          middleSpacing: 12,
+          middleSpacing: kToolbarTitleSpacing,
         ),
       ),
     );

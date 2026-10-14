@@ -301,7 +301,11 @@ class _HostedTabBarState extends State<HostedTabBar> {
           ),
         );
       }
-      if (accessory != null) children.add(_floating(accessory));
+      if (accessory != null) {
+        children.add(
+          _floating(accessory, framed: chrome.accessoryBuilder != null),
+        );
+      }
     } else {
       children.add(
         Positioned(
@@ -374,7 +378,11 @@ class _HostedTabBarState extends State<HostedTabBar> {
   /// The accessory floating at the bottom of the content, where the tabs are
   /// not at the bottom: beside the iPhone Duo's vertical bar, or below a page
   /// with its tabs in the top strip. Its height is the room the pages keep.
-  Widget _floating(Widget accessory) {
+  ///
+  /// A [framed] accessory gets the whole width of the content and its frame
+  /// places it there; one without a frame is centred, at most
+  /// [kFloatingAccessoryMaxWidth] wide.
+  Widget _floating(Widget accessory, {required bool framed}) {
     final pose = DuoPoseScope.of(context);
     final band = pose?.bandWidth ?? 0;
     final onLeft = pose?.onLeft ?? false;
@@ -386,20 +394,24 @@ class _HostedTabBarState extends State<HostedTabBar> {
       left: kFloatingAccessoryMargin + (onLeft ? band : 0),
       right: kFloatingAccessoryMargin + (onLeft ? 0 : band),
       bottom: bottom,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: kFloatingAccessoryMaxWidth,
-          ),
-          child: SizeReporter(
-            onSizeChanged: (size) =>
-                widget.accessoryHeight?.value = size.height + bottom,
-            child: accessory,
-          ),
-        ),
-      ),
+      child: framed
+          ? _reportingHeight(accessory, bottom)
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: kFloatingAccessoryMaxWidth,
+                ),
+                child: _reportingHeight(accessory, bottom),
+              ),
+            ),
     );
   }
+
+  Widget _reportingHeight(Widget accessory, double bottom) => SizeReporter(
+    onSizeChanged: (size) =>
+        widget.accessoryHeight?.value = size.height + bottom,
+    child: accessory,
+  );
 
   /// The tabs of one tab layout in the sidebar along the leading edge,
   /// easing between a rail of icons and its full width.

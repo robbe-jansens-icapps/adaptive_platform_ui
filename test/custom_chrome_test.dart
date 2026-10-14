@@ -237,6 +237,18 @@ void main() {
     expect(leading.centersTitle(TargetPlatform.iOS), isFalse);
   });
 
+  testWidgets('a title at the leading edge with nothing beside it lines up with the page\'s 16 point margin', (tester) async {
+    phone(tester);
+    final tabs = TabsFixture(chrome: TestChrome.build(centerTitle: false));
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('title:Tab 0')).left, 16);
+
+    tabs.push(0, 'Detail');
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('title:Detail')).left, greaterThan(16 + 44));
+  });
+
   testWidgets('the app\'s bars get a Material, as a page gives its content, for ink and text styles', (tester) async {
     phone(tester);
     final tabs = TabsFixture();

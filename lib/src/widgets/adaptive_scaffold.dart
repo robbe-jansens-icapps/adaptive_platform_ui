@@ -2110,7 +2110,11 @@ class _CustomInlineBar extends StatelessWidget {
             padding: EdgeInsets.only(top: top),
             child: NavigationToolbar(
               leading: Padding(
-                padding: const EdgeInsetsDirectional.only(start: 16),
+                padding: EdgeInsetsDirectional.only(
+                  start: leading != null || impliesBack
+                      ? 16
+                      : 16 - kToolbarTitleSpacing,
+                ),
                 child:
                     leading ??
                     (impliesBack
@@ -2135,7 +2139,7 @@ class _CustomInlineBar extends StatelessWidget {
               ),
               middle: title,
               trailing: actions.isEmpty
-                  ? null
+                  ? const SizedBox(width: 16 - kToolbarTitleSpacing)
                   : Padding(
                       padding: const EdgeInsetsDirectional.only(end: 16),
                       child: chrome.actionsBuilder(
@@ -2151,7 +2155,7 @@ class _CustomInlineBar extends StatelessWidget {
                       ),
                     ),
               centerMiddle: centered,
-              middleSpacing: 12,
+              middleSpacing: kToolbarTitleSpacing,
             ),
           ),
         ],

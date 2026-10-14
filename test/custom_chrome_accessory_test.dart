@@ -1,4 +1,5 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/toolbar/hosted_tab_bar.dart' show kFloatingAccessoryMaxWidth;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,11 +71,26 @@ void main() {
 
     final rect = tester.getRect(accessory());
     expect(rect.bottom, innerLandscape.height - 34);
-    expect(rect.right, lessThanOrEqualTo(innerLandscape.width - (84 + kDuoVerticalBarBezelInset) - 12));
-    expect(rect.width, lessThanOrEqualTo(420));
+    expect(rect.left, 12);
+    expect(rect.right, innerLandscape.width - (84 + kDuoVerticalBarBezelInset) - 12);
     expect(tabs.paddingOf('Tab 0').bottom, 50 + 34);
     expect(TestChrome.lastAccessorySpec!.placement, AdaptiveChromePlacement.vertical);
     expect(TestChrome.lastAccessorySpec!.compact, isTrue);
+  });
+
+  testWidgets('without a frame it floats centred in the content, at most kFloatingAccessoryMaxWidth wide', (tester) async {
+    window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+    addTearDown(tester.view.reset);
+    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory());
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    final rect = tester.getRect(accessory());
+    final contentRight = innerLandscape.width - (84 + kDuoVerticalBarBezelInset) - 12;
+    expect(rect.width, lessThanOrEqualTo(kFloatingAccessoryMaxWidth));
+    expect(rect.center.dx, closeTo((12 + contentRight) / 2, 0.5));
+    expect(rect.bottom, innerLandscape.height - 34);
+    expect(tabs.paddingOf('Tab 0').bottom, 50 + 34);
   });
 
   testWidgets('in a sidebar it is handed to the sidebar, framed, and the pages keep nothing at the bottom', (tester) async {

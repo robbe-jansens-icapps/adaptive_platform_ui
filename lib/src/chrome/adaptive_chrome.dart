@@ -527,3 +527,8 @@ abstract final class AdaptiveScrollEdge {
     return (under / distance).clamp(0.0, 1.0);
   }
 }
+
+/// The room between a custom bar's title and the controls beside it. A
+/// title with no control beside it keeps to the bar's margin instead, in line
+/// with the page's content.
+const double kToolbarTitleSpacing = 12;

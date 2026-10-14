@@ -394,6 +394,20 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
     if (below + childSize.height <= region.bottom) return Offset(x, below);
     final above = anchor.top - _gap - childSize.height;
     if (above >= region.top) return Offset(x, above);
+    // Too tall for either: beside the control, on the side with more room,
+    // so it still comes out of the control instead of covering it.
+    final left = anchor.left - _gap - childSize.width;
+    final right = anchor.right + _gap;
+    final fitsLeft = left >= region.left;
+    final fitsRight = right + childSize.width <= region.right;
+    if (fitsLeft || fitsRight) {
+      final roomLeft = anchor.left - region.left;
+      final roomRight = region.right - anchor.right;
+      final side = fitsLeft && (!fitsRight || roomLeft >= roomRight)
+          ? left
+          : right;
+      return Offset(side, clampY(anchor.center.dy - childSize.height / 2));
+    }
     // No room either way: where there is more, kept on screen.
     final roomBelow = region.bottom - anchor.bottom;
     final roomAbove = anchor.top - region.top;

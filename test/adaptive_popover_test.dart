@@ -79,6 +79,15 @@ void main() {
     expect(rect.left, AdaptivePopover.gap);
   });
 
+  testWidgets('too tall for above or below its control, it opens beside it, on the side with more room', (tester) async {
+    window(tester, const Size(1000, 280));
+    await pumpButton(tester, const Offset(800, 120));
+
+    final rect = await open(tester);
+    expect(rect.right, 800 - AdaptivePopover.gap);
+    expect(rect.center.dy, 142);
+  });
+
   testWidgets('opens as a sheet from the bottom on a compact window', (tester) async {
     window(tester, const Size(390, 844));
     await pumpButton(tester, const Offset(100, 100));
