@@ -25,6 +25,9 @@ class ToolbarEntry {
     this.tabBarMinimized,
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
+    this.scrollEdge,
+    this.bottomScrollEdge,
+    this.backgroundColor,
   });
 
   /// Identifies the registering scaffold instance.
@@ -81,6 +84,19 @@ class ToolbarEntry {
   /// Whether the hosted [tabBar] is shrunk out of the way of the content, as
   /// the scaffold's `minimizeBehavior` asks when its page scrolls.
   final ValueListenable<bool>? tabBarMinimized;
+
+  /// How far the page's content has scrolled under the bars along its top,
+  /// from 0 to 1 (see `AdaptiveScrollEdge`), where the page tracks it: with
+  /// custom chrome.
+  final ValueListenable<double>? scrollEdge;
+
+  /// The same along the bottom: how much of the page's content runs under
+  /// the bars there, from 0 to 1.
+  final ValueListenable<double>? bottomScrollEdge;
+
+  /// The colour of the page (`AdaptiveScaffold.backgroundColor`), for the
+  /// chrome around it to match.
+  final Color? backgroundColor;
 
   /// Whether the registering scaffold shows a tab bar. Such a scaffold is the
   /// root of a tab layout and never gets an automatic back button.
@@ -170,6 +186,11 @@ class ToolbarRegistry extends ChangeNotifier {
   /// detail pane of a two-pane layout is (#173). Null when [entry] is
   /// outside any tab layout, such as a page pushed on top of the tabs, which
   /// hides the tab bar the way UIKit does.
+  ///
+  /// Tabs that leave while a page is pushed inside them
+  /// ([AdaptiveBottomNavigationBar.hidesWhenPushed]) belong with no page
+  /// pushed on the navigator of a tab, unless [keepsTabsOnPush] says the tabs
+  /// stay, as a sidebar does.
   ToolbarEntry? tabBarOwnerFor(ToolbarEntry? entry) {
     if (entry == null) return null;
     if (entry.hasTabBar) return entry;
@@ -178,13 +199,35 @@ class ToolbarRegistry extends ChangeNotifier {
       if (!candidate.hasTabBar || candidate.route == null) continue;
       // The tabs are in the page's own route (an IndexedStack of tabs) or in
       // a route around its navigator (a shell route).
-      if (candidate.route == entry.route ||
-          entry.enclosingRoutes.contains(candidate.route)) {
-        return candidate;
+      if (candidate.route == entry.route) return candidate;
+      final depth = entry.enclosingRoutes.indexOf(candidate.route!);
+      if (depth < 0) continue;
+      if (!keepsTabsOnPush &&
+          (candidate.tabBar?.hidesWhenPushed ?? false) &&
+          isPushedWithin(entry, depth)) {
+        return null;
       }
+      return candidate;
     }
     return null;
   }
+
+  /// Whether [entry] is a page pushed on a navigator inside the route at
+  /// [depth] of its [ToolbarEntry.enclosingRoutes], rather than the first
+  /// page of every navigator in between: a page opened on a tab, rather than
+  /// the tab itself.
+  static bool isPushedWithin(ToolbarEntry entry, int depth) {
+    if (!(entry.route?.isFirst ?? true)) return true;
+    for (var i = 0; i < depth; i++) {
+      if (!entry.enclosingRoutes[i].isFirst) return true;
+    }
+    return false;
+  }
+
+  /// Whether the tabs of every tab layout stay while pages are pushed inside
+  /// it, whatever [AdaptiveBottomNavigationBar.hidesWhenPushed] says: set by
+  /// the host while its tabs are in a sidebar.
+  bool keepsTabsOnPush = false;
 
   /// The latest version of the entry registered under [id], if still mounted.
   ToolbarEntry? byId(Object id) {

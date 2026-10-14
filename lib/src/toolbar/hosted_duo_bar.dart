@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
@@ -11,11 +12,21 @@ import 'toolbar_registry.dart';
 /// The one vertical bar of the app. It never moves; only its controls follow
 /// the page that owns the chrome, blended as [ToolbarBlend] dictates. A back
 /// button that both pages show stays put instead of fading out and in.
+///
+/// With [chrome] its controls and tabs are the app's own.
 class HostedDuoBar extends StatelessWidget {
-  const HostedDuoBar({super.key, required this.blend, required this.regions});
+  const HostedDuoBar({
+    super.key,
+    required this.blend,
+    required this.regions,
+    this.chrome,
+  });
 
   final ToolbarBlend blend;
   final List<ReservedRegion> regions;
+
+  /// The app's own bars, if any.
+  final AdaptiveChrome? chrome;
 
   @override
   Widget build(BuildContext context) {
@@ -106,11 +117,25 @@ class HostedDuoBar extends StatelessWidget {
                   child: IgnorePointer(
                     ignoring: !interactive,
                     child: DuoVerticalBar(
-                      leading: DuoBarBackButton(
-                        onPressed: content.back,
-                        close:
-                            content.backStyle == AdaptiveBackButtonStyle.close,
-                      ),
+                      leading: chrome == null
+                          ? DuoBarBackButton(
+                              onPressed: content.back,
+                              close:
+                                  content.backStyle ==
+                                  AdaptiveBackButtonStyle.close,
+                            )
+                          : SizedBox.square(
+                              dimension: IOS26GlassCapsule.width,
+                              child: chrome!.backButtonBuilder(
+                                context,
+                                AdaptiveBackButtonSpec(
+                                  placement: AdaptiveChromePlacement.vertical,
+                                  style: content.backStyle,
+                                  onPressed: content.back,
+                                  data: content.data,
+                                ),
+                              ),
+                            ),
                       regions: regions,
                     ),
                   ),
@@ -123,7 +148,11 @@ class HostedDuoBar extends StatelessWidget {
                 alwaysIncludeSemantics: true,
                 child: ExcludeSemantics(
                   excluding: tabs.id != upperTabs?.id,
-                  child: DuoVerticalBar(tabBar: tabs.tabBar, regions: regions),
+                  child: DuoVerticalBar(
+                    tabBar: tabs.tabBar,
+                    regions: regions,
+                    chrome: chrome,
+                  ),
                 ),
               ),
           ],
@@ -162,6 +191,8 @@ class HostedDuoBar extends StatelessWidget {
             tint: content.tint,
             regions: regions,
             navigator: content.navigator,
+            chrome: chrome,
+            chromeData: content.data,
           ),
         ),
       ),
@@ -179,6 +210,7 @@ class _BarContent {
     this.tint,
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
+    this.data,
   });
 
   /// No page owns the chrome (a page without an [AdaptiveScaffold] is in
@@ -198,6 +230,7 @@ class _BarContent {
       tint: appBar.tintColor,
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
+      data: appBar.chromeData,
     );
   }
 
@@ -208,6 +241,9 @@ class _BarContent {
   final Color? tint;
   final VoidCallback? onBack;
   final AdaptiveBackButtonStyle backStyle;
+
+  /// [AdaptiveAppBar.chromeData], for custom chrome.
+  final Object? data;
 
   /// The page's own back handler, or else a pop of its own navigator.
   void back() {

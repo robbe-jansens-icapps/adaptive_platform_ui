@@ -2,16 +2,22 @@ import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/src/widgets/ios26/ios26_native_tab_bar.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, internal;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform, internal;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../chrome/adaptive_chrome.dart';
+import '../chrome/scroll_edge_effect.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
+import '../toolbar/duo_top_strip.dart';
+import '../toolbar/duo_vertical_bar.dart';
 import 'adaptive_app_bar.dart';
 import 'adaptive_app_bar_action.dart';
 import 'adaptive_badge.dart';
 import 'adaptive_bottom_navigation_bar.dart';
 import 'adaptive_button.dart';
+import 'adaptive_popover.dart';
 import 'adaptive_split_view.dart';
 import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
@@ -131,6 +137,11 @@ enum TabBarMinimizeBehavior {
 
   /// Let the system decide
   automatic,
+
+  /// Minimize when scrolling down, and stay minimized until the page is
+  /// back at its top. The native tab bar has no such behavior and minimizes
+  /// on scrolling down instead.
+  onScrollDownUntilTop,
 }
 
 /// How much of the bottom of a page the native iOS 26 tab bar of the
@@ -186,6 +197,7 @@ class AdaptiveScaffold extends StatefulWidget {
     this.useHeroBackButton = true,
     this.useFixedToolbar = true,
     this.tabBarHidden = false,
+    this.extendBodyBehindVerticalBar = false,
   });
 
   /// App bar configuration
@@ -291,9 +303,20 @@ class AdaptiveScaffold extends StatefulWidget {
   /// to prevent native platform views from bleeding through.
   final bool tabBarHidden;
 
+  /// With custom chrome on the iPhone Duo, whether the body runs under the
+  /// strip of the vertical bar too, so a header's colour can reach into the
+  /// bar. The strip stays in the body's media query padding, for its content
+  /// to keep clear of. By default the body sits beside the strip, and the
+  /// page's background alone runs under it.
+  final bool extendBodyBehindVerticalBar;
+
   @override
   State<AdaptiveScaffold> createState() => _AdaptiveScaffoldState();
 }
+
+/// What one scrollable in a page last said about its scroll edges, with how
+/// deep it is and when it said so.
+typedef _ScrollEdges = ({int depth, int order, double edge, double bottom});
 
 class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   final GlobalKey<_MinimizableTabBarState> _tabBarKey =
@@ -309,7 +332,54 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
 
   /// Whether the native tab bar is shrunk while the page scrolls, for the bar
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
-  final ValueNotifier<bool> _tabBarMinimized = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> _tabBarMinimized = _PageValue<bool>(false);
+
+  /// How far the page's content has scrolled under the bars along its top,
+  /// for custom chrome (see [ToolbarEntry.scrollEdge]).
+  final ValueNotifier<double> _scrollEdge = _PageValue<double>(0);
+  final ValueNotifier<double> _bottomScrollEdge = _PageValue<double>(0);
+
+  /// The latest scroll edge of each vertical scrollable in the page, with its
+  /// depth and when it was last heard of.
+  final Map<BuildContext, _ScrollEdges> _edges = <BuildContext, _ScrollEdges>{};
+  int _edgeOrder = 0;
+
+  /// The outermost scrollables decide, as it is their content that runs
+  /// under the bar: a list below a header pinned under the bar (a nested
+  /// scroll view) scrolls under the header, not under the bar. Among those
+  /// the one that scrolled last does.
+  bool _trackScrollEdge(Notification notification) {
+    final (metrics, depth, context) = switch (notification) {
+      final ScrollNotification n => (n.metrics, n.depth, n.context),
+      final ScrollMetricsNotification n => (n.metrics, n.depth, n.context),
+      _ => (null, 0, null),
+    };
+    final edge = metrics == null ? null : AdaptiveScrollEdge.of(metrics);
+    final bottom = metrics == null
+        ? null
+        : AdaptiveScrollEdge.bottomOf(metrics);
+    if (edge == null || bottom == null || context == null) return false;
+    _edges[context] = (
+      depth: depth,
+      order: _edgeOrder++,
+      edge: edge,
+      bottom: bottom,
+    );
+    _edges.removeWhere((context, _) => !context.mounted);
+    _ScrollEdges? decides;
+    for (final entry in _edges.values) {
+      if (decides == null ||
+          entry.depth < decides.depth ||
+          (entry.depth == decides.depth && entry.order > decides.order)) {
+        decides = entry;
+      }
+    }
+    if (decides != null) {
+      _scrollEdge.value = decides.edge;
+      _bottomScrollEdge.value = decides.bottom;
+    }
+    return false;
+  }
 
   void _onTabBarSizeChanged(Size size) {
     if (mounted) _ownTabBarHeight.value = size.height;
@@ -324,9 +394,29 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// or is 0 while the tabs are in the iPhone Duo trailing bar. Only the
   /// inset follows it: the body is not built again when it changes, or when
   /// the bar moves between the page and the host.
-  Widget _withBottomBarInset(BuildContext context, Widget body) {
+  Widget _withBottomBarInset(
+    BuildContext context,
+    Widget body, {
+    ModalRoute<Object?>? ownerRoute,
+  }) {
     final ValueListenable<double> height;
-    if (_tabsInTrailingBar(context)) {
+    final custom = _customChrome != null;
+    final placement = AdaptiveChromeScope.placementOf(context);
+    if (custom && _usesFixedToolbar(context)) {
+      // Custom chrome: the tab bar and its accessory along the bottom, an
+      // accessory floating at the bottom of the content, or nothing beside
+      // a sidebar.
+      height = switch (placement) {
+        AdaptiveChromePlacement.bottom =>
+          ToolbarChromeScope.maybeOf(context)?.tabBarHeight ??
+              const AlwaysStoppedAnimation<double>(0),
+        AdaptiveChromePlacement.vertical || AdaptiveChromePlacement.topStrip =>
+          AdaptiveChromeScope.maybeOf(context)!.floatingAccessoryHeight,
+        AdaptiveChromePlacement.sidebar => const AlwaysStoppedAnimation<double>(
+          0,
+        ),
+      };
+    } else if (_tabsInTrailingBar(context)) {
       height = const AlwaysStoppedAnimation<double>(0);
     } else if (_tabsHostedAtBottom(context)) {
       height =
@@ -337,6 +427,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     return _BottomBarInset(
       height: height,
       hidden: widget.tabBarHidden,
+      ownerRoute: ownerRoute,
+      hidesWhenPushed: widget.bottomNavigationBar?.hidesWhenPushed ?? false,
       child: body,
     );
   }
@@ -344,6 +436,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// Shrinks or restores the tab bar that the host draws as the page scrolls,
   /// as [AdaptiveScaffold.minimizeBehavior] asks.
   bool _minimizeHostedTabBar(ScrollNotification notification) {
+    // Beside a list the list decides: the page it opened scrolling on its
+    // own would shrink and restore the tab bar against it.
+    final source = notification.context;
+    if (source != null && AdaptiveSplitView.isInDetailColumn(source)) {
+      return false;
+    }
     final minimized = _tabBarMinimizedAfter(
       notification,
       widget.minimizeBehavior,
@@ -365,10 +463,14 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     if (oldWidget.appBar != widget.appBar ||
         oldWidget.useFixedToolbar != widget.useFixedToolbar ||
         oldWidget.tabBarHidden != widget.tabBarHidden ||
-        oldWidget.bottomNavigationBar != widget.bottomNavigationBar) {
+        oldWidget.bottomNavigationBar != widget.bottomNavigationBar ||
+        oldWidget.backgroundColor != widget.backgroundColor) {
       _syncToolbarEntry();
     }
-    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never) {
+    // Another tab shows a page of its own: the bar is back at full size.
+    if (widget.minimizeBehavior == TabBarMinimizeBehavior.never ||
+        oldWidget.bottomNavigationBar?.selectedIndex !=
+            widget.bottomNavigationBar?.selectedIndex) {
       _tabBarMinimized.value = false;
     }
   }
@@ -380,6 +482,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     _toolbarRegistry?.remove(this);
     _ownTabBarHeight.dispose();
     _tabBarMinimized.dispose();
+    _scrollEdge.dispose();
+    _bottomScrollEdge.dispose();
     super.dispose();
   }
 
@@ -416,7 +520,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// stage, for when it shows again.
   AdaptiveBottomNavigationBar? get _nativeTabBar {
     final bar = widget.bottomNavigationBar;
-    if (bar == null || !bar.useNativeBottomBar) return null;
+    // Custom chrome draws any tab bar the page describes, and so does the
+    // iPhone Duo's vertical bar: the page's own bar would have nowhere to go.
+    final custom = _customChrome != null;
+    if (bar == null || (!bar.useNativeBottomBar && !custom && !_tabsInDuoBar)) {
+      return null;
+    }
     if (bar.items == null ||
         bar.items!.isEmpty ||
         bar.selectedIndex == null ||
@@ -434,12 +543,24 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// of the screen, above the navigator (see
   /// [ToolbarChromeScope.hostsBottomTabBar]), so the page draws none.
   bool _tabsHostedAtBottom(BuildContext context) =>
-      PlatformInfo.isIOS26OrHigher() &&
+      (_customChrome != null || PlatformInfo.isIOS26OrHigher()) &&
       _nativeTabBar != null &&
       _usesFixedToolbar(context) &&
       (ToolbarChromeScope.maybeOf(context)?.hostsBottomTabBar ?? false);
 
+  /// The custom chrome of the toolbar host above, if it has any: read once
+  /// per dependency change, as the registry is.
+  AdaptiveChrome? _customChrome;
+
+  /// Whether the toolbar host holds the controls and tabs in the iPhone
+  /// Duo's vertical bar, as of the last dependency change.
+  bool _tabsInDuoBar = false;
+
   void _syncToolbarEntry() {
+    _customChrome = AdaptiveChromeScope.chromeOf(context);
+    _tabsInDuoBar =
+        _usesFixedToolbar(context) &&
+        (ToolbarChromeScope.maybeOf(context)?.hostsDuoControls ?? false);
     final registry = ToolbarRegistry.maybeOf(context);
     if (registry == null) return;
     final inColumn = AdaptiveSplitView.isInColumn(context);
@@ -469,7 +590,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         route: ModalRoute.of(context),
         navigator: navigator,
         enclosingRoutes: enclosingRoutes,
-        titleOverlay: inColumn ? null : _buildIOS26TitleOverlay(),
+        titleOverlay: inColumn || _customChrome != null
+            ? null
+            : _buildIOS26TitleOverlay(),
         // `TickerMode.valuesOf` replaces this, but only exists in Flutter
         // releases after 3.35; `of` works on every supported version.
         // ignore: deprecated_member_use
@@ -477,8 +600,14 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         shownInPlace: Visibility.of(context),
         tabBar: _nativeTabBar,
         tabBarHidden: widget.tabBarHidden,
-        tabBarHosted: _tabsHostedAtBottom(context),
+        // Custom chrome draws the tabs of every tab layout, wherever they go.
+        tabBarHosted: _customChrome != null
+            ? _nativeTabBar != null && _usesFixedToolbar(context)
+            : _tabsHostedAtBottom(context),
         tabBarMinimized: _tabBarMinimized,
+        scrollEdge: _customChrome != null ? _scrollEdge : null,
+        bottomScrollEdge: _customChrome != null ? _bottomScrollEdge : null,
+        backgroundColor: widget.backgroundColor,
       ),
     );
   }
@@ -598,6 +727,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   }
 
   Widget _buildPage(BuildContext context) {
+    final chrome = _customChrome;
+    if (chrome != null) return _buildCustomChromePage(context, chrome);
+
     final useNativeToolbar = widget.appBar?.useNativeToolbar ?? false;
     final useNativeBottomBar =
         widget.bottomNavigationBar?.useNativeBottomBar ?? true;
@@ -840,8 +972,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                     : widget.body ?? const SizedBox.shrink(),
               ),
             ),
-            // Show tab bar at bottom for non-native cases
-            if (!PlatformInfo.isIOS26OrHigher() || !useNativeBottomBar) tabBar!,
+            // Show tab bar at bottom for non-native cases, unless the iPhone
+            // Duo's vertical bar holds the tabs.
+            if ((!PlatformInfo.isIOS26OrHigher() || !useNativeBottomBar) &&
+                !_tabsInTrailingBar(context))
+              tabBar!,
           ],
         );
 
@@ -1171,6 +1306,200 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     );
   }
 
+  /// A page under a toolbar host with custom chrome, the same on every
+  /// platform: the host draws its bars, or the page draws its own bar with
+  /// the app's builders where the host's would not reach it (a sheet, a
+  /// dialog, a column of a split view). Its content runs under the bars and
+  /// keeps clear of them through the media query's padding, as under the
+  /// native bars of iOS 26.
+  Widget _buildCustomChromePage(BuildContext context, AdaptiveChrome chrome) {
+    final appBar = widget.appBar;
+    final placement = AdaptiveChromeScope.placementOf(context);
+    final hostChrome = ToolbarChromeScope.maybeOf(context);
+    final hosted =
+        _usesFixedToolbar(context) &&
+        (hostChrome?.hostsToolbar ?? false) &&
+        (appBar?.useNativeToolbar ?? true);
+    final inColumn = AdaptiveSplitView.isInColumn(context);
+    final pose = DuoPoseScope.of(context);
+    final strip = DuoTopStripScope.of(context);
+    final hasTitle = appBar?.title != null || appBar?.titleWidget != null;
+    // In the iPhone Duo vertical bar pose the controls of every page are in
+    // the vertical bar, those of the pages in a column too.
+    final controlsInBar =
+        pose != null &&
+        (hosted || (inColumn && AdaptiveSplitView.handsControlsToBar(context)));
+    final ownBar = appBar != null && !hosted;
+
+    // In the iPhone Duo's vertical bar poses the window has no inset at the
+    // top. A page there starts below the title band if it has a title, and
+    // otherwise still keeps clear of the window's rounded top edge, level
+    // with the bar's first control. That is a floor rather than an addition,
+    // so a page inside a tab layout that already kept it adds nothing.
+    final inBarPose =
+        pose != null &&
+        (appBar == null ? _usesFixedToolbar(context) : hosted || controlsInBar);
+    final double? topFloor = !inBarPose
+        ? null
+        : appBar != null && hasTitle
+        ? kDuoTitleBandHeight
+        : kDuoBarEdgeMargin;
+    final double topInset;
+    if (appBar == null || inBarPose) {
+      topInset = 0;
+    } else if (strip != null && hosted) {
+      // The bar is in the strip, or below it while the tabs are in it.
+      topInset =
+          placement == AdaptiveChromePlacement.topStrip &&
+              (_TabLayout.showsTabs(context) || _nativeTabBar != null)
+          ? chrome.metrics.toolbarHeight
+          : strip.overhang;
+    } else {
+      topInset =
+          chrome.metrics.toolbarHeight +
+          (ownBar && AdaptivePopover.isIn(context)
+              ? AdaptivePopover.barInset
+              : 0);
+    }
+
+    final tabs = _nativeTabBar;
+    final ownsTabs = tabs != null && _usesFixedToolbar(context);
+    // The iPhone Duo strip beside a page the host draws the bar for is the
+    // bar's: the content keeps out of it, while the page's background runs
+    // under it. A tab layout leaves that to the pages inside it, so each of
+    // those has its own background there.
+    final padding = MediaQuery.paddingOf(context);
+    final sideInset =
+        pose == null ||
+            !hosted ||
+            ownsTabs ||
+            widget.extendBodyBehindVerticalBar
+        ? 0.0
+        : pose.onLeft
+        ? padding.left
+        : padding.right;
+    final barOnLeft = pose?.onLeft ?? false;
+
+    Widget body = widget.body ?? const SizedBox.shrink();
+    if (ownsTabs) {
+      body = _TabLayout(
+        ownerRoute: ModalRoute.of(context),
+        hidesWhenPushed: tabs.hidesWhenPushed,
+        child: _withBottomBarInset(
+          context,
+          placement == AdaptiveChromePlacement.sidebar
+              ? _BesideSidebarBody(enabled: !widget.tabBarHidden, child: body)
+              : body,
+          ownerRoute: ModalRoute.of(context),
+        ),
+      );
+      if (_tabsHostedAtBottom(context) &&
+          widget.minimizeBehavior != TabBarMinimizeBehavior.never) {
+        body = NotificationListener<ScrollNotification>(
+          onNotification: _minimizeHostedTabBar,
+          child: body,
+        );
+      }
+    } else {
+      body = _TabsLeaveWhenPushed(child: body);
+    }
+    if (hosted) {
+      body = NotificationListener<Notification>(
+        onNotification: _trackScrollEdge,
+        child: body,
+      );
+    }
+
+    // The scroll edge effect of the scroll views in the page: under the
+    // bar, if the page has one with a background, and above the chrome along
+    // the bottom.
+    final edgeAlongTop =
+        appBar != null && appBar.showsBackdrop && (!inBarPose || hasTitle);
+    final page = Builder(
+      builder: (context) {
+        final inner = MediaQuery.of(context);
+        final top = topFloor != null
+            ? math.max(inner.padding.top, topFloor)
+            : inner.padding.top + topInset;
+        return MediaQuery(
+          data: inner.copyWith(
+            padding: inner.padding.copyWith(
+              top: top,
+              left: barOnLeft
+                  ? inner.padding.left - sideInset
+                  : inner.padding.left,
+              right: barOnLeft
+                  ? inner.padding.right
+                  : inner.padding.right - sideInset,
+            ),
+            viewPadding: inner.viewPadding.copyWith(
+              top: topFloor != null
+                  ? math.max(inner.viewPadding.top, topFloor)
+                  : inner.viewPadding.top + topInset,
+            ),
+          ),
+          child: AdaptiveScrollEdgeRegion(
+            chrome: chrome,
+            placement: placement,
+            top: edgeAlongTop ? top : null,
+            titleBand: inBarPose,
+            bottom: inner.padding.bottom,
+            topColor:
+                _opaqueColor(appBar?.backdropColor) ??
+                _opaqueColor(widget.backgroundColor) ??
+                CupertinoColors.systemBackground.resolveFrom(context),
+            bottomColor:
+                _opaqueColor(widget.backgroundColor) ??
+                _opaqueColor(appBar?.backdropColor) ??
+                CupertinoColors.systemBackground.resolveFrom(context),
+            data: appBar?.chromeData,
+            child: body,
+          ),
+        );
+      },
+    );
+
+    return Scaffold(
+      key: widget.scaffoldKey,
+      backgroundColor: widget.backgroundColor,
+      resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+      floatingActionButton: widget.floatingActionButton,
+      drawer: widget.drawer,
+      endDrawer: widget.endDrawer,
+      drawerScrimColor: widget.drawerScrimColor,
+      onDrawerChanged: widget.onDrawerChanged,
+      onEndDrawerChanged: widget.onEndDrawerChanged,
+      drawerEnableOpenDragGesture: widget.drawerEnableOpenDragGesture,
+      endDrawerEnableOpenDragGesture: widget.endDrawerEnableOpenDragGesture,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+              left: barOnLeft ? sideInset : 0,
+              right: barOnLeft ? 0 : sideInset,
+            ),
+            child: page,
+          ),
+          if (ownBar)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: _CustomInlineBar(
+                appBar: appBar,
+                chrome: chrome,
+                placement: placement,
+                showsControls: !controlsInBar,
+                titleBand: controlsInBar,
+                hasTabs: tabs != null,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   IconData _sfSymbolToCupertinoIcon(String sfSymbol) {
     const iconMap = {
       'house': CupertinoIcons.house,
@@ -1439,6 +1768,12 @@ bool? _tabBarMinimizedAfter(
   if (notification is! ScrollUpdateNotification) return null;
   final delta = notification.scrollDelta ?? 0;
   final metrics = notification.metrics;
+  // A carousel or a pager scrolling sideways says nothing about the page.
+  if (metrics.axis != Axis.vertical) return null;
+  if (behavior == TabBarMinimizeBehavior.onScrollDownUntilTop &&
+      AdaptiveScrollEdge.of(metrics) == 0) {
+    return minimized ? false : null;
+  }
 
   // Check if we're in overscroll territory (pull-to-refresh or bottom bounce)
   // When pixels < minScrollExtent, user is pulling down beyond top (overscroll)
@@ -1452,7 +1787,9 @@ bool? _tabBarMinimizedAfter(
   // Ignore scroll events during overscroll to prevent tab bar animation during bounce
   if (isOverscrolling) return null;
 
-  if (behavior == TabBarMinimizeBehavior.onScrollDown ||
+  if (behavior == TabBarMinimizeBehavior.onScrollDownUntilTop) {
+    if (delta > 0 && !minimized) return true;
+  } else if (behavior == TabBarMinimizeBehavior.onScrollDown ||
       behavior == TabBarMinimizeBehavior.automatic) {
     // Minimize when scrolling down (positive delta)
     if (delta > 0 && !minimized) return true;
@@ -1473,6 +1810,8 @@ class _BottomBarInset extends StatelessWidget {
     required this.height,
     required this.hidden,
     required this.child,
+    this.ownerRoute,
+    this.hidesWhenPushed = false,
   });
 
   final ValueListenable<double> height;
@@ -1480,6 +1819,11 @@ class _BottomBarInset extends StatelessWidget {
   /// The bar is hidden for now ([AdaptiveScaffold.tabBarHidden]): no inset.
   final bool hidden;
   final Widget child;
+
+  /// The route of the page with the tabs, and whether its tabs leave while a
+  /// page is pushed inside them: such a page takes the room back.
+  final ModalRoute<Object?>? ownerRoute;
+  final bool hidesWhenPushed;
 
   @override
   Widget build(BuildContext context) {
@@ -1490,7 +1834,11 @@ class _BottomBarInset extends StatelessWidget {
         final inset = hidden ? 0.0 : height;
         return AdaptiveBottomBarInset(
           height: inset,
-          child: _BottomBarPadding(height: inset, child: child!),
+          child: _BottomBarPadding(
+            height: inset,
+            ownerRoute: hidesWhenPushed ? ownerRoute : null,
+            child: child!,
+          ),
         );
       },
     );
@@ -1502,24 +1850,351 @@ class _BottomBarInset extends StatelessWidget {
 /// keyboard sliding in, so the scaffold around it is not rebuilt for them and
 /// does not publish its app bar again.
 class _BottomBarPadding extends StatelessWidget {
-  const _BottomBarPadding({required this.height, required this.child});
+  const _BottomBarPadding({
+    required this.height,
+    required this.child,
+    this.ownerRoute,
+  });
 
   final double height;
   final Widget child;
 
+  /// The route of the page with the tabs, when they leave while a page is
+  /// pushed inside them.
+  final ModalRoute<Object?>? ownerRoute;
+
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final bottom = math.max(mediaQuery.padding.bottom, height);
+    final viewBottom = math.max(mediaQuery.viewPadding.bottom, height);
+    return MediaQuery(
+      data: mediaQuery.copyWith(
+        padding: mediaQuery.padding.copyWith(bottom: bottom),
+        viewPadding: mediaQuery.viewPadding.copyWith(bottom: viewBottom),
+      ),
+      child: _RaisedForTabs(
+        ownerRoute: ownerRoute,
+        padding: bottom - mediaQuery.padding.bottom,
+        viewPadding: viewBottom - mediaQuery.viewPadding.bottom,
+        child: child,
+      ),
+    );
+  }
+}
+
+/// How far the page with the tabs raised the bottom padding for them, for
+/// the pages pushed inside its tab layout, which the tabs leave
+/// ([AdaptiveBottomNavigationBar.hidesWhenPushed]): they take it back.
+class _RaisedForTabs extends InheritedWidget {
+  const _RaisedForTabs({
+    required this.ownerRoute,
+    required this.padding,
+    required this.viewPadding,
+    required super.child,
+  });
+
+  /// Null when the tabs stay while pages are pushed inside them.
+  final ModalRoute<Object?>? ownerRoute;
+  final double padding;
+  final double viewPadding;
+
+  @override
+  bool updateShouldNotify(_RaisedForTabs oldWidget) =>
+      ownerRoute != oldWidget.ownerRoute ||
+      padding != oldWidget.padding ||
+      viewPadding != oldWidget.viewPadding;
+}
+
+/// The pages of a tab layout beside the sidebar of custom chrome, following
+/// its width as it eases between a rail and its full width. What the sidebar
+/// covers of the window's padding at that edge is taken from it.
+class _BesideSidebarBody extends StatelessWidget {
+  const _BesideSidebarBody({required this.enabled, required this.child});
+
+  /// Whether the sidebar is there: a tab layout that hides its tabs
+  /// (`AdaptiveScaffold.tabBarHidden`) hides it, and its pages take the room.
+  final bool enabled;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: AdaptiveChromeScope.sidebarInsetOf(context),
+      child: child,
+      builder: (context, sidebarInset, child) {
+        final inset = enabled ? sidebarInset : 0.0;
+        final mediaQuery = MediaQuery.of(context);
+        return Padding(
+          padding: EdgeInsets.only(left: inset),
+          child: MediaQuery(
+            data: mediaQuery.copyWith(
+              padding: mediaQuery.padding.copyWith(
+                left: math.max(0, mediaQuery.padding.left - inset),
+              ),
+              viewPadding: mediaQuery.viewPadding.copyWith(
+                left: math.max(0, mediaQuery.viewPadding.left - inset),
+              ),
+            ),
+            child: child!,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The tab layout a page is in, from the scaffold that owns the tabs: the
+/// route of that scaffold, and whether its tabs leave for pages pushed
+/// inside it.
+class _TabLayout extends InheritedWidget {
+  const _TabLayout({
+    required this.ownerRoute,
+    required this.hidesWhenPushed,
+    required super.child,
+  });
+
+  final ModalRoute<Object?>? ownerRoute;
+  final bool hidesWhenPushed;
+
+  /// Whether the tabs show while the page at [context] is in front: it is
+  /// in a tab layout, and is not a page pushed inside one whose tabs leave
+  /// for it. The same rule the toolbar registry follows.
+  static bool showsTabs(BuildContext context) {
+    final layout = context.dependOnInheritedWidgetOfExactType<_TabLayout>();
+    if (layout == null) return false;
+    final ownerRoute = layout.ownerRoute;
+    if (!layout.hidesWhenPushed || ownerRoute == null) return true;
+    if (ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false) {
+      return true;
+    }
+    return !_TabsLeaveWhenPushed._pushedWithin(context, ownerRoute);
+  }
+
+  @override
+  bool updateShouldNotify(_TabLayout oldWidget) =>
+      ownerRoute != oldWidget.ownerRoute ||
+      hidesWhenPushed != oldWidget.hidesWhenPushed;
+}
+
+/// Gives a page pushed inside a tab layout whose tabs leave for it
+/// ([AdaptiveBottomNavigationBar.hidesWhenPushed]) back the room the tabs
+/// took at the bottom, as UIKit does for `hidesBottomBarWhenPushed`. The tab
+/// pages themselves keep it, and so does every page while the tabs stay (in
+/// a sidebar).
+class _TabsLeaveWhenPushed extends StatelessWidget {
+  const _TabsLeaveWhenPushed({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final raised = context.dependOnInheritedWidgetOfExactType<_RaisedForTabs>();
+    final ownerRoute = raised?.ownerRoute;
+    final keepsTabs =
+        ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false;
+    if (ownerRoute == null ||
+        keepsTabs ||
+        !_pushedWithin(context, ownerRoute)) {
+      return child;
+    }
     final mediaQuery = MediaQuery.of(context);
     return MediaQuery(
       data: mediaQuery.copyWith(
         padding: mediaQuery.padding.copyWith(
-          bottom: math.max(mediaQuery.padding.bottom, height),
+          bottom: math.max(0, mediaQuery.padding.bottom - raised!.padding),
         ),
         viewPadding: mediaQuery.viewPadding.copyWith(
-          bottom: math.max(mediaQuery.viewPadding.bottom, height),
+          bottom: math.max(
+            0,
+            mediaQuery.viewPadding.bottom - raised.viewPadding,
+          ),
         ),
       ),
-      child: child,
+      child: AdaptiveBottomBarInset(
+        height: 0,
+        child: _RaisedForTabs(
+          ownerRoute: null,
+          padding: 0,
+          viewPadding: 0,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  /// Whether the page at [context] was pushed on a navigator inside
+  /// [ownerRoute], rather than being the first page of each navigator in
+  /// between: the same rule the toolbar registry hides the tabs by.
+  static bool _pushedWithin(
+    BuildContext context,
+    ModalRoute<Object?> ownerRoute,
+  ) {
+    var route = ModalRoute.of(context);
+    var navigator = Navigator.maybeOf(context);
+    while (route != null && route != ownerRoute) {
+      if (!route.isFirst) return true;
+      final outer = navigator?.context;
+      if (outer == null) return false;
+      route = ModalRoute.of(outer);
+      navigator = outer.findAncestorStateOfType<NavigatorState>();
+    }
+    return false;
+  }
+}
+
+/// The bar a page draws itself with custom chrome, where the host's bar
+/// does not reach it: in a sheet, a dialog, or a column of a split view. In
+/// the iPhone Duo vertical bar pose it shows only the title, in the title
+/// band, as the host does: the controls are in the vertical bar.
+class _CustomInlineBar extends StatelessWidget {
+  const _CustomInlineBar({
+    required this.appBar,
+    required this.chrome,
+    required this.placement,
+    required this.showsControls,
+    required this.titleBand,
+    required this.hasTabs,
+  });
+
+  final AdaptiveAppBar appBar;
+  final AdaptiveChrome chrome;
+  final AdaptiveChromePlacement placement;
+  final bool showsControls;
+  final bool titleBand;
+  final bool hasTabs;
+
+  @override
+  Widget build(BuildContext context) {
+    final top =
+        MediaQuery.paddingOf(context).top +
+        (!titleBand && AdaptivePopover.isIn(context)
+            ? AdaptivePopover.barInset
+            : 0);
+    final metrics = chrome.metrics;
+    final height = titleBand
+        ? kDuoTitleBandHeight
+        : top + metrics.toolbarHeight;
+    final centered = !titleBand && chrome.centersTitle(defaultTargetPlatform);
+    final title = chrome.titleBuilder(
+      context,
+      AdaptiveTitleSpec(
+        placement: placement,
+        title: appBar.title,
+        subtitle: appBar.subtitle,
+        titleWidget: appBar.titleWidget,
+        centered: centered,
+        data: appBar.chromeData,
+      ),
+    );
+    // The background under the bar is the scroll edge of the page's scroll
+    // views (AdaptiveScrollEdgeRegion), as under the host's bar.
+    if (titleBand) {
+      return SizedBox(
+        height: height,
+        child: DuoToolbarTitle(titleWidget: title),
+      );
+    }
+
+    final canPop = Navigator.maybeOf(context)?.canPop() ?? false;
+    final impliesBack =
+        showsControls &&
+        appBar.leading == null &&
+        !hasTabs &&
+        (appBar.onBack != null ||
+            (appBar.automaticallyImplyLeading && canPop)) &&
+        !AdaptiveSplitView.hidesBackButton(context);
+    final actions = showsControls
+        ? appBar.actions ?? const <AdaptiveAppBarAction>[]
+        : const <AdaptiveAppBarAction>[];
+    final leading = showsControls ? appBar.leading : null;
+    return SizedBox(
+      height: height,
+      child: Stack(
+        fit: StackFit.expand,
+        clipBehavior: Clip.none,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(top: top),
+            child: NavigationToolbar(
+              leading: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: leading != null || impliesBack
+                      ? 16
+                      : 16 - kToolbarTitleSpacing,
+                ),
+                child:
+                    leading ??
+                    (impliesBack
+                        ? chrome.backButtonBuilder(
+                            context,
+                            AdaptiveBackButtonSpec(
+                              placement: placement,
+                              style: appBar.backButtonStyle,
+                              data: appBar.chromeData,
+                              onPressed: () {
+                                AdaptiveSplitView.willGoBackFrom(context);
+                                final onBack = appBar.onBack;
+                                if (onBack != null) {
+                                  onBack();
+                                } else {
+                                  Navigator.of(context).maybePop();
+                                }
+                              },
+                            ),
+                          )
+                        : null),
+              ),
+              middle: title,
+              trailing: actions.isEmpty
+                  ? const SizedBox(width: 16 - kToolbarTitleSpacing)
+                  : Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 16),
+                      child: chrome.actionsBuilder(
+                        context,
+                        AdaptiveActionsSpec(
+                          placement: placement,
+                          actions: actions,
+                          axis: Axis.horizontal,
+                          tint: appBar.tintColor,
+                          data: appBar.chromeData,
+                          onPressed: (action, anchor) => action.press(anchor),
+                        ),
+                      ),
+                    ),
+              centerMiddle: centered,
+              middleSpacing: kToolbarTitleSpacing,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
+
+/// A value a page hands the toolbar host in its [ToolbarEntry]. The host
+/// keeps showing a page for a moment after it has gone (its items fade out
+/// as the next page's fade in), so it may still listen once the page has
+/// disposed the value: it then keeps its last value.
+class _PageValue<T> extends ValueNotifier<T> {
+  _PageValue(super.value);
+
+  bool _disposed = false;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_disposed) super.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+}
+
+/// [color] when it covers what is under it, so a see-through colour asks for
+/// the page's own instead of a black backdrop.
+Color? _opaqueColor(Color? color) =>
+    color == null || color.a < 1 ? null : color;

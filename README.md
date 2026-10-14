@@ -20,6 +20,7 @@ A Flutter package that provides adaptive platform-specific widgets with native i
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Fixed Liquid Glass Toolbar, iPhone Duo Ready](#fixed-liquid-glass-toolbar-iphone-duo-ready)
+- [Custom chrome: your own bars, placed by the host](#custom-chrome-your-own-bars-placed-by-the-host)
 - [iOS 26+ Native Toolbar & Tab Bar](#ios-26-native-toolbar--tab-bar)
 - [Features](#features)
 - [Widget Showcase](#widget-showcase)
@@ -271,6 +272,21 @@ AdaptiveAppBarAction(
 )
 ```
 
+- **Folds.** `FoldScope.foldOf(context)` gives the fold of a partly open
+  foldable, the iPhone Duo's (which iOS does not put in the media query) or
+  an Android hinge or half-opened fold. `AdaptiveTwoPane` lays two panes of
+  a full screen page out around it: side by side on a book, above and below
+  on a table (a video above the fold, its chat below), and by a proportion
+  without a fold. The panes keep their state as the device folds:
+
+```dart
+AdaptiveTwoPane(
+  direction: Axis.vertical, // without a fold
+  start: player,
+  end: showsChat || AdaptiveTwoPane.hasFoldAcross(context) ? chat : null,
+)
+```
+
 Not using `AdaptiveApp`? Install the host yourself, around the navigator
 (see [Migrating to 1.0.0](#migrating-to-100)):
 
@@ -282,6 +298,84 @@ MaterialApp(
 ```
 
 Without a host every page draws its own toolbar, as before.
+
+### Custom chrome: your own bars, placed by the host
+
+An app with a brand of its own can keep the host's placement and swap the
+native bars for its own widgets. Hand `AdaptiveToolbarHost` (or
+`AdaptiveApp`) an `AdaptiveChrome` of builders; the host then draws them on
+every platform (iOS 26 and older, Android), where it would draw the native
+ones:
+
+| Placement (`AdaptiveChromePlacement`) | When | Tabs | Toolbar |
+|---|---|---|---|
+| `bottom` | phones, narrow windows | along the bottom | along the top |
+| `vertical` | iPhone Duo cover display, inner display sideways, Split View panes | down the vertical bar | title in the band, controls in the bar |
+| `topStrip` | iPhone Duo inner display upright, with `tabsInTopStrip` | in the top strip, beside the status cluster | below the strip |
+| `sidebar` | windows from 700 points wide (iPad, unfolded foldables), with a `sidebarBuilder` | in a sidebar along the leading edge | beside the sidebar |
+
+```dart
+const chrome = AdaptiveChrome(
+  tabBarBuilder: buildTabs,         // AdaptiveTabBarSpec: placement, items, selection
+  titleBuilder: buildTitle,         // AdaptiveTitleSpec
+  backButtonBuilder: buildBack,     // AdaptiveBackButtonSpec: back or close
+  actionsBuilder: buildActions,     // AdaptiveActionsSpec: a group, or the overflow control
+  barBackgroundBuilder: buildBar,   // optional: behind the toolbar
+  sidebarBuilder: buildSidebar,     // optional: tabs in a sidebar on wide windows
+  accessoryBuilder: frameAccessory, // optional: frame of a tab accessory per placement
+  popoverBuilder: popoverSurface,   // optional: surface of popovers and menus
+  glass: AdaptiveGlassStyle(tint: Color(0xE0101820)),
+);
+
+MaterialApp(
+  builder: (context, child) => AdaptiveToolbarHost(chrome: chrome, child: child!),
+);
+```
+
+Keep one `AdaptiveChrome` instance (a `const` of top-level or static
+builders): a new one rebuilds every page.
+
+On the iPhone Duo's inner display held upright the tabs stay along the
+bottom, as the system's do, and the toolbar sits in the strip beside the
+camera; `tabsInTopStrip: true` moves the tabs into the strip instead.
+
+Pages stay the same: an `AdaptiveScaffold` with an `AdaptiveAppBar` (pass
+`chromeData` for anything your builders need, such as a dark or light look)
+and, for the tab layout, an `AdaptiveBottomNavigationBar`. Content runs under
+the bars and keeps clear of them through `MediaQuery.padding`, and
+`AdaptiveBottomBarInset` says how much the bars take at the bottom.
+
+- **`hidesWhenPushed`** on the tab bar: the tabs leave while a page pushed on
+  a tab's own navigator is in front, as `hidesBottomBarWhenPushed` does, and
+  that page gets the room back. A sidebar stays.
+- **`accessory`** on the tab bar: a mini player or the like, above the tabs
+  along the bottom, floating at the bottom of the content beside the iPhone
+  Duo's vertical bar, docked in the sidebar; one widget all along, so its
+  state survives folding and rotating.
+- **Scroll edge**: as the system's scroll edge effect, the bars' background
+  is part of each scroll view whose content runs under them, along the top
+  and along the bottom, and fades in as content scrolls under them. Whatever
+  the page lays over its scroll views stays clear of it: a search field
+  pinned above a list, a segmented control floating over its bottom. A page
+  without one, such as a map, gets none. The back button and actions get
+  `scrollEdge` (0 to 1) in their spec, for controls that only need a surface
+  of their own over content. Beside the iPhone Duo's vertical bar the strip
+  takes the colour of the page in front.
+- **Glass**: `AdaptiveGlass` is frosted glass in your colours, drawn by
+  Flutter; sheets (`AdaptiveSheet`) and popovers take the chrome's.
+- **Popovers**: `AdaptivePopover.show` grows out of a control and shrinks back
+  into it, keeps to the side of a fold that holds it and out of the iPhone
+  Duo's bar, and is a sheet on a compact window; the menus of your actions
+  open that way. With `placement: AdaptivePopoverPlacement.over` it takes the
+  control's place instead, on any window: a bar that opens a menu out of
+  itself.
+- **Split views** (`AdaptiveSplitView`) work as with the native bars; a page
+  in a column draws its own bar with your builders.
+
+The iPhone Duo geometry is the same as for the native bars: each builder in
+the vertical bar gets the size of the native capsule it stands for, and
+`DuoPoseScope`, `DuoTopStripScope` and the `kDuo*` constants say where
+things are, for controls of your own.
 
 
 ### AdaptiveButton

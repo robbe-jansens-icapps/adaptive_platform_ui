@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import 'adaptive_badge.dart';
+import 'adaptive_popover.dart';
 import 'adaptive_popup_menu_button.dart';
 
 /// Spacer type for toolbar items (iOS 26+ only)
@@ -108,6 +110,17 @@ class AdaptiveAppBarAction {
   /// Calls [onPressed], or opens [menuItems] in a bar drawn by Flutter
   void press(BuildContext context, {NavigatorState? navigator}) {
     if (!hasMenu) return onPressed();
+    // Custom chrome draws its menus too: anchored to the control pressed.
+    if (AdaptiveChromeScope.chromeOf(context) != null) {
+      AdaptivePopover.showMenu(
+        anchor: context,
+        items: menuItems!,
+        navigator: navigator,
+      ).then((index) {
+        if (index != null) selectMenuItem(index);
+      });
+      return;
+    }
     AdaptivePopupMenuButton.show<dynamic>(
       context,
       items: menuItems!,

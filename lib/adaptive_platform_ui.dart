@@ -45,11 +45,35 @@ export 'src/widgets/adaptive_app.dart';
 
 // Fixed toolbar chrome (installed automatically by AdaptiveApp; exported so
 // apps with their own MaterialApp/CupertinoApp can wrap their builder)
+export 'src/chrome/adaptive_chrome.dart'
+    hide AlwaysStoppedListenable, resolveChromePlacement;
+export 'src/chrome/scroll_edge_effect.dart';
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
-export 'src/toolbar/duo_top_strip.dart' show DuoTopStrip, DuoTopStripScope;
+export 'src/toolbar/duo_top_strip.dart'
+    show
+        DuoTopStrip,
+        DuoTopStripScope,
+        kDuoStatusClusterFallbackWidth,
+        kDuoTopStripBarHeight;
 export 'src/toolbar/duo_vertical_bar.dart'
-    show DuoBarSide, DuoLayout, DuoPose, DuoPoseScope;
+    show
+        DuoBarSide,
+        DuoLayout,
+        DuoPose,
+        DuoPoseScope,
+        DuoTitleBackdrop,
+        kDuoBarBottomMargin,
+        kDuoBarEdgeMargin,
+        kDuoBarGroupSpacing,
+        kDuoBarOnlyTopMargin,
+        kDuoBarRegionGap,
+        kDuoStatusClusterFallbackHeight,
+        kDuoTitleBandHeight,
+        kDuoVerticalBarBezelInset,
+        kDuoVerticalBarWidth;
+export 'src/toolbar/fold_scope.dart';
+export 'src/toolbar/hosted_top_toolbar.dart' show kHostedToolbarHeight;
 export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
 export 'src/widgets/adaptive_app_bar.dart';
@@ -72,6 +96,7 @@ export 'src/widgets/adaptive_snackbar.dart';
 export 'src/widgets/adaptive_toast.dart';
 export 'src/widgets/adaptive_keyboard_dismissal.dart';
 export 'src/widgets/adaptive_split_view.dart';
+export 'src/widgets/adaptive_two_pane.dart';
 export 'src/widgets/adaptive_date_picker.dart';
 export 'src/widgets/adaptive_time_picker.dart';
 export 'src/widgets/adaptive_list_tile.dart';
@@ -82,6 +107,8 @@ export 'src/widgets/adaptive_floating_action_button.dart';
 export 'src/widgets/adaptive_form_section.dart';
 export 'src/widgets/adaptive_expansion_tile.dart';
 export 'src/widgets/adaptive_blur_view.dart';
+export 'src/widgets/adaptive_glass.dart';
+export 'src/widgets/adaptive_popover.dart';
 export 'src/widgets/sheet/adaptive_sheet.dart';
 export 'src/widgets/sheet/adaptive_sheet_detent.dart';
 

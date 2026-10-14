@@ -44,6 +44,8 @@ class AdaptiveSplitView extends StatefulWidget {
     this.placeholder,
     this.backgroundColor,
     this.minWidth = 700,
+    this.showsDetailColumn = true,
+    this.onPushedOver,
   });
 
   /// The page with the list, in the leading column. On a narrow window, the
@@ -69,6 +71,20 @@ class AdaptiveSplitView extends StatefulWidget {
 
   /// From this width on, the columns show side by side.
   final double minWidth;
+
+  /// Whether the column beside the list shows on a wide window. False keeps
+  /// the list at the full width for now, such as while the page with the list
+  /// shows a section that has nothing to open beside it (a timetable, a
+  /// map). The pages open in the column wait meanwhile, rather than move over
+  /// the list, and come back as the column does. Pages opened meanwhile open
+  /// over the list, as on a narrow window.
+  final bool showsDetailColumn;
+
+  /// Called with every page the split view opens over its list, on the
+  /// navigator it is on: a page opened on a narrow window, and the pages that
+  /// move over the list as the window narrows. Lets navigation code that
+  /// keeps track of the pages it opens know of these too.
+  final ValueChanged<Route<dynamic>>? onPushedOver;
 
   /// Opens the page [settings] names from the split view in front: one on
   /// screen (on the selected tab), on the page in front or under the pages
@@ -100,6 +116,12 @@ class AdaptiveSplitView extends StatefulWidget {
     final column = context.dependOnInheritedWidgetOfExactType<_ColumnScope>();
     return column != null && !column.isDetail;
   }
+
+  /// Whether [context] is in the column beside the list of a split view that
+  /// shows its columns side by side. Does not rebuild [context] when that
+  /// changes, so it can be asked while handling a notification.
+  static bool isInDetailColumn(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_ColumnScope>()?.isDetail ?? false;
 
   /// Whether [context] is in a column of a split view that shows its columns
   /// side by side. A page there keeps its own bar instead of handing it to a
@@ -189,6 +211,10 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   /// comes next, or else over the list.
   List<RouteSettings>? _restored;
 
+  /// The pages of a column that [AdaptiveSplitView.showsDetailColumn] put
+  /// away for now: they come back with the column, and never over the list.
+  List<RouteSettings>? _parked;
+
   /// One entry on the split view's own route for every page of the column
   /// above its first: a pop of the navigator the split view is on then goes
   /// back in the column first.
@@ -265,6 +291,14 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     });
   }
 
+  /// Whether the tab the split view is on is the one in sight. A tab out of
+  /// sight is hidden with `Visibility` (an `IndexedStack`), or only has its
+  /// tickers turned off (`Offstage`, or a stack that fades its tabs): it is
+  /// laid out all the same, so neither alone tells.
+  static bool _inSight(BuildContext context) =>
+      Visibility.of(context) &&
+      TickerMode.getValuesNotifier(context).value.enabled;
+
   /// Whether this split view shows a column beside its list right now, on the
   /// page in front, on screen.
   bool get _isInFront {
@@ -272,9 +306,13 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     _pagesOver.removeWhere((page) => !page.isActive);
     // A tab that is not selected keeps its page, out of sight.
     if (!Visibility.of(context)) return false;
-    // Under the pages it opened over the list on a narrow window.
+    // Under the pages it opened over the list on a narrow window. Covered,
+    // the split view has its tickers off; the page over it has them on,
+    // unless its tab is out of sight too.
     if (!_wide && _pagesOver.isNotEmpty && _pagesOver.last.isCurrent) {
-      return true;
+      final page = _pagesOver.last;
+      final pageContext = page is ModalRoute ? page.subtreeContext : null;
+      return pageContext == null || _inSight(pageContext);
     }
     if (_wide && _detailKey.currentState == null) return false;
     return (_route?.isCurrent ?? true) &&
@@ -304,8 +342,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     final navigator = _route?.navigator;
     final route = widget.onGenerateDetailRoute(settings);
     if (navigator == null || route == null) return false;
+    // What the user opens now is where they are; a column put away goes.
+    _parked = null;
     _pagesOver.add(route);
     navigator.push(route);
+    widget.onPushedOver?.call(route);
     return true;
   }
 
@@ -448,7 +489,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   /// move over it, onto the navigator the split view is on, so they stay on
   /// screen. They are there at once, and go back as pages do. Called as the
   /// column goes, during layout: the rest waits for the frame.
-  void _collapse() {
+  ///
+  /// With [park] the column only goes for now
+  /// ([AdaptiveSplitView.showsDetailColumn]): its pages wait for it to come
+  /// back instead.
+  void _collapse({bool park = false}) {
     // Pages picked in the list, or opened from the page shown first; or
     // those still on their way into a column that is gone again.
     final pages =
@@ -459,7 +504,12 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
                   if (page.settings.name != _placeholderName) page.settings,
               ]
             : const <RouteSettings>[]);
-    _restored = pages.isEmpty ? null : pages;
+    if (park) {
+      _parked = pages.isEmpty ? null : pages;
+      _restored = null;
+    } else {
+      _restored = pages.isEmpty ? null : pages;
+    }
     _details.clear();
     _selected = null;
     _picked = false;
@@ -480,7 +530,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   void _restoreOver() {
     // A column that came back in the meantime took the pages.
     final pages = _restored;
-    if (!mounted || _wide || pages == null || !Visibility.of(context)) return;
+    if (!mounted || _wide || pages == null || !_inSight(context)) return;
     _restored = null;
     final navigator = _route?.navigator;
     // Not over another page that covers the list.
@@ -490,6 +540,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
       if (route == null) continue;
       _pagesOver.add(route);
       navigator.push(route);
+      widget.onPushedOver?.call(route);
     }
   }
 
@@ -502,6 +553,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     _pagesOver.removeWhere((page) => !page.isActive);
     final pages = [..._pagesOver];
     _pagesOver.clear();
+    final parked = _parked;
+    _parked = null;
     if (pages.isNotEmpty && pages.last.isCurrent) {
       _restored = [for (final page in pages) page.settings];
       _moving
@@ -512,6 +565,9 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
           if (page.isActive) page.navigator?.removeRoute(page);
         }
       });
+    } else if (_restored == null && parked != null) {
+      // The column put away comes back as it was.
+      _restored = parked;
     }
     // The column starts with what the user is on, or else with the page
     // shown first: nothing picked on the narrow window counts once the user
@@ -552,12 +608,18 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     // out, so it learns of a window that widens here: by the width it had to
     // spare at its last layout, it can show the pages beside the list.
     final window = MediaQuery.sizeOf(context).width;
-    if (!_wide && _pagesOver.isNotEmpty && window - _inset >= widget.minWidth) {
+    if (!_wide &&
+        widget.showsDetailColumn &&
+        _pagesOver.isNotEmpty &&
+        window - _inset >= widget.minWidth) {
       _wide = true;
       _expand();
     }
     // Its tab, selected again, shows the pages that waited for it.
-    final visible = Visibility.of(context);
+    // `TickerMode.valuesOf` replaces this, but only exists in Flutter
+    // releases after 3.35; `of` works on every supported version.
+    // ignore: deprecated_member_use
+    final visible = Visibility.of(context) && TickerMode.of(context);
     if (!_wide && _restored != null && visible) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _restoreOver());
     }
@@ -569,13 +631,14 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         _moving.removeWhere((page) => !page.isActive);
         final stale = _moving.isNotEmpty;
         if (!stale) _inset = window - constraints.maxWidth;
-        final wide = stale ? _wide : constraints.maxWidth >= widget.minWidth;
+        final roomy = constraints.maxWidth >= widget.minWidth;
+        final wide = stale ? _wide : roomy && widget.showsDetailColumn;
         if (wide != _wide) {
           _wide = wide;
           if (wide) {
             _expand();
           } else {
-            _collapse();
+            _collapse(park: roomy);
           }
         }
         final master = KeyedSubtree(key: _masterKey, child: widget.master);
@@ -716,11 +779,23 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
           child: ToolbarChromeScope(
             hostsToolbar: false,
             hostsDuoControls: duoControls,
-            child: MediaQuery.removePadding(
-              context: context,
-              removeLeft: removeLeft,
-              removeRight: removeRight,
-              child: child,
+            // A column is the window its pages have: they lay out for its
+            // width, as a column of a split view controller has a compact
+            // width of its own.
+            child: LayoutBuilder(
+              builder: (context, constraints) => MediaQuery.removePadding(
+                context: context,
+                removeLeft: removeLeft,
+                removeRight: removeRight,
+                child: Builder(
+                  builder: (context) => MediaQuery(
+                    data: MediaQuery.of(
+                      context,
+                    ).copyWith(size: constraints.biggest),
+                    child: child,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

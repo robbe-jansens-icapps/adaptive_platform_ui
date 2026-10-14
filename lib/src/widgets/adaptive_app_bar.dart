@@ -40,6 +40,7 @@ class AdaptiveAppBar {
     this.automaticallyImplyLeading = true,
     this.showsBackdrop = true,
     this.backdropColor,
+    this.chromeData,
   });
 
   /// Title for the app bar
@@ -124,6 +125,11 @@ class AdaptiveAppBar {
   /// background (the grey of grouped lists) would otherwise show a band.
   final Color? backdropColor;
 
+  /// Anything the app's custom chrome ([AdaptiveToolbarHost.chrome]) wants
+  /// to know about this page's bar, such as a dark or a light look, handed to
+  /// its builders as their spec's `data`.
+  final Object? chromeData;
+
   /// Creates a copy of this app bar with the given fields replaced
   AdaptiveAppBar copyWith({
     String? title,
@@ -140,6 +146,7 @@ class AdaptiveAppBar {
     bool? automaticallyImplyLeading,
     bool? showsBackdrop,
     Color? backdropColor,
+    Object? chromeData,
   }) {
     return AdaptiveAppBar(
       title: title ?? this.title,
@@ -158,6 +165,7 @@ class AdaptiveAppBar {
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
       showsBackdrop: showsBackdrop ?? this.showsBackdrop,
       backdropColor: backdropColor ?? this.backdropColor,
+      chromeData: chromeData ?? this.chromeData,
     );
   }
 }

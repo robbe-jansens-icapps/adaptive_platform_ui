@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../toolbar/adaptive_toolbar_host.dart';
 
@@ -104,6 +105,7 @@ class AdaptiveApp extends StatelessWidget {
     this.material,
     this.cupertino,
     this.scaffoldMessengerKey,
+    this.chrome,
   }) : routerConfig = null,
        routeInformationProvider = null,
        routeInformationParser = null,
@@ -134,6 +136,7 @@ class AdaptiveApp extends StatelessWidget {
     this.material,
     this.cupertino,
     this.scaffoldMessengerKey,
+    this.chrome,
   }) : navigatorKey = null,
        home = null,
        routes = const <String, WidgetBuilder>{},
@@ -142,6 +145,10 @@ class AdaptiveApp extends StatelessWidget {
        onGenerateInitialRoutes = null,
        onUnknownRoute = null,
        navigatorObservers = const <NavigatorObserver>[];
+
+  /// The app's own bars, drawn by Flutter on every platform in place of the
+  /// native iOS 26 ones (see [AdaptiveToolbarHost.chrome]).
+  final AdaptiveChrome? chrome;
 
   // Navigation properties
   final GlobalKey<NavigatorState>? navigatorKey;
@@ -318,7 +325,10 @@ class AdaptiveApp extends StatelessWidget {
     Widget hostedThemeBuilder(BuildContext context, Widget? child) =>
         wrapWithThemeMode(
           context,
-          AdaptiveToolbarHost(child: child ?? const SizedBox.shrink()),
+          AdaptiveToolbarHost(
+            chrome: chrome,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
     final effectiveBuilder = builder != null
         ? (BuildContext context, Widget? child) =>
@@ -400,6 +410,7 @@ class AdaptiveApp extends StatelessWidget {
     // user's builder outermost.
     Widget materialBuilder(BuildContext context, Widget? child) {
       final hosted = AdaptiveToolbarHost(
+        chrome: chrome,
         child: child ?? const SizedBox.shrink(),
       );
       return builder != null ? builder!(context, hosted) : hosted;
