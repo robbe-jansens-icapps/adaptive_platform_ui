@@ -69,7 +69,14 @@ abstract final class TestChrome {
     ),
   );
 
-  static Widget _actions(BuildContext context, AdaptiveActionsSpec spec) => Flex(
+  static Widget _actions(BuildContext context, AdaptiveActionsSpec spec) => spec.overflow
+      ? Builder(
+          builder: (anchor) => GestureDetector(
+            onTap: () => spec.onPressed(spec.actions.first, anchor),
+            child: const SizedBox.square(dimension: 44, child: Center(child: Text('more', style: TextStyle(fontSize: 8)))),
+          ),
+        )
+      : Flex(
     direction: spec.axis,
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -79,7 +86,7 @@ abstract final class TestChrome {
             onTap: () => spec.onPressed(action, anchor),
             child: SizedBox.square(
               dimension: 44,
-              child: Center(child: Text(spec.overflow ? 'more' : 'action:${action.title}', style: const TextStyle(fontSize: 8))),
+              child: Center(child: Text('action:${action.title}', style: const TextStyle(fontSize: 8))),
             ),
           ),
         ),

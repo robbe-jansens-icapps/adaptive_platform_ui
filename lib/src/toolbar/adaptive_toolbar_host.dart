@@ -284,6 +284,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                               backdropKey: _chromeBackdrop,
                               child: HostedDuoBar(
                                 blend: _blend,
+                                chrome: chrome,
                                 regions:
                                     fold?.regions ?? const <ReservedRegion>[],
                               ),

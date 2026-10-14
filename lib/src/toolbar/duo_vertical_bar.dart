@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart';
 import 'package:foldable/foldable.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../platform/system_vertical_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
@@ -313,7 +314,8 @@ const double kDuoBarBottomMargin = kDuoBarEdgeMargin;
 ///
 /// This is a Flutter-composed bar rather than a native one: iOS only lays out
 /// container-managed bars vertically, never a hand-built UINavigationBar. The
-/// capsules themselves are native Liquid Glass.
+/// capsules themselves are native Liquid Glass, or with [chrome] the app's
+/// own controls, laid out in the same sizes.
 class DuoVerticalBar extends StatelessWidget {
   const DuoVerticalBar({
     super.key,
@@ -324,7 +326,17 @@ class DuoVerticalBar extends StatelessWidget {
     this.tint,
     this.regions = const <ReservedRegion>[],
     this.navigator,
+    this.chrome,
+    this.chromeData,
   });
+
+  /// The app's own bars: its builders draw the groups of actions, the
+  /// overflow control and the tabs, each in the size of the native capsule
+  /// it stands for.
+  final AdaptiveChrome? chrome;
+
+  /// [AdaptiveAppBar.chromeData] of the page whose actions these are.
+  final Object? chromeData;
 
   /// Primary navigation control (back, close), placed first.
   final Widget? leading;
@@ -386,7 +398,22 @@ class DuoVerticalBar extends StatelessWidget {
             children: [
               ..._controls(room),
               const Spacer(),
-              if (tabs.isNotEmpty)
+              if (tabs.isNotEmpty && chrome != null)
+                SizedBox(
+                  width: IOS26GlassCapsule.width,
+                  height: IOS26GlassCapsule.tabsHeight(tabs.length),
+                  child: chrome!.tabBarBuilder(
+                    context,
+                    AdaptiveTabBarSpec(
+                      placement: AdaptiveChromePlacement.vertical,
+                      items: tabs,
+                      selectedIndex: tabBar!.selectedIndex ?? 0,
+                      onTap: (index) => tabBar!.onTap?.call(index),
+                      data: tabBar!.chromeData,
+                    ),
+                  ),
+                )
+              else if (tabs.isNotEmpty)
                 SizedBox(
                   width: IOS26GlassCapsule.width,
                   height: IOS26GlassCapsule.tabsHeight(tabs.length),
@@ -452,13 +479,51 @@ class DuoVerticalBar extends StatelessWidget {
     }
 
     if (leading != null) add(leading!);
+    final chrome = this.chrome;
     for (final group in shown) {
-      if (group.isNotEmpty) add(_ActionCapsule(actions: group, tint: tint));
+      if (group.isEmpty) continue;
+      add(
+        chrome == null
+            ? _ActionCapsule(actions: group, tint: tint)
+            : _customActions(chrome, group, overflow: false),
+      );
     }
     if (overflow.isNotEmpty) {
-      add(_OverflowCapsule(actions: overflow, navigator: navigator));
+      add(
+        chrome == null
+            ? _OverflowCapsule(actions: overflow, navigator: navigator)
+            : _customActions(chrome, overflow, overflow: true),
+      );
     }
     return children;
+  }
+
+  /// One group of actions as the app draws it, in the size of the capsule
+  /// it stands for; the overflow control in the size of one action.
+  Widget _customActions(
+    AdaptiveChrome chrome,
+    List<AdaptiveAppBarAction> actions, {
+    required bool overflow,
+  }) {
+    return SizedBox(
+      width: IOS26GlassCapsule.width,
+      height: IOS26GlassCapsule.actionsHeight(overflow ? 1 : actions.length),
+      child: Builder(
+        builder: (context) => chrome.actionsBuilder(
+          context,
+          AdaptiveActionsSpec(
+            placement: AdaptiveChromePlacement.vertical,
+            actions: actions,
+            axis: Axis.vertical,
+            overflow: overflow,
+            tint: tint,
+            data: chromeData,
+            onPressed: (action, anchor) =>
+                action.press(anchor, navigator: navigator),
+          ),
+        ),
+      ),
+    );
   }
 }
 
