@@ -26,7 +26,7 @@ class ToolbarEntry {
     this.enclosingRoutes = const <ModalRoute<Object?>>[],
     this.titleOverlay,
     this.scrollEdge,
-    this.bottomScrollEdge,
+    this.titleBandShown,
     this.backgroundColor,
   });
 
@@ -86,13 +86,13 @@ class ToolbarEntry {
   final ValueListenable<bool>? tabBarMinimized;
 
   /// How far the page's content has scrolled under the bars along its top,
-  /// from 0 to 1 (see `AdaptiveScrollEdge`), where the page tracks it: with
-  /// custom chrome.
+  /// from 0 to 1 (see `AdaptiveScrollEdge`).
   final ValueListenable<double>? scrollEdge;
 
-  /// The same along the bottom: how much of the page's content runs under
-  /// the bars there, from 0 to 1.
-  final ValueListenable<double>? bottomScrollEdge;
+  /// How far the page's title band on the iPhone Duo is shown, from 0 to 1:
+  /// it moves out of the way while the page scrolls on, and comes back as it
+  /// scrolls back.
+  final ValueListenable<double>? titleBandShown;
 
   /// The colour of the page (`AdaptiveScaffold.backgroundColor`), for the
   /// chrome around it to match.
@@ -274,6 +274,25 @@ class ToolbarRegistry extends ChangeNotifier {
     _notifySafely();
   }
 
+  /// One key per tab layout, so its accessory keeps its state (a video
+  /// playing) wherever the chrome puts it: along the bottom, floating over
+  /// the content, in a sidebar, or in the iPhone Duo's vertical bar.
+  GlobalKey accessoryKey(Object id) => _accessoryKeys.putIfAbsent(
+    id,
+    () => GlobalKey(debugLabel: 'adaptive tab accessory'),
+  );
+  final Map<Object, GlobalKey> _accessoryKeys = <Object, GlobalKey>{};
+
+  /// Forgets the accessories of tab layouts other than [ids].
+  void keepAccessoriesOf(Iterable<Object> ids) {
+    final kept = ids.toSet();
+    _accessoryKeys.removeWhere((id, _) => !kept.contains(id));
+  }
+
+  /// How tall the accessory in the iPhone Duo's vertical bar is, so the
+  /// page's controls above it keep clear of it.
+  final ValueNotifier<double> barAccessoryHeight = ValueNotifier<double>(0);
+
   /// Removes the entry registered under [id], if any.
   void remove(Object id) {
     final before = _entries.length;
@@ -305,6 +324,7 @@ class ToolbarRegistry extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    barAccessoryHeight.dispose();
     super.dispose();
   }
 

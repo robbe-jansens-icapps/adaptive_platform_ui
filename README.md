@@ -349,18 +349,23 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
   a tab's own navigator is in front, as `hidesBottomBarWhenPushed` does, and
   that page gets the room back. A sidebar stays.
 - **`accessory`** on the tab bar: a mini player or the like, above the tabs
-  along the bottom, floating at the bottom of the content beside the iPhone
-  Duo's vertical bar, docked in the sidebar; one widget all along, so its
-  state survives folding and rotating.
-- **Scroll edge**: as the system's scroll edge effect, the bars' background
-  is part of each scroll view whose content runs under them, along the top
-  and along the bottom, and fades in as content scrolls under them. Whatever
-  the page lays over its scroll views stays clear of it: a search field
-  pinned above a list, a segmented control floating over its bottom. A page
-  without one, such as a map, gets none. The back button and actions get
+  along the bottom, in the iPhone Duo's vertical bar above the tabs, docked
+  in the sidebar; one widget all along, so its state survives folding and
+  rotating.
+- **Scroll edge**: as the system's scroll edge effect, the bar's background
+  along the top is part of each scroll view whose content runs under it, and
+  fades in as soon as content scrolls under it: the content blurred and
+  tinted in the page's colour (`AdaptiveBarBackdrop`), ending in a clean edge
+  at the bottom of the bar. Whatever the page lays over its scroll views
+  stays clear of it. Content a page pins below its bar, such as a search
+  field or tabs, joins the bar with `AdaptiveSafeAreaBar`: the page runs
+  under both and the background reaches below it. A page without scroll
+  views, such as a map, gets none. The back button and actions get
   `scrollEdge` (0 to 1) in their spec, for controls that only need a surface
-  of their own over content. Beside the iPhone Duo's vertical bar the strip
-  takes the colour of the page in front.
+  of their own over content. On the iPhone Duo held sideways the title band
+  moves out of the way while a page scrolls on, and comes back as soon as it
+  scrolls back. Beside the iPhone Duo's vertical bar the strip takes the
+  colour of the page in front.
 - **Glass**: `AdaptiveGlass` is frosted glass in your colours, drawn by
   Flutter; sheets (`AdaptiveSheet`) and popovers take the chrome's.
 - **Popovers**: `AdaptivePopover.show` grows out of a control and shrinks back

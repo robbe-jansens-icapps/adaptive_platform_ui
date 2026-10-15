@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
 import '../chrome/adaptive_chrome.dart';
+import '../utils/size_reporter.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
@@ -150,6 +151,11 @@ class HostedDuoBar extends StatelessWidget {
                   excluding: tabs.id != upperTabs?.id,
                   child: DuoVerticalBar(
                     tabBar: tabs.tabBar,
+                    accessory: _accessory(
+                      context,
+                      tabs,
+                      reports: tabs.id == upperTabs?.id,
+                    ),
                     regions: regions,
                     chrome: chrome,
                   ),
@@ -158,6 +164,38 @@ class HostedDuoBar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// The accessory of the tab layout [tabs] (a mini player), in the app's
+  /// frame for the vertical bar, above the tabs. Its height is what the
+  /// page's controls keep clear of, as long as it [reports] it.
+  Widget? _accessory(
+    BuildContext context,
+    ToolbarEntry tabs, {
+    required bool reports,
+  }) {
+    final accessory = tabs.tabBar?.accessory;
+    final frame = chrome?.accessoryBuilder;
+    if (accessory == null || chrome == null) return null;
+    final registry = blend.registry;
+    final framed = KeyedSubtree(
+      key: registry.accessoryKey(tabs.id),
+      child: frame == null
+          ? accessory
+          : frame(
+              context,
+              const AdaptiveAccessorySpec(
+                placement: AdaptiveChromePlacement.vertical,
+                compact: true,
+              ),
+              accessory,
+            ),
+    );
+    if (!reports) return framed;
+    return SizeReporter(
+      onSizeChanged: (size) => registry.barAccessoryHeight.value = size.height,
+      child: framed,
     );
   }
 
@@ -180,19 +218,27 @@ class HostedDuoBar extends StatelessWidget {
         excluding: !interactive,
         child: IgnorePointer(
           ignoring: !interactive,
-          child: DuoVerticalBar(
-            leading:
-                content.customLeading ??
-                (content.impliesBack
-                    ? const SizedBox.square(dimension: IOS26GlassCapsule.width)
-                    : null),
-            actions: content.actions,
-            reservedTabs: reservedTabs,
-            tint: content.tint,
-            regions: regions,
-            navigator: content.navigator,
-            chrome: chrome,
-            chromeData: content.data,
+          child: ValueListenableBuilder<double>(
+            valueListenable: blend.registry.barAccessoryHeight,
+            builder: (context, accessory, _) => DuoVerticalBar(
+              leading:
+                  content.customLeading ??
+                  (content.impliesBack
+                      ? const SizedBox.square(
+                          dimension: IOS26GlassCapsule.width,
+                        )
+                      : null),
+              actions: content.actions,
+              reservedTabs: reservedTabs,
+              reservedAccessory: reservedTabs > 0 && chrome != null
+                  ? accessory
+                  : 0,
+              tint: content.tint,
+              regions: regions,
+              navigator: content.navigator,
+              chrome: chrome,
+              chromeData: content.data,
+            ),
           ),
         ),
       ),

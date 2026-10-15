@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../style/adaptive_deferred_start_controller.dart';
+import '../style/adaptive_spring_curve.dart';
 import '../chrome/adaptive_chrome.dart';
 import '../toolbar/duo_vertical_bar.dart';
 import '../toolbar/fold_scope.dart';
@@ -226,10 +228,22 @@ class _PopoverRoute<T> extends PopupRoute<T> {
   String? get barrierLabel => label;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 420);
+  Duration get transitionDuration => _RenderPopoverMorph._grow.duration;
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 260);
+  Duration get reverseTransitionDuration =>
+      _RenderPopoverMorph._shrinkSpring.duration;
+
+  /// It only starts growing once its content is built, so a popover that
+  /// takes a while to build still grows out of its control all the way.
+  @override
+  AnimationController createAnimationController() =>
+      AdaptiveDeferredStartController(
+        vsync: navigator!,
+        duration: transitionDuration,
+        reverseDuration: reverseTransitionDuration,
+        debugLabel: debugLabel,
+      );
 
   @override
   Widget buildPage(
@@ -549,10 +563,16 @@ class _RenderPopoverMorph extends RenderBox
        _layout = layout,
        _reduceMotion = reduceMotion;
 
-  /// The surface overshoots its place a little and settles, as the system's
-  /// popovers do; it closes without.
-  static const Curve _grow = Cubic(0.2, 0.9, 0.3, 1.06);
-  static const Curve _shrink = Curves.easeInCubic;
+  /// The surface springs out of its control, passing its place a little and
+  /// settling, as the system's popovers do; it springs back into the control
+  /// without.
+  static const AdaptiveSpringCurve _grow = AdaptiveSpringCurve.bouncy;
+  static const AdaptiveSpringCurve _shrinkSpring = AdaptiveSpringCurve(
+    response: 0.3,
+    dampingRatio: 1,
+    duration: Duration(milliseconds: 320),
+  );
+  static final Curve _shrink = _shrinkSpring.flipped;
 
   /// The corners the content is clipped to while the surface grows.
   static const double _radius = 20;
@@ -590,6 +610,10 @@ class _RenderPopoverMorph extends RenderBox
 
   Rect _target = Rect.zero;
   Rect _surface = Rect.zero;
+
+  /// How far the surface has grown out of its control, past 1 while it
+  /// overshoots.
+  double _progress = 0;
 
   final LayerHandle<ClipRRectLayer> _clip = LayerHandle<ClipRRectLayer>();
   final LayerHandle<TransformLayer> _transform = LayerHandle<TransformLayer>();
@@ -639,6 +663,7 @@ class _RenderPopoverMorph extends RenderBox
     (content.parentData! as _MorphParentData).offset = offset;
     _target = offset & content.size;
     final progress = (_closing ? _shrink : _grow).transform(_t);
+    _progress = progress;
     _surface = _reduceMotion ? _target : Rect.lerp(_anchor, _target, progress)!;
     surface.layout(
       BoxConstraints.tight(
@@ -682,9 +707,11 @@ class _RenderPopoverMorph extends RenderBox
       return;
     }
     context.paintChild(surface, offset + surfaceData.offset);
+    // The content comes in with the surface rather than after it, and is
+    // gone before the surface is back in its control.
     final reveal = _closing
-        ? Curves.easeIn.transform(((t - 0.35) / 0.65).clamp(0.0, 1.0))
-        : Curves.easeOut.transform(((t - 0.25) / 0.75).clamp(0.0, 1.0));
+        ? Curves.easeIn.transform(((t - 0.5) / 0.5).clamp(0.0, 1.0))
+        : Curves.easeOut.transform(((t - 0.05) / 0.3).clamp(0.0, 1.0));
     if (reveal == 0) {
       _clip.layer = null;
       _transform.layer = null;
@@ -692,7 +719,7 @@ class _RenderPopoverMorph extends RenderBox
       return;
     }
     final radius = math.min(_radius, _surface.shortestSide / 2);
-    final scale = 0.92 + 0.08 * Curves.easeOut.transform(t);
+    final scale = 0.9 + 0.1 * _progress;
     final origin = _origin;
     final matrix = Matrix4.identity()
       ..translateByDouble(origin.dx, origin.dy, 0, 1)

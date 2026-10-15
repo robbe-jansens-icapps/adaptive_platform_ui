@@ -189,7 +189,7 @@ void main() {
     expect(tester.getRect(find.byType(AdaptiveGlass)), button);
 
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tapAt(tester.getCenter(find.byKey(content)));
+    await tester.tapAt(tester.getCenter(find.byType(AdaptiveGlass)));
     expect(taps, 0);
     expect(find.byKey(content), findsOneWidget);
 
@@ -200,6 +200,8 @@ void main() {
     expect(taps, 1);
 
     Navigator.of(tester.element(find.byKey(content))).pop();
+    await tester.pump();
+    // It holds for the frame the page underneath takes to come back.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.getRect(find.byType(AdaptiveGlass)).width, lessThan(open.width));
@@ -241,6 +243,9 @@ void main() {
     );
     final bar = tester.getRect(find.byKey(const ValueKey('bar')));
     await tester.tap(find.byKey(const ValueKey('bar')));
+    await tester.pump();
+    expect(tester.getRect(find.byType(AdaptiveGlass)), bar);
+    // It holds at its control while its first frames are built.
     await tester.pump();
     expect(tester.getRect(find.byType(AdaptiveGlass)), bar);
     await tester.pump(const Duration(milliseconds: 60));

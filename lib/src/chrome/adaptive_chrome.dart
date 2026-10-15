@@ -242,21 +242,16 @@ class AdaptiveBarBackgroundSpec {
     required this.height,
     this.color,
     this.titleBand = false,
-    this.bottom = false,
+    this.pinned = false,
     this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
 
   final AdaptiveChromePlacement placement;
 
-  /// How far the bar reaches from the edge of the window it sits on: down
-  /// from the top, or up from the bottom for a [bottom] one.
+  /// How far the bar reaches down from the top of the window, including
+  /// what a page pins below it ([AdaptiveSafeAreaBar]).
   final double height;
-
-  /// Whether this sits along the bottom of the window, behind the tab bar,
-  /// a floating accessory or the home indicator, fading out upwards, rather
-  /// than behind the toolbar along the top.
-  final bool bottom;
 
   /// How far the page's content has scrolled under the bar (see
   /// [AdaptiveScrollEdge]). The host already fades the background in with
@@ -268,6 +263,12 @@ class AdaptiveBarBackgroundSpec {
 
   /// The iPhone Duo's title band rather than a whole bar.
   final bool titleBand;
+
+  /// Whether the page pins something below the bar that the background
+  /// reaches behind, such as a search field or tabs
+  /// ([AdaptiveSafeAreaBar]): a bar that holds more than its controls reads
+  /// as solid.
+  final bool pinned;
 
   /// [AdaptiveAppBar.chromeData].
   final Object? data;
@@ -292,7 +293,7 @@ class AdaptiveChromeMetrics {
     this.sidebarExpandedWindowWidth = 1024,
     this.sidebarWidth = 300,
     this.sidebarCollapsedWidth = 88,
-    this.pinnedEdgeHeight = 24,
+    this.controlInset = 16,
   });
 
   /// Height of the toolbar along the top, below the status bar.
@@ -317,10 +318,10 @@ class AdaptiveChromeMetrics {
   /// The sidebar collapsed to a rail of icons.
   final double sidebarCollapsedWidth;
 
-  /// How far the soft edge at the top of a scroll view below something
-  /// pinned above it reaches into its content ([AdaptiveScrollEdgeRegion]);
-  /// 0 for none.
-  final double pinnedEdgeHeight;
+  /// Room between the side of a bar and the controls in it: the back button
+  /// and the actions. A title with no control beside it keeps to the page's
+  /// margin instead.
+  final double controlInset;
 
   @override
   bool operator ==(Object other) =>
@@ -331,7 +332,7 @@ class AdaptiveChromeMetrics {
       other.sidebarExpandedWindowWidth == sidebarExpandedWindowWidth &&
       other.sidebarWidth == sidebarWidth &&
       other.sidebarCollapsedWidth == sidebarCollapsedWidth &&
-      other.pinnedEdgeHeight == pinnedEdgeHeight;
+      other.controlInset == controlInset;
 
   @override
   int get hashCode => Object.hash(
@@ -341,7 +342,7 @@ class AdaptiveChromeMetrics {
     sidebarExpandedWindowWidth,
     sidebarWidth,
     sidebarCollapsedWidth,
-    pinnedEdgeHeight,
+    controlInset,
   );
 }
 
@@ -389,11 +390,10 @@ class AdaptiveChrome {
   /// A group of a page's actions.
   final AdaptiveActionsBuilder actionsBuilder;
 
-  /// Behind the toolbar along the top, and behind what sits along the bottom
-  /// ([AdaptiveBarBackgroundSpec.bottom]). A soft gradient in the page's
+  /// Behind the toolbar along the top. [AdaptiveBarBackdrop] in the page's
   /// colour when null, as behind the native bar. Either way it fades in as
-  /// the page's content scrolls under it, as the system's scroll edge effect
-  /// does, and is gone while nothing is underneath.
+  /// soon as the page's content scrolls under it, as the system's scroll edge
+  /// effect does, and is gone while nothing is underneath.
   final AdaptiveBarBackgroundBuilder? barBackgroundBuilder;
 
   /// The tabs in a sidebar along the leading edge of a wide window
@@ -523,15 +523,6 @@ abstract final class AdaptiveScrollEdge {
   static double? of(ScrollMetrics metrics) {
     if (metrics.axis != Axis.vertical) return null;
     final under = metrics.axisDirection == AxisDirection.up ? metrics.extentAfter : metrics.extentBefore;
-    return (under / distance).clamp(0.0, 1.0);
-  }
-
-  /// The scroll edge along the bottom: how much content there is below the
-  /// bottom of a scrollable with [metrics], running under the bars there.
-  /// Null for one that does not run vertically.
-  static double? bottomOf(ScrollMetrics metrics) {
-    if (metrics.axis != Axis.vertical) return null;
-    final under = metrics.axisDirection == AxisDirection.up ? metrics.extentBefore : metrics.extentAfter;
     return (under / distance).clamp(0.0, 1.0);
   }
 }

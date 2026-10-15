@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../chrome/sidebar_room.dart';
 import '../toolbar/duo_top_strip.dart';
@@ -678,8 +679,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     Widget master,
   ) {
     final padding = MediaQuery.paddingOf(context);
-    // The iPhone Duo vertical bar keeps its strip: the columns lie beside it.
+    // With custom chrome the columns run on under the iPhone Duo's vertical
+    // bar, the column at its side keeping its content clear of it, as a
+    // whole page does; beside the native bar they lie beside it.
     final bar = DuoLayout.barSide(MediaQuery.viewPaddingOf(context));
+    final under = AdaptiveChromeScope.chromeOf(context) != null;
     final left = bar == DuoBarSide.left ? padding.left : 0.0;
     final right = bar == DuoBarSide.right ? padding.right : 0.0;
     // Beside a sidebar the list column takes its room over and runs under
@@ -712,7 +716,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
       duoControls: duoControls,
       isDetail: true,
       removeLeft: true,
-      removeRight: bar == DuoBarSide.right,
+      removeRight: !under && bar == DuoBarSide.right,
       child: HeroControllerScope.none(
         child: SidebarRoom(
           width: 0,
@@ -729,7 +733,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
       context,
       duoControls: duoControls,
       isDetail: false,
-      removeLeft: bar == DuoBarSide.left,
+      removeLeft: !under && bar == DuoBarSide.left,
       removeRight: true,
       child: master,
     );
@@ -737,16 +741,21 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     return ColoredBox(
       color: _backgroundOf(context),
       child: Padding(
-        padding: EdgeInsets.only(left: left, right: right),
+        padding: under
+            ? EdgeInsets.zero
+            : EdgeInsets.only(left: left, right: right),
         child: AnimatedBuilder(
           animation: _toFold,
           builder: (context, _) {
             final flat = room + (width * 0.38).clamp(320.0, 420.0);
             final foldX = _foldX;
             // Centred on the fold.
-            final masterWidth = foldX == null
-                ? flat
-                : flat + (foldX - start - divider / 2 - flat) * _toFold.value;
+            final masterWidth =
+                (under ? left : 0) +
+                (foldX == null
+                    ? flat
+                    : flat +
+                          (foldX - start - divider / 2 - flat) * _toFold.value);
             return Stack(
               children: [
                 Positioned(

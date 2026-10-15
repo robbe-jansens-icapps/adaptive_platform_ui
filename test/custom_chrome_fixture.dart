@@ -310,4 +310,19 @@ extension CopyWithGlass on AdaptiveChrome {
     glass: glass,
     metrics: metrics,
   );
+
+  /// This chrome with other metrics.
+  AdaptiveChrome copyWithMetrics(AdaptiveChromeMetrics metrics) => AdaptiveChrome(
+    tabBarBuilder: tabBarBuilder,
+    titleBuilder: titleBuilder,
+    backButtonBuilder: backButtonBuilder,
+    actionsBuilder: actionsBuilder,
+    barBackgroundBuilder: barBackgroundBuilder,
+    sidebarBuilder: sidebarBuilder,
+    accessoryBuilder: accessoryBuilder,
+    popoverBuilder: popoverBuilder,
+    centerTitle: centerTitle,
+    glass: glass,
+    metrics: metrics,
+  );
 }

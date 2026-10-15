@@ -1,6 +1,7 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foldable/foldable.dart';
 
@@ -53,18 +54,16 @@ void useWindow(
 
 Finder get bar => find.byType(HostedTopToolbar);
 
-/// The gradient of the bar's backdrop.
-LinearGradient backdropGradient(WidgetTester tester) {
-  final box = tester
-      .widgetList<Container>(
-        find.descendant(of: bar, matching: find.byType(Container)),
-      )
-      .firstWhere(
-        (container) =>
-            (container.decoration as BoxDecoration?)?.gradient != null,
-      );
-  return (box.decoration! as BoxDecoration).gradient! as LinearGradient;
-}
+/// The bar's backdrop.
+Finder get frost =>
+    find.descendant(of: bar, matching: find.byType(AdaptiveBarBackdrop));
+
+/// How far the backdrop is in as the page's content scrolls under it.
+double frostShown(WidgetTester tester) => tester
+    .widget<Opacity>(
+      find.ancestor(of: frost, matching: find.byType(Opacity)).first,
+    )
+    .opacity;
 
 /// The opacity the backdrop is drawn at, all fades around it together.
 double backdropOpacity(WidgetTester tester) {
@@ -86,23 +85,53 @@ double backdropOpacity(WidgetTester tester) {
 void main() {
   tearDown(() => PlatformInfo.debugIPadOverride = null);
 
-  testWidgets('the backdrop takes the color of the page it sits on', (
-    tester,
-  ) async {
-    useWindow(tester);
-    tester.view.padding = const FakeViewPadding(top: 62);
-    tester.view.viewPadding = const FakeViewPadding(top: 62);
-    await tester.pumpWidget(
-      hostedApp(home: page('Grey', backdropColor: _grey)),
-    );
-    await tester.pump();
+  testWidgets(
+    'the backdrop is the content blurred in the colour of the page it sits on, down to the bottom of the bar, once content scrolls under it',
+    (tester) async {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      final views = TestDefaultBinaryMessengerBinding
+          .instance
+          .defaultBinaryMessenger;
+      views.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (_) async => null,
+      );
+      addTearDown(() {
+        PlatformInfo.debugPlatformOverride = null;
+        PlatformInfo.debugIOSVersionOverride = null;
+        views.setMockMethodCallHandler(SystemChannels.platform_views, null);
+      });
+      useWindow(tester);
+      tester.view.padding = const FakeViewPadding(top: 62);
+      tester.view.viewPadding = const FakeViewPadding(top: 62);
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        hostedApp(
+          home: page(
+            'Grey',
+            backdropColor: _grey,
+            body: ListView(
+              controller: controller,
+              children: [
+                for (var i = 0; i < 40; i++) const SizedBox(height: 60),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
 
-    expect(
-      backdropGradient(tester).colors.first,
-      _grey.withValues(alpha: 0.85),
-    );
-    expect(backdropGradient(tester).colors.last, _grey.withValues(alpha: 0));
-  });
+      expect(tester.widget<AdaptiveBarBackdrop>(frost).color, _grey);
+      expect(tester.getRect(frost).bottom, 62 + kHostedToolbarHeight);
+      expect(frostShown(tester), 0);
+
+      controller.jumpTo(200);
+      await tester.pump();
+      expect(frostShown(tester), 1);
+    },
+  );
 
   testWidgets('the backdrop fades out while a sheet covers the page', (
     tester,

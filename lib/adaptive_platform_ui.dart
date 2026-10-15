@@ -48,6 +48,8 @@ export 'src/widgets/adaptive_app.dart';
 export 'src/chrome/adaptive_chrome.dart'
     hide AlwaysStoppedListenable, resolveChromePlacement;
 export 'src/chrome/scroll_edge_effect.dart';
+export 'src/style/adaptive_deferred_start_controller.dart';
+export 'src/style/adaptive_spring_curve.dart';
 export 'src/toolbar/adaptive_fixed_toolbar.dart';
 export 'src/toolbar/adaptive_toolbar_host.dart';
 export 'src/toolbar/duo_top_strip.dart'

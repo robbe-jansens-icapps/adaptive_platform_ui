@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../chrome/adaptive_chrome.dart';
+import '../chrome/scroll_edge_effect.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../style/glass_button_glyph.dart';
@@ -39,6 +40,7 @@ class TopToolbarContent {
     this.titleWidget,
     this.data,
     this.scrollEdge = const AlwaysStoppedListenable<double>(0),
+    this.titleBandShown = const AlwaysStoppedListenable<double>(1),
     this.pageColor,
   });
 
@@ -70,6 +72,8 @@ class TopToolbarContent {
       titleWidget: appBar.titleWidget,
       data: appBar.chromeData,
       scrollEdge: entry.scrollEdge ?? const AlwaysStoppedListenable<double>(0),
+      titleBandShown:
+          entry.titleBandShown ?? const AlwaysStoppedListenable<double>(1),
       pageColor: entry.backgroundColor,
     );
   }
@@ -104,9 +108,13 @@ class TopToolbarContent {
   /// [AdaptiveAppBar.chromeData], for custom chrome.
   final Object? data;
 
-  /// How far the page's content has scrolled under the bar, for custom
-  /// chrome ([ToolbarEntry.scrollEdge]).
+  /// How far the page's content has scrolled under the bar
+  /// ([ToolbarEntry.scrollEdge]).
   final ValueListenable<double> scrollEdge;
+
+  /// How far the page's title band on the iPhone Duo is shown
+  /// ([ToolbarEntry.titleBandShown]).
+  final ValueListenable<double> titleBandShown;
 
   /// The page's own colour ([ToolbarEntry.backgroundColor]), which custom
   /// chrome falls back on without a [backdropColor].
@@ -273,6 +281,9 @@ class HostedTopToolbar extends StatelessWidget {
     final backdropData = upperBackdrop ? upper.data : lower.data;
     final backdropTop = upperBackdrop ? upperTop : lowerTop;
     final backdropEdge = upperBackdrop ? upper.scrollEdge : lower.scrollEdge;
+    final backdropBand = upperBackdrop
+        ? upper.titleBandShown
+        : lower.titleBandShown;
     Widget backdrop =
         upperBackdrop &&
             lowerBackdrop &&
@@ -300,6 +311,17 @@ class HostedTopToolbar extends StatelessWidget {
       // effect of each page's scroll views (AdaptiveScrollEdgeRegion), under
       // whatever a page lays over them.
       backdrop = const SizedBox.shrink();
+    } else {
+      // In as soon as the page's content scrolls under the bar.
+      final child = backdrop;
+      backdrop = ListenableBuilder(
+        listenable: Listenable.merge([backdropEdge, backdropBand]),
+        child: child,
+        builder: (context, child) => Opacity(
+          opacity: (backdropEdge.value * backdropBand.value).clamp(0.0, 1.0),
+          child: child,
+        ),
+      );
     }
 
     return Align(
@@ -402,7 +424,7 @@ class HostedTopToolbar extends StatelessWidget {
       // from one page to the next.
       key: ValueKey<Object>(('adaptive_toolbar_back', style)),
       left:
-          16 +
+          (chrome?.metrics.controlInset ?? 16) +
           (_hasWindowControls(context) && !besideSidebar ? 62 : 0) +
           (inStrip ? DuoTopStripScope.of(context)?.clusterLeft ?? 0 : 0),
       top: top,
@@ -474,7 +496,13 @@ class HostedTopToolbar extends StatelessWidget {
     }
     return titleOnly
         ? DuoTitleBackdrop(color: color)
-        : _Backdrop(color: color, height: topInset + _toolbarHeight);
+        : Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: topInset + _toolbarHeight,
+              child: IgnorePointer(child: AdaptiveBarBackdrop(color: color)),
+            ),
+          );
   }
 
   /// While [entry] is a page shown like a dialog that comes up or goes down:
@@ -518,11 +546,14 @@ class HostedTopToolbar extends StatelessWidget {
             child: titleOnly
                 // On iPhone Duo the title sits at the leading edge and the
                 // controls are in the trailing bar, so there is no bar to draw.
-                ? DuoToolbarTitle(
-                    title: content.title,
-                    titleWidget: chrome != null
-                        ? _customTitle(context, content, centered: false)
-                        : content.titleOverlay,
+                ? DuoTitleBandTransition(
+                    shown: content.titleBandShown,
+                    child: DuoToolbarTitle(
+                      title: content.title,
+                      titleWidget: chrome != null
+                          ? _customTitle(context, content, centered: false)
+                          : content.titleOverlay,
+                    ),
                   )
                 : chrome != null
                 ? _BesideSidebar(
@@ -687,45 +718,6 @@ class _DialogSlide extends StatelessWidget {
 /// The soft gradient that keeps the bar readable over scrolling content, in
 /// the page's [color]: invisible at rest, it fades out what scrolls under the
 /// bar.
-class _Backdrop extends StatelessWidget {
-  const _Backdrop({required this.color, required this.height});
-
-  final Color color;
-
-  /// How far down the bar reaches from the top of the window.
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final base = color.withValues(alpha: 1);
-    return IgnorePointer(
-      child: OverflowBox(
-        alignment: Alignment.topCenter,
-        maxHeight: double.infinity,
-        child: LayoutBuilder(
-          builder: (context, constraints) => Container(
-            // Runs on below the bar for a smooth fade into the content.
-            height: height + 30,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: const [0.0, 0.4, 0.7, 1.0],
-                colors: [
-                  base.withValues(alpha: 0.85),
-                  base.withValues(alpha: 0.6),
-                  base.withValues(alpha: 0.2),
-                  base.withValues(alpha: 0.0),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Back for the page that owns the chrome: the page's own handler, or else a
 /// pop of the page's own navigator, so nested navigators (tabs, shell routes)
 /// pop the right stack.
@@ -975,7 +967,8 @@ class _CustomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final strip = inStrip ? DuoTopStripScope.of(context) : null;
     final metrics = chrome.metrics;
-    final start = 16 + leadingInset + (strip?.clusterLeft ?? 0);
+    final side = leadingInset + (strip?.clusterLeft ?? 0);
+    final start = metrics.controlInset + side;
     final customLeading = content.customLeading;
     final Widget leading = customLeading != null
         ? Padding(
@@ -985,10 +978,12 @@ class _CustomBar extends StatelessWidget {
         : SizedBox(
             width: content.impliesBack
                 ? start + metrics.backButtonSize
-                : start - kToolbarTitleSpacing,
+                : 16 + side - kToolbarTitleSpacing,
           );
     final actions = content.actions;
-    final end = 16 + (strip?.clusterRight ?? 0.0);
+    final end =
+        (actions.isEmpty ? 16 : metrics.controlInset) +
+        (strip?.clusterRight ?? 0.0);
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(

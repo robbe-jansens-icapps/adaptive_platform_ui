@@ -62,7 +62,7 @@ void main() {
     expect(tabs.paddingOf('Detail').bottom, 34);
   });
 
-  testWidgets('beside the iPhone Duo\'s vertical bar it floats at the bottom of the content', (tester) async {
+  testWidgets('on the iPhone Duo held sideways it sits in the vertical bar, above the tabs, and the pages keep no room for it', (tester) async {
     window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
     addTearDown(tester.view.reset);
     final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(), chrome: TestChrome.withFrames);
@@ -70,27 +70,28 @@ void main() {
     await tester.pumpAndSettle();
 
     final rect = tester.getRect(accessory());
-    expect(rect.bottom, innerLandscape.height - 34);
-    expect(rect.left, 12);
-    expect(rect.right, innerLandscape.width - (84 + kDuoVerticalBarBezelInset) - 12);
-    expect(tabs.paddingOf('Tab 0').bottom, 50 + 34);
+    final tabBar = tester.getRect(find.byKey(TestChrome.tabBarKey));
+    const band = 84 + kDuoVerticalBarBezelInset;
+    expect(rect.bottom, tabBar.top - kDuoBarGroupSpacing);
+    expect(rect.center.dx, closeTo(innerLandscape.width - band / 2, 0.5));
+    expect(tabs.paddingOf('Tab 0').bottom, 34);
+    expect(tabs.insetOf('Tab 0'), 0);
     expect(TestChrome.lastAccessorySpec!.placement, AdaptiveChromePlacement.vertical);
     expect(TestChrome.lastAccessorySpec!.compact, isTrue);
   });
 
-  testWidgets('without a frame it floats centred in the content, at most kFloatingAccessoryMaxWidth wide', (tester) async {
-    window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+  testWidgets('with the tabs in the top strip, without a frame it floats centred in the content, at most kFloatingAccessoryMaxWidth wide', (tester) async {
+    window(tester, const Size(669, 951), const FakeViewPadding(top: 84, bottom: 20));
     addTearDown(tester.view.reset);
-    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory());
+    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(), chrome: TestChrome.inTopStrip);
     await tester.pumpWidget(tabs.app());
     await tester.pumpAndSettle();
 
     final rect = tester.getRect(accessory());
-    final contentRight = innerLandscape.width - (84 + kDuoVerticalBarBezelInset) - 12;
     expect(rect.width, lessThanOrEqualTo(kFloatingAccessoryMaxWidth));
-    expect(rect.center.dx, closeTo((12 + contentRight) / 2, 0.5));
-    expect(rect.bottom, innerLandscape.height - 34);
-    expect(tabs.paddingOf('Tab 0').bottom, 50 + 34);
+    expect(rect.center.dx, closeTo(669 / 2, 0.5));
+    expect(rect.bottom, 951 - 20);
+    expect(tabs.paddingOf('Tab 0').bottom, 50 + 20);
   });
 
   testWidgets('in a sidebar it is handed to the sidebar, framed, and the pages keep nothing at the bottom', (tester) async {
@@ -137,7 +138,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('one with nothing to show for now keeps no room at the bottom beside the vertical bar, not even its margin', (tester) async {
+  testWidgets('one with nothing to show for now in the vertical bar keeps no room at the bottom', (tester) async {
     window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
     addTearDown(tester.view.reset);
     final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(height: 0), chrome: TestChrome.withFrames);

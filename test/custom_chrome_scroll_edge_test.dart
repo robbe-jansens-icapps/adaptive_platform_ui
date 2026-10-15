@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
+    show DuoTitleBandTransition;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,14 +30,7 @@ Widget _back(BuildContext context, AdaptiveBackButtonSpec spec) {
   );
 }
 
-const bottomBackdrop = ValueKey<String>('bottom backdrop');
-AdaptiveBarBackgroundSpec? lastBottom;
-
 Widget _background(BuildContext context, AdaptiveBarBackgroundSpec spec) {
-  if (spec.bottom) {
-    lastBottom = spec;
-    return ColoredBox(key: bottomBackdrop, color: spec.color!);
-  }
   lastBackground = spec;
   return ColoredBox(key: backdrop, color: spec.color!);
 }
@@ -48,25 +43,17 @@ const chrome = AdaptiveChrome(
   barBackgroundBuilder: _background,
 );
 
-/// [body] with a control floating along the bottom of the page.
-Widget withBottomControl(Widget body) => Stack(
-  fit: StackFit.expand,
-  children: [
-    body,
-    const Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      child: AdaptiveBottomControl(child: SizedBox(height: 1)),
-    ),
-  ],
+const plainChrome = AdaptiveChrome(
+  tabBarBuilder: _tabs,
+  titleBuilder: _title,
+  backButtonBuilder: _back,
+  actionsBuilder: _actions,
 );
 
 Widget listPage(
   String title, {
   Color color = pageColor,
   ScrollController? controller,
-  bool bottomControl = false,
 }) {
   final list = ListView(
     key: ValueKey<String>('list $title'),
@@ -79,7 +66,7 @@ Widget listPage(
   return AdaptiveScaffold(
     backgroundColor: color,
     appBar: AdaptiveAppBar(title: title),
-    body: bottomControl ? withBottomControl(list) : list,
+    body: list,
   );
 }
 
@@ -96,7 +83,6 @@ void main() {
   setUp(() {
     backEdge = null;
     lastBackground = null;
-    lastBottom = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           SystemChannels.platform_views,
@@ -120,7 +106,11 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  Future<void> pumpApp(WidgetTester tester, Widget home) async {
+  Future<void> pumpApp(
+    WidgetTester tester,
+    Widget home, {
+    AdaptiveChrome chrome = chrome,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         navigatorKey: navigator,
@@ -134,10 +124,8 @@ void main() {
 
   /// How far the background along the top is in where a scroll view draws
   /// it, 0 where none does.
-  double backdropOpacity(WidgetTester tester) => debugScrollEdgesOnScreen()
-      .map((edges) => edges.top)
-      .whereType<double>()
-      .fold(0, math.max);
+  double backdropOpacity(WidgetTester tester) =>
+      debugScrollEdgesOnScreen().fold(0, math.max);
 
   testWidgets(
     'the bar\'s background is only there as far as content has scrolled under the bar, in the page\'s colour',
@@ -263,93 +251,6 @@ void main() {
     },
   );
 
-  double bottomOpacity(WidgetTester tester) => debugScrollEdgesOnScreen()
-      .map((edges) => edges.bottom)
-      .whereType<double>()
-      .fold(0, math.max);
-
-  testWidgets(
-    'along the bottom the same background is there while content runs under the bottom, and gone at its end',
-    (tester) async {
-      phone(tester);
-      final controller = ScrollController();
-      addTearDown(controller.dispose);
-      await pumpApp(
-        tester,
-        listPage('List', controller: controller, bottomControl: true),
-      );
-
-      expect(bottomOpacity(tester), 1);
-      expect(lastBottom!.color, pageColor);
-      expect(lastBottom!.height, 34);
-      expect(tester.getRect(find.byKey(bottomBackdrop)).bottom, 844);
-
-      controller.jumpTo(controller.position.maxScrollExtent - 12);
-      await tester.pump();
-      expect(
-        bottomOpacity(tester),
-        closeTo(12 / AdaptiveScrollEdge.distance, 0.01),
-      );
-
-      controller.jumpTo(controller.position.maxScrollExtent);
-      await tester.pump();
-      expect(bottomOpacity(tester), 0);
-    },
-  );
-
-  testWidgets(
-    'along the bottom it takes the page\'s colour, not that of the bar along the top',
-    (tester) async {
-      phone(tester);
-      await pumpApp(
-        tester,
-        AdaptiveScaffold(
-          backgroundColor: pageColor,
-          appBar: const AdaptiveAppBar(
-            title: 'Header',
-            backdropColor: Color(0xFFFF8800),
-          ),
-          body: withBottomControl(
-            ListView(
-              children: [
-                for (var i = 0; i < 60; i++) const SizedBox(height: 60),
-              ],
-            ),
-          ),
-        ),
-      );
-
-      expect(lastBottom!.color, pageColor);
-      expect(lastBackground!.color, const Color(0xFFFF8800));
-    },
-  );
-
-  testWidgets('behind the tab bar it reaches as high as the bar', (
-    tester,
-  ) async {
-    phone(tester);
-    await pumpApp(
-      tester,
-      AdaptiveScaffold(
-        bottomNavigationBar: AdaptiveBottomNavigationBar(
-          items: const [
-            AdaptiveNavigationDestination(icon: Icons.circle, label: 'A'),
-            AdaptiveNavigationDestination(icon: Icons.circle, label: 'B'),
-          ],
-          selectedIndex: 0,
-          onTap: (_) {},
-        ),
-        body: Navigator(
-          onGenerateRoute: (_) =>
-              MaterialPageRoute<void>(builder: (_) => listPage('Tab')),
-        ),
-      ),
-    );
-
-    expect(lastBottom!.height, 60);
-    expect(bottomOpacity(tester), 1);
-  });
-
   testWidgets(
     'a page replaced where it stands fades out with the background it had',
     (tester) async {
@@ -433,227 +334,96 @@ void main() {
   );
 
   testWidgets(
-    'a control floating over the bottom of a list stays above the background along the bottom',
+    'without a background of the app\'s own the bar is the content blurred and tinted in the page\'s colour, ending at the bottom of the bar',
     (tester) async {
       phone(tester);
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await pumpApp(
+        tester,
+        listPage('List', controller: controller),
+        chrome: plainChrome,
+      );
+      controller.jumpTo(300);
+      await tester.pump();
+
+      final frost = find.byType(AdaptiveBarBackdrop);
+      expect(frost, findsOneWidget);
+      expect(tester.widget<AdaptiveBarBackdrop>(frost).color, pageColor);
+      expect(tester.getRect(frost).top, 0);
+      expect(tester.getRect(frost).bottom, 47 + kHostedToolbarHeight);
+      expect(backdropOpacity(tester), 1);
+      final hairline = find.descendant(
+        of: frost,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is ColoredBox &&
+              widget.color == AdaptiveBarBackdrop.defaultHairline,
+        ),
+      );
+      expect(tester.getRect(hairline).bottom, 47 + kHostedToolbarHeight);
+      expect(tester.getRect(hairline).height, 1);
+    },
+  );
+
+  testWidgets(
+    'content pinned below the bar joins it: the list runs under both, starts below both, and the bar\'s background reaches below what is pinned',
+    (tester) async {
+      phone(tester);
+      const pinned = ValueKey<String>('pinned');
       const list = ValueKey<String>('list');
-      const floating = ValueKey<String>('floating control');
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      late double paddingTop;
       await pumpApp(
         tester,
         AdaptiveScaffold(
-          appBar: const AdaptiveAppBar(title: 'Floating'),
-          body: Stack(
-            children: [
-              ListView(
-                key: list,
-                children: [
-                  for (var i = 0; i < 60; i++) const SizedBox(height: 60),
-                ],
-              ),
-              const Align(
-                alignment: Alignment.bottomCenter,
-                child: AdaptiveBottomControl(
-                  child: SizedBox(key: floating, width: 200, height: 48),
-                ),
-              ),
-            ],
+          backgroundColor: pageColor,
+          appBar: const AdaptiveAppBar(title: 'Search'),
+          body: AdaptiveSafeAreaBar(
+            bar: const SizedBox(key: pinned, height: 56),
+            child: Builder(
+              builder: (context) {
+                paddingTop = MediaQuery.paddingOf(context).top;
+                return ListView(
+                  key: list,
+                  controller: controller,
+                  children: [
+                    for (var i = 0; i < 60; i++)
+                      SizedBox(height: 60, child: Text('row $i')),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       );
 
-      expect(bottomOpacity(tester), 1);
+      const bar = 47 + kHostedToolbarHeight;
+      expect(tester.getRect(find.byKey(pinned)).top, bar);
+      expect(paddingTop, bar + 56);
+      expect(tester.getRect(find.byKey(list)).top, 0);
+      expect(tester.getRect(find.text('row 0')).top, bar + 56);
+      expect(backdropOpacity(tester), 0);
+
+      controller.jumpTo(300);
+      await tester.pump();
+      expect(backdropOpacity(tester), 1);
+      expect(lastBackground!.height, bar + 56);
       expect(
-        find.descendant(
-          of: find.byKey(list),
-          matching: find.byKey(bottomBackdrop),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: find.byKey(list), matching: find.byKey(floating)),
+        find.descendant(of: find.byKey(pinned), matching: find.byKey(backdrop)),
         findsNothing,
       );
     },
   );
 
   testWidgets(
-    'where scroll views nest, the outer one draws along the top and the inner one along the bottom',
-    (tester) async {
-      phone(tester);
-      final outer = ScrollController();
-      addTearDown(outer.dispose);
-      await pumpApp(
-        tester,
-        AdaptiveScaffold(
-          appBar: const AdaptiveAppBar(title: 'Nested'),
-          body: withBottomControl(
-            CustomScrollView(
-              controller: outer,
-              slivers: [
-                const SliverToBoxAdapter(child: SizedBox(height: 200)),
-                SliverFillRemaining(
-                  child: ListView(
-                    children: [
-                      for (var i = 0; i < 60; i++) const SizedBox(height: 60),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      outer.jumpTo(100);
-      await tester.pump();
-
-      final edges = debugScrollEdgesOnScreen();
-      expect(edges.where((edge) => edge.top != null), hasLength(1));
-      expect(edges.where((edge) => edge.bottom != null), hasLength(1));
-      expect(edges.singleWhere((edge) => edge.top != null).bottom, isNull);
-      expect(bottomOpacity(tester), 1);
-    },
-  );
-
-  testWidgets(
-    'with nothing along the bottom, the home indicator alone, there is no background there',
-    (tester) async {
-      phone(tester);
-      await pumpApp(tester, listPage('Detail'));
-
-      expect(bottomOpacity(tester), 0);
-      expect(find.byKey(bottomBackdrop), findsNothing);
-      expect(backdropOpacity(tester), 0);
-    },
-  );
-
-  testWidgets(
-    'an accessory floating on its own beside the iPhone Duo\'s vertical bar brings no background along the bottom',
-    (tester) async {
-      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
-      PlatformInfo.debugIOSVersionOverride = 26;
-      tester.view.physicalSize = const Size(951, 669);
-      tester.view.devicePixelRatio = 1;
-      tester.view.padding = const FakeViewPadding(right: 84, bottom: 34);
-      tester.view.viewPadding = const FakeViewPadding(right: 84, bottom: 34);
-      addTearDown(tester.view.reset);
-      final tabs = TabsFixture(
-        chrome: chrome,
-        debugFold: duo(),
-        accessory: const SizedBox(height: 50),
-        pageColor: pageColor,
-      );
-      await tester.pumpWidget(tabs.app());
-      await tester.pumpAndSettle();
-      tabs.navigators[0].currentState!.push(
-        MaterialPageRoute<void>(builder: (_) => listPage('List')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(bottomBackdrop), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'a control floating along the bottom brings the background there, and takes it away as it goes',
-    (tester) async {
-      phone(tester);
-      final control = ValueNotifier<bool>(true);
-      addTearDown(control.dispose);
-      await pumpApp(
-        tester,
-        ValueListenableBuilder<bool>(
-          valueListenable: control,
-          builder: (context, floats, _) =>
-              listPage('Floating', bottomControl: floats),
-        ),
-      );
-      expect(bottomOpacity(tester), 1);
-
-      control.value = false;
-      await tester.pumpAndSettle();
-      expect(find.byKey(bottomBackdrop), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'a control floating over a page brings the background along the bottom of the pages inside it too',
-    (tester) async {
-      phone(tester);
-      await pumpApp(
-        tester,
-        AdaptiveScaffold(
-          appBar: const AdaptiveAppBar(title: 'Outer'),
-          body: withBottomControl(listPage('Inner')),
-        ),
-      );
-
-      expect(bottomOpacity(tester), 1);
-    },
-  );
-
-  testWidgets(
-    'a list below something pinned above it fades out at its own top as it scrolls under that',
-    (tester) async {
-      phone(tester);
-      final controller = ScrollController();
-      addTearDown(controller.dispose);
-      await pumpApp(
-        tester,
-        AdaptiveScaffold(
-          backgroundColor: pageColor,
-          body: Column(
-            children: [
-              const SizedBox(height: 160),
-              Expanded(
-                child: ListView(
-                  controller: controller,
-                  children: [
-                    for (var i = 0; i < 60; i++) const SizedBox(height: 60),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      double? pinned() => debugScrollEdgesOnScreen().single.pinned;
-      expect(pinned(), 0);
-
-      controller.jumpTo(AdaptiveScrollEdge.distance / 2);
-      await tester.pump();
-      expect(pinned(), closeTo(0.5, 0.01));
-
-      controller.jumpTo(300);
-      await tester.pump();
-      expect(pinned(), 1);
-    },
-  );
-
-  testWidgets(
-    'a list running under the bar has the bar\'s background there instead of the soft edge',
-    (tester) async {
-      phone(tester);
-      final controller = ScrollController();
-      addTearDown(controller.dispose);
-      await pumpApp(tester, listPage('List', controller: controller));
-      controller.jumpTo(300);
-      await tester.pump();
-
-      final edges = debugScrollEdgesOnScreen().single;
-      expect(edges.top, 1);
-      expect(edges.pinned, isNull);
-    },
-  );
-
-  testWidgets(
-    'a page without scroll views, such as a map, has no background along the top or the bottom',
+    'a page without scroll views, such as a map, has no background under the bar',
     (tester) async {
       phone(tester);
       await pumpApp(tester, plainPage('Map'));
 
       expect(debugScrollEdgesOnScreen(), isEmpty);
-      expect(find.byKey(bottomBackdrop), findsNothing);
     },
   );
 
@@ -699,6 +469,88 @@ void main() {
             matching: find.byType(Scaffold),
           )
           .first,
+    );
+
+    double titleBandShown(WidgetTester tester) => tester
+        .widget<DuoTitleBandTransition>(
+          find.byType(DuoTitleBandTransition).first,
+        )
+        .shown
+        .value;
+
+    testWidgets(
+      'the title band moves out of the way while content scrolls on, and comes back with its background as soon as it scrolls back',
+      (tester) async {
+        cover(tester);
+        final controller = ScrollController();
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => AdaptiveToolbarHost(
+              chrome: chrome,
+              debugFold: duo(),
+              child: child!,
+            ),
+            home: listPage('List', controller: controller),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final list = find.byKey(const ValueKey<String>('list List'));
+        expect(titleBandShown(tester), 1);
+
+        await tester.drag(list, const Offset(0, -300));
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 0);
+        expect(backdropOpacity(tester), 0);
+
+        await tester.drag(list, const Offset(0, 40));
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 1);
+        expect(backdropOpacity(tester), 1);
+
+        await tester.drag(list, const Offset(0, -300));
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 0);
+        controller.jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 1);
+      },
+    );
+
+    testWidgets(
+      'the title band stays where the page\'s content starts below it, with nothing of it to show there',
+      (tester) async {
+        cover(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => AdaptiveToolbarHost(
+              chrome: chrome,
+              debugFold: duo(),
+              child: child!,
+            ),
+            home: AdaptiveScaffold(
+              appBar: const AdaptiveAppBar(title: 'Below'),
+              body: Padding(
+                padding: const EdgeInsets.only(top: 120),
+                child: ListView(
+                  key: const ValueKey<String>('below'),
+                  children: [
+                    for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.drag(
+          find.byKey(const ValueKey<String>('below')),
+          const Offset(0, -300),
+        );
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 1);
+      },
     );
 
     testWidgets(

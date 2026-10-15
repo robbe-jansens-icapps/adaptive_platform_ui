@@ -315,11 +315,12 @@ class AdaptiveScaffold extends StatefulWidget {
   State<AdaptiveScaffold> createState() => _AdaptiveScaffoldState();
 }
 
-/// What one scrollable in a page last said about its scroll edges, with how
+/// What one scrollable in a page last said about its scroll edge, with how
 /// deep it is and when it said so.
-typedef _ScrollEdges = ({int depth, int order, double edge, double bottom});
+typedef _ScrollEdges = ({int depth, int order, double edge});
 
-class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
+class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
+    with SingleTickerProviderStateMixin {
   final GlobalKey<_MinimizableTabBarState> _tabBarKey =
       GlobalKey<_MinimizableTabBarState>();
 
@@ -335,10 +336,32 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
   final ValueNotifier<bool> _tabBarMinimized = _PageValue<bool>(false);
 
-  /// How far the page's content has scrolled under the bars along its top,
-  /// for custom chrome (see [ToolbarEntry.scrollEdge]).
+  /// How far the page's content has scrolled under the bars along its top
+  /// (see [ToolbarEntry.scrollEdge]).
   final ValueNotifier<double> _scrollEdge = _PageValue<double>(0);
-  final ValueNotifier<double> _bottomScrollEdge = _PageValue<double>(0);
+
+  /// How far the iPhone Duo's title band is shown: it moves out of the way
+  /// while the page scrolls on, and comes back as soon as it scrolls back
+  /// (see [ToolbarEntry.titleBandShown]).
+  late final AnimationController _titleBand = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 240),
+  );
+  late final Animation<double> _titleBandShown = CurvedAnimation(
+    parent: _titleBand,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  /// Whether the page shows its title in the iPhone Duo's title band, as of
+  /// its last build: only then does the band move with the scrolling.
+  bool _titleBandHides = false;
+
+  /// How far the page has scrolled in the direction it is going, and that
+  /// direction.
+  double _travel = 0;
+  bool _scrollingOn = true;
 
   /// The latest scroll edge of each vertical scrollable in the page, with its
   /// depth and when it was last heard of.
@@ -356,16 +379,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
       _ => (null, 0, null),
     };
     final edge = metrics == null ? null : AdaptiveScrollEdge.of(metrics);
-    final bottom = metrics == null
-        ? null
-        : AdaptiveScrollEdge.bottomOf(metrics);
-    if (edge == null || bottom == null || context == null) return false;
-    _edges[context] = (
-      depth: depth,
-      order: _edgeOrder++,
-      edge: edge,
-      bottom: bottom,
-    );
+    if (edge == null || context == null) return false;
+    _edges[context] = (depth: depth, order: _edgeOrder++, edge: edge);
     _edges.removeWhere((context, _) => !context.mounted);
     _ScrollEdges? decides;
     for (final entry in _edges.values) {
@@ -375,11 +390,79 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
         decides = entry;
       }
     }
-    if (decides != null) {
-      _scrollEdge.value = decides.edge;
-      _bottomScrollEdge.value = decides.bottom;
+    if (decides != null) _scrollEdge.value = decides.edge;
+    if (notification is ScrollUpdateNotification &&
+        decides != null &&
+        depth == decides.depth) {
+      _followScroll(
+        notification.metrics,
+        notification.scrollDelta ?? 0,
+        underBand: _underTitleBand(context),
+      );
     }
     return false;
+  }
+
+  /// Whether the scrollable of [scrollable] runs under the iPhone Duo's
+  /// title band: one that starts below it has nothing to show there.
+  bool _underTitleBand(BuildContext scrollable) {
+    final box = scrollable.findRenderObject();
+    final page = context.findRenderObject();
+    if (box is! RenderBox || page is! RenderBox) return false;
+    if (!box.attached || !page.attached || !box.hasSize) return false;
+    return box.localToGlobal(Offset.zero, ancestor: page).dy <
+        kDuoTitleBandHeight - 0.5;
+  }
+
+  /// Moves the iPhone Duo's title band out of the way once the page has
+  /// scrolled on a little, and back as soon as it scrolls back or reaches
+  /// its top. The bounce at either end moves nothing, and nor does content
+  /// that does not run under the band.
+  void _followScroll(
+    ScrollMetrics metrics,
+    double delta, {
+    required bool underBand,
+  }) {
+    if (!_titleBandHides) return;
+    if (!underBand || metrics.extentBefore <= 0) {
+      _showTitleBand(true);
+      return;
+    }
+    if (delta == 0 || metrics.pixels > metrics.maxScrollExtent) return;
+    final on = metrics.axisDirection == AxisDirection.up ? delta < 0 : delta > 0;
+    if (on != _scrollingOn) {
+      _scrollingOn = on;
+      _travel = 0;
+    }
+    _travel += delta.abs();
+    if (on && _travel > 24) _showTitleBand(false);
+    if (!on && _travel > 8) _showTitleBand(true);
+  }
+
+  void _showTitleBand(bool shown) {
+    if (shown ? _titleBand.status == AnimationStatus.forward ||
+              _titleBand.value == 1
+        : _titleBand.status == AnimationStatus.reverse ||
+              _titleBand.value == 0) {
+      return;
+    }
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _titleBand.value = shown ? 1 : 0;
+    } else if (shown) {
+      _titleBand.forward();
+    } else {
+      _titleBand.reverse();
+    }
+  }
+
+  /// Whether this page shows its title in the iPhone Duo's title band; a
+  /// page that does not keeps the band in place.
+  void _titleBandFollows(bool follows) {
+    _titleBandHides = follows;
+    if (follows || _titleBand.value == 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_titleBandHides) _titleBand.value = 1;
+    });
   }
 
   void _onTabBarSizeChanged(Size size) {
@@ -484,7 +567,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     _ownTabBarHeight.dispose();
     _tabBarMinimized.dispose();
     _scrollEdge.dispose();
-    _bottomScrollEdge.dispose();
+    _titleBand.dispose();
     super.dispose();
   }
 
@@ -608,8 +691,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             ? _nativeTabBar != null && _usesFixedToolbar(context)
             : _tabsHostedAtBottom(context),
         tabBarMinimized: _tabBarMinimized,
-        scrollEdge: _customChrome != null ? _scrollEdge : null,
-        bottomScrollEdge: _customChrome != null ? _bottomScrollEdge : null,
+        scrollEdge: _scrollEdge,
+        titleBandShown: _titleBandShown,
         backgroundColor: widget.backgroundColor,
       ),
     );
@@ -794,6 +877,19 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
           widget.minimizeBehavior != TabBarMinimizeBehavior.never) {
         scaffold = NotificationListener<ScrollNotification>(
           onNotification: _minimizeHostedTabBar,
+          child: scaffold,
+        );
+      }
+      final hosted = _usesFixedToolbar(context);
+      _titleBandFollows(
+        hosted &&
+            DuoPoseScope.of(context) != null &&
+            (widget.appBar?.title != null ||
+                widget.appBar?.titleWidget != null),
+      );
+      if (hosted) {
+        scaffold = NotificationListener<Notification>(
+          onNotification: _trackScrollEdge,
           child: scaffold,
         );
       }
@@ -1381,7 +1477,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     } else {
       sideInset =
           pose == null ||
-              !hosted ||
+              !(hosted || inColumn) ||
               ownsTabs ||
               widget.extendBodyBehindVerticalBar
           ? 0.0
@@ -1414,16 +1510,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     } else {
       body = _TabsLeaveWhenPushed(child: body);
     }
-    if (hosted) {
-      body = NotificationListener<Notification>(
-        onNotification: _trackScrollEdge,
-        child: body,
-      );
-    }
+    // On the iPhone Duo held sideways the bars along the top move out of the
+    // way as the page scrolls on: the title band, and what the page pins
+    // below it (AdaptiveSafeAreaBar), also on a page without a title.
+    final titleBand = inBarPose || (pose != null && inColumn);
+    _titleBandFollows(titleBand);
+    body = NotificationListener<Notification>(
+      onNotification: _trackScrollEdge,
+      child: body,
+    );
 
-    // The scroll edge effect of the scroll views in the page: under the
-    // bar, if the page has one with a background, and above the chrome along
-    // the bottom.
+    // The scroll edge effect of the scroll views in the page, under the bar
+    // if the page has one with a background.
     final edgeAlongTop =
         appBar != null && appBar.showsBackdrop && (!inBarPose || hasTitle);
     final page = Builder(
@@ -1437,11 +1535,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             padding: inner.padding.copyWith(
               top: top,
               left: barOnLeft
-                  ? inner.padding.left - sideInset
+                  ? math.max(0, inner.padding.left - sideInset)
                   : inner.padding.left,
               right: barOnLeft
                   ? inner.padding.right
-                  : inner.padding.right - sideInset,
+                  : math.max(0, inner.padding.right - sideInset),
             ),
             viewPadding: inner.viewPadding.copyWith(
               top: topFloor != null
@@ -1454,17 +1552,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             placement: placement,
             top: edgeAlongTop ? top : null,
             titleBand: inBarPose,
-            bottom: inner.padding.bottom,
-            bottomChrome:
-                placement == AdaptiveChromePlacement.bottom &&
-                AdaptiveBottomBarInset.of(context) > 0,
-            topColor:
+            visibility: titleBand
+                ? _titleBandShown
+                : const AlwaysStoppedListenable<double>(1),
+            color:
                 _opaqueColor(appBar?.backdropColor) ??
                 _opaqueColor(widget.backgroundColor) ??
-                CupertinoColors.systemBackground.resolveFrom(context),
-            bottomColor:
-                _opaqueColor(widget.backgroundColor) ??
-                _opaqueColor(appBar?.backdropColor) ??
                 CupertinoColors.systemBackground.resolveFrom(context),
             data: appBar?.chromeData,
             child: body,
@@ -1506,6 +1599,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
                 placement: placement,
                 showsControls: !controlsInBar,
                 titleBand: controlsInBar,
+                titleBandShown: titleBand
+                    ? _titleBandShown
+                    : kAlwaysCompleteAnimation,
                 hasTabs: tabs != null,
               ),
             ),
@@ -2068,6 +2164,7 @@ class _CustomInlineBar extends StatelessWidget {
     required this.placement,
     required this.showsControls,
     required this.titleBand,
+    required this.titleBandShown,
     required this.hasTabs,
   });
 
@@ -2076,6 +2173,7 @@ class _CustomInlineBar extends StatelessWidget {
   final AdaptiveChromePlacement placement;
   final bool showsControls;
   final bool titleBand;
+  final Animation<double> titleBandShown;
   final bool hasTabs;
 
   @override
@@ -2104,9 +2202,12 @@ class _CustomInlineBar extends StatelessWidget {
     // The background under the bar is the scroll edge of the page's scroll
     // views (AdaptiveScrollEdgeRegion), as under the host's bar.
     if (titleBand) {
-      return SizedBox(
-        height: height,
-        child: DuoToolbarTitle(titleWidget: title),
+      return DuoTitleBandTransition(
+        shown: titleBandShown,
+        child: SizedBox(
+          height: height,
+          child: DuoToolbarTitle(titleWidget: title),
+        ),
       );
     }
 
@@ -2126,7 +2227,7 @@ class _CustomInlineBar extends StatelessWidget {
     // side as from the top.
     final side = !titleBand && AdaptivePopover.isIn(context)
         ? AdaptivePopover.barInset
-        : 16.0;
+        : metrics.controlInset;
     return SizedBox(
       height: height,
       child: Stack(

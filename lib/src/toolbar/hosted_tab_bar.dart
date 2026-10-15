@@ -128,12 +128,24 @@ class _HostedTabBarState extends State<HostedTabBar>
   }
 
   void _listen(ToolbarBlend blend) {
-    _uncovered = ReverseAnimation(blend.cover);
+    // Out of the way before a sheet or a popover coming up reaches it, and
+    // back only once that has mostly gone again: drawn above every route, it
+    // would otherwise show through them.
+    final curved = _coverCurve = CurvedAnimation(
+      parent: blend.cover,
+      curve: const Interval(0, 0.5, curve: Curves.easeOut),
+      reverseCurve: const Interval(0, 0.4, curve: Curves.easeIn),
+    );
+    _uncovered = ReverseAnimation(curved);
     blend.addListener(_rebuild);
     blend.registry.addListener(_onRegistryChanged);
   }
 
+  CurvedAnimation? _coverCurve;
+
   void _unlisten(ToolbarBlend blend) {
+    _coverCurve?.dispose();
+    _coverCurve = null;
     blend.removeListener(_rebuild);
     blend.registry.removeListener(_onRegistryChanged);
   }
@@ -199,15 +211,12 @@ class _HostedTabBarState extends State<HostedTabBar>
     final blend = widget.blend;
     final registry = blend.registry;
     _built = _hosted();
-    _accessoryKeys.removeWhere(
-      (id, _) => !_built.any((entry) => entry.id == id),
-    );
+    registry.keepAccessoriesOf(_built.map((entry) => entry.id));
     // No accessory floats at the bottom of the content: none of its room is
     // kept there any more. The bottom placement measures its own.
     final floats =
         widget.chrome != null &&
-        (widget.placement == AdaptiveChromePlacement.vertical ||
-            widget.placement == AdaptiveChromePlacement.topStrip) &&
+        widget.placement == AdaptiveChromePlacement.topStrip &&
         _built.any((entry) => entry.tabBar?.accessory != null);
     final accessoryHeight = widget.accessoryHeight;
     if (!floats && accessoryHeight != null && accessoryHeight.value != 0) {
@@ -339,15 +348,17 @@ class _HostedTabBarState extends State<HostedTabBar>
     final placement = widget.placement;
     final sidebar = widget.sidebar;
     final inSidebar = sidebar != null && chrome.sidebarBuilder != null;
-    final accessory = _accessory(
-      entry,
-      bar,
-      chrome,
-      placement: placement,
-      compact:
-          placement == AdaptiveChromePlacement.vertical ||
-          (inSidebar && !sidebar.expanded),
-    );
+    // On the iPhone Duo held sideways the accessory is in the vertical bar,
+    // above the tabs (HostedDuoBar).
+    final accessory = placement == AdaptiveChromePlacement.vertical
+        ? null
+        : _accessory(
+            entry,
+            bar,
+            chrome,
+            placement: placement,
+            compact: inSidebar && !sidebar.expanded,
+          );
     if (inSidebar) {
       return _sidebarLayer(
         entry,
@@ -435,10 +446,6 @@ class _HostedTabBarState extends State<HostedTabBar>
     );
   }
 
-  /// One [GlobalKey] per tab layout, so its accessory keeps its state (a
-  /// video playing) as it moves between placements.
-  final Map<Object, GlobalKey> _accessoryKeys = <Object, GlobalKey>{};
-
   /// The tab layout's accessory in the app's frame for [placement], or null
   /// when it has none.
   Widget? _accessory(
@@ -452,10 +459,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     if (accessory == null) return null;
     final frame = chrome.accessoryBuilder;
     return KeyedSubtree(
-      key: _accessoryKeys.putIfAbsent(
-        entry.id,
-        () => GlobalKey(debugLabel: 'adaptive tab accessory'),
-      ),
+      key: widget.blend.registry.accessoryKey(entry.id),
       child: frame == null
           ? accessory
           : frame(
@@ -466,9 +470,9 @@ class _HostedTabBarState extends State<HostedTabBar>
     );
   }
 
-  /// The accessory floating at the bottom of the content, where the tabs are
-  /// not at the bottom: beside the iPhone Duo's vertical bar, or below a page
-  /// with its tabs in the top strip. Its height is the room the pages keep.
+  /// The accessory floating at the bottom of the content below a page with
+  /// its tabs in the iPhone Duo's top strip. Its height is the room the pages
+  /// keep.
   ///
   /// A [framed] accessory gets the whole width of the content and its frame
   /// places it there; one without a frame is centred, at most

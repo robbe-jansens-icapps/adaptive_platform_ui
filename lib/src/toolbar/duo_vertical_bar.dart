@@ -1,9 +1,11 @@
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:foldable/foldable.dart';
 
 import '../chrome/adaptive_chrome.dart';
+import '../chrome/scroll_edge_effect.dart';
 import '../platform/system_vertical_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
@@ -226,9 +228,9 @@ const double kDuoBarRegionGap = 11.0;
 /// below the top, with the controls in the trailing bar instead of beside it.
 const double kDuoTitleBandHeight = 70.0;
 
-/// What sits behind the title on iPhone Duo: content scrolling underneath is
-/// blurred and faded out towards the top, like the system's scroll edge
-/// effect, so the leading-aligned title never reads on top of a list row.
+/// What sits behind the title on iPhone Duo once content scrolls under it:
+/// the content blurred and tinted, as behind every bar along the top
+/// ([AdaptiveBarBackdrop]), ending in a clean edge below the band.
 class DuoTitleBackdrop extends StatelessWidget {
   const DuoTitleBackdrop({super.key, this.color});
 
@@ -237,30 +239,35 @@ class DuoTitleBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = color?.withValues(alpha: 1) ?? CupertinoColors.systemBackground.resolveFrom(context);
     return IgnorePointer(
-      child: OverflowBox(
-        alignment: Alignment.topCenter,
-        maxHeight: kDuoTitleBandHeight + 24,
-        minHeight: kDuoTitleBandHeight + 24,
-        child: ShaderMask(
-          blendMode: BlendMode.dstIn,
-          // Solid at the top, fading out from behind the title to just below
-          // the band.
-          shaderCallback: (rect) => const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: [0.0, 0.45, 1.0],
-            colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-          ).createShader(rect),
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: ColoredBox(color: base.withValues(alpha: 0.82)),
+      child: AdaptiveBarBackdrop(color: color ?? CupertinoColors.systemBackground.resolveFrom(context)),
+    );
+  }
+}
+
+/// The iPhone Duo's title band as it moves out of the way while a page
+/// scrolls on and comes back as it scrolls back ([shown]): up and out of
+/// sight, and inert once mostly gone.
+class DuoTitleBandTransition extends StatelessWidget {
+  const DuoTitleBandTransition({super.key, required this.shown, required this.child});
+
+  final ValueListenable<double> shown;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: shown,
+      child: child,
+      builder: (context, value, child) => value >= 1
+          ? child!
+          : IgnorePointer(
+              ignoring: value < 0.5,
+              child: FractionalTranslation(
+                translation: Offset(0, value - 1),
+                child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -306,6 +313,32 @@ class DuoToolbarTitle extends StatelessWidget {
 /// Space between the groups of controls in the bar, as the system leaves it.
 const double kDuoBarGroupSpacing = 12.0;
 
+/// The accessory above the tab bar, with the gap between them once it has
+/// anything to show.
+class _AccessorySlot extends SingleChildRenderObjectWidget {
+  const _AccessorySlot({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderAccessorySlot();
+}
+
+class _RenderAccessorySlot extends RenderShiftedBox {
+  _RenderAccessorySlot() : super(null);
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(constraints.loosen(), parentUsesSize: true);
+    final gap = child.size.height > 0 ? kDuoBarGroupSpacing : 0.0;
+    size = constraints.constrain(Size(child.size.width, child.size.height + gap));
+    (child.parentData! as BoxParentData).offset = Offset.zero;
+  }
+}
+
 /// Space the system leaves below the tab capsule.
 const double kDuoBarBottomMargin = kDuoBarEdgeMargin;
 
@@ -325,6 +358,8 @@ class DuoVerticalBar extends StatelessWidget {
     this.actions = const <AdaptiveAppBarAction>[],
     this.tabBar,
     this.reservedTabs = 0,
+    this.accessory,
+    this.reservedAccessory = 0,
     this.tint,
     this.regions = const <ReservedRegion>[],
     this.navigator,
@@ -355,6 +390,13 @@ class DuoVerticalBar extends StatelessWidget {
   /// draws the tab bar in a layer of its own, so the layers holding a page's
   /// toolbar items need to know how much of the bar it takes.
   final int reservedTabs;
+
+  /// The tab layout's accessory (a mini player), above the tab bar.
+  final Widget? accessory;
+
+  /// Height of an accessory to keep room for without drawing it, as with
+  /// [reservedTabs].
+  final double reservedAccessory;
 
   /// Tint for the toolbar items.
   final Color? tint;
@@ -388,18 +430,20 @@ class DuoVerticalBar extends StatelessWidget {
     final insets = DuoLayout.barInsets(size: MediaQuery.sizeOf(context), pose: pose, regions: regions);
     final tabCount = tabs.isNotEmpty ? tabs.length : reservedTabs;
     final tabsHeight = tabCount == 0 ? 0.0 : IOS26GlassCapsule.tabsHeight(tabCount) + kDuoBarGroupSpacing;
+    final accessoryHeight = reservedAccessory > 0 ? reservedAccessory + kDuoBarGroupSpacing : 0.0;
 
     return Padding(
       // Safe areas are asymmetric on iPhone Duo; read each edge on its own.
       padding: EdgeInsets.only(top: insets.top, bottom: insets.bottom),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final room = constraints.maxHeight - tabsHeight;
+          final room = constraints.maxHeight - tabsHeight - accessoryHeight;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ..._controls(room),
               const Spacer(),
+              if (accessory != null) _AccessorySlot(child: accessory!),
               if (tabs.isNotEmpty && chrome != null)
                 SizedBox(
                   width: IOS26GlassCapsule.width,
