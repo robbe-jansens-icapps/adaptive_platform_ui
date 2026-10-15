@@ -39,6 +39,7 @@ class AdaptiveAppBar {
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
     this.automaticallyImplyLeading = true,
     this.showsBackdrop = true,
+    this.hidesOnScroll = true,
     this.backdropColor,
     this.chromeData,
   });
@@ -118,6 +119,12 @@ class AdaptiveAppBar {
   /// that should stay clear, such as a map.
   final bool showsBackdrop;
 
+  /// Whether the bar moves out of the way while the page scrolls on, where it
+  /// does: the iPhone Duo's title band. A page that docks part of its own
+  /// header under the bar keeps it, as moving it would leave a gap above
+  /// what is docked.
+  final bool hidesOnScroll;
+
   /// The color of the page behind the fixed iOS 26 toolbar. Its backdrop
   /// takes it, so the bar blends into the page at rest and only fades out
   /// what scrolls underneath, like the system's scroll edge effect. Defaults
@@ -145,6 +152,7 @@ class AdaptiveAppBar {
     AdaptiveBackButtonStyle? backButtonStyle,
     bool? automaticallyImplyLeading,
     bool? showsBackdrop,
+    bool? hidesOnScroll,
     Color? backdropColor,
     Object? chromeData,
   }) {
@@ -164,6 +172,7 @@ class AdaptiveAppBar {
       automaticallyImplyLeading:
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
       showsBackdrop: showsBackdrop ?? this.showsBackdrop,
+      hidesOnScroll: hidesOnScroll ?? this.hidesOnScroll,
       backdropColor: backdropColor ?? this.backdropColor,
       chromeData: chromeData ?? this.chromeData,
     );

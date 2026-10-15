@@ -518,6 +518,82 @@ void main() {
     );
 
     testWidgets(
+      'a page that keeps its bar has its title band stay as it scrolls on',
+      (tester) async {
+        cover(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => AdaptiveToolbarHost(
+              chrome: chrome,
+              debugFold: duo(),
+              child: child!,
+            ),
+            home: AdaptiveScaffold(
+              appBar: const AdaptiveAppBar(
+                title: 'Docks',
+                hidesOnScroll: false,
+              ),
+              body: ListView(
+                key: const ValueKey<String>('docks'),
+                children: [
+                  for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.drag(
+          find.byKey(const ValueKey<String>('docks')),
+          const Offset(0, -300),
+        );
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 1);
+      },
+    );
+
+    testWidgets(
+      'scrolling back the list of a scroll view with a header brings the title band back, also once the header is gone',
+      (tester) async {
+        cover(tester);
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => AdaptiveToolbarHost(
+              chrome: chrome,
+              debugFold: duo(),
+              child: child!,
+            ),
+            home: AdaptiveScaffold(
+              appBar: const AdaptiveAppBar(title: 'Nested'),
+              body: NestedScrollView(
+                headerSliverBuilder: (context, _) => const [
+                  SliverToBoxAdapter(child: SizedBox(height: 200)),
+                ],
+                body: ListView(
+                  key: const ValueKey<String>('inner'),
+                  children: [
+                    for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final inner = find.byKey(const ValueKey<String>('inner'));
+
+        await tester.drag(inner, const Offset(0, -600));
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 0);
+
+        await tester.drag(inner, const Offset(0, 40));
+        await tester.pumpAndSettle();
+        expect(titleBandShown(tester), 1);
+      },
+    );
+
+    testWidgets(
       'the title band stays where the page\'s content starts below it, with nothing of it to show there',
       (tester) async {
         cover(tester);

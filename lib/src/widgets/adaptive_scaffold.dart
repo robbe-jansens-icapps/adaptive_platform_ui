@@ -391,9 +391,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       }
     }
     if (decides != null) _scrollEdge.value = decides.edge;
-    if (notification is ScrollUpdateNotification &&
-        decides != null &&
-        depth == decides.depth) {
+    // Any scrollable the page scrolls moves the title band, the list inside
+    // a scroll view with a header (a NestedScrollView) too: once its header
+    // is gone, scrolling back moves that list, not the outer scroll view.
+    if (notification is ScrollUpdateNotification) {
       _followScroll(
         notification.metrics,
         notification.scrollDelta ?? 0,
@@ -423,7 +424,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
     double delta, {
     required bool underBand,
   }) {
-    if (!_titleBandHides) return;
+    if (!_titleBandHides || metrics.axis != Axis.vertical) return;
     if (!underBand || metrics.extentBefore <= 0) {
       _showTitleBand(true);
       return;
@@ -884,6 +885,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       _titleBandFollows(
         hosted &&
             DuoPoseScope.of(context) != null &&
+            (widget.appBar?.hidesOnScroll ?? true) &&
             (widget.appBar?.title != null ||
                 widget.appBar?.titleWidget != null),
       );
@@ -1513,7 +1515,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
     // On the iPhone Duo held sideways the bars along the top move out of the
     // way as the page scrolls on: the title band, and what the page pins
     // below it (AdaptiveSafeAreaBar), also on a page without a title.
-    final titleBand = inBarPose || (pose != null && inColumn);
+    final titleBand =
+        (inBarPose || (pose != null && inColumn)) &&
+        (appBar?.hidesOnScroll ?? true);
     _titleBandFollows(titleBand);
     body = NotificationListener<Notification>(
       onNotification: _trackScrollEdge,

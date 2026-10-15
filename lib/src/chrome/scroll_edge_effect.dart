@@ -466,13 +466,13 @@ class AdaptiveBarBackdrop extends StatelessWidget {
     this.hairline = defaultHairline,
   });
 
-  static const double defaultBlurSigma = 10;
+  static const double defaultBlurSigma = 8;
 
   /// How much of a neutral page colour is laid over the content, as iOS
   /// does; a strong colour, such as a brand colour, is laid on thicker
   /// ([colouredTint]), so the bar reads in that colour.
-  static const double defaultTint = 0.8;
-  static const double colouredTint = 0.92;
+  static const double defaultTint = 0.75;
+  static const double colouredTint = 0.88;
   static const Color defaultHairline = Color(0x24000000);
 
   /// The page's colour; white if null.
