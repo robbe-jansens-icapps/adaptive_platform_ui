@@ -275,9 +275,13 @@ class DuoTitleBandTransition extends StatelessWidget {
 /// The page title as iPhone Duo shows it: at the leading edge rather than
 /// centred, because the navigation controls live in the trailing bar.
 class DuoToolbarTitle extends StatelessWidget {
-  const DuoToolbarTitle({super.key, this.title, this.titleWidget});
+  const DuoToolbarTitle({super.key, this.title, this.titleWidget, this.centered = false});
 
   final String? title;
+
+  /// Centred over the page rather than at its leading edge
+  /// ([AdaptiveChrome.centerTitleBand]).
+  final bool centered;
 
   /// Replaces [title] (a custom widget, or a title with a subtitle).
   final Widget? titleWidget;
@@ -296,7 +300,7 @@ class DuoToolbarTitle extends StatelessWidget {
         top: 2 * center - kDuoTitleBandHeight,
       ),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: centered ? Alignment.center : Alignment.centerLeft,
         child:
             titleWidget ??
             Text(

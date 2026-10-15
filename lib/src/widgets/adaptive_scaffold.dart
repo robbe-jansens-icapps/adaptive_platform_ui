@@ -415,28 +415,34 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         kDuoTitleBandHeight - 0.5;
   }
 
-  /// Moves the iPhone Duo's title band out of the way once the page has
-  /// scrolled on a little, and back as soon as it scrolls back or reaches
-  /// its top. The bounce at either end moves nothing, and nor does content
-  /// that does not run under the band.
+  /// Moves the iPhone Duo's title band out of the way as soon as the page
+  /// scrolls on, and back as soon as it scrolls back or reaches its top. The
+  /// bounce at either end moves nothing, and nor does content that does not
+  /// run under the band.
   void _followScroll(
     ScrollMetrics metrics,
     double delta, {
     required bool underBand,
   }) {
-    if (!_titleBandHides || metrics.axis != Axis.vertical) return;
-    if (!underBand || metrics.extentBefore <= 0) {
+    if (!_titleBandHides || metrics.axis != Axis.vertical || delta == 0) {
+      return;
+    }
+    // Content that does not run under the band has nothing to show there,
+    // and leaves it be: in a scroll view with a header, its list only runs
+    // under the band once the header is gone.
+    if (!underBand) return;
+    if (metrics.extentBefore <= 0) {
       _showTitleBand(true);
       return;
     }
-    if (delta == 0 || metrics.pixels > metrics.maxScrollExtent) return;
+    if (metrics.pixels > metrics.maxScrollExtent) return;
     final on = metrics.axisDirection == AxisDirection.up ? delta < 0 : delta > 0;
     if (on != _scrollingOn) {
       _scrollingOn = on;
       _travel = 0;
     }
     _travel += delta.abs();
-    if (on && _travel > 24) _showTitleBand(false);
+    if (on && _travel > 4) _showTitleBand(false);
     if (!on && _travel > 8) _showTitleBand(true);
   }
 
@@ -2191,7 +2197,9 @@ class _CustomInlineBar extends StatelessWidget {
     final height = titleBand
         ? kDuoTitleBandHeight
         : top + metrics.toolbarHeight;
-    final centered = !titleBand && chrome.centersTitle(defaultTargetPlatform);
+    final centered = titleBand
+        ? chrome.centerTitleBand
+        : chrome.centersTitle(defaultTargetPlatform);
     final title = chrome.titleBuilder(
       context,
       AdaptiveTitleSpec(
@@ -2210,7 +2218,7 @@ class _CustomInlineBar extends StatelessWidget {
         shown: titleBandShown,
         child: SizedBox(
           height: height,
-          child: DuoToolbarTitle(titleWidget: title),
+          child: DuoToolbarTitle(titleWidget: title, centered: centered),
         ),
       );
     }

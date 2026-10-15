@@ -140,6 +140,37 @@ void main() {
     },
   );
 
+  testWidgets(
+    'the title band centres its title over the page where the chrome asks for it',
+    (tester) async {
+      innerLandscape(tester);
+      final chrome = AdaptiveChrome(
+        tabBarBuilder: TestChrome.chrome.tabBarBuilder,
+        titleBuilder: TestChrome.chrome.titleBuilder,
+        backButtonBuilder: TestChrome.chrome.backButtonBuilder,
+        actionsBuilder: TestChrome.chrome.actionsBuilder,
+        centerTitleBand: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => AdaptiveToolbarHost(
+            chrome: chrome,
+            debugFold: duo(),
+            child: child!,
+          ),
+          home: const AdaptiveScaffold(
+            appBar: AdaptiveAppBar(title: 'Centred'),
+            body: SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final title = tester.getRect(find.text('title:Centred'));
+      expect(title.center.dx, closeTo((20 + 951 - 84 - 8) / 2, 1));
+    },
+  );
+
   testWidgets('the controls of a bar keep the chrome\'s inset from its sides', (
     tester,
   ) async {

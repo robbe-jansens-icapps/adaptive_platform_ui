@@ -155,7 +155,8 @@ class AdaptiveTitleSpec {
   final Widget? titleWidget;
 
   /// Whether the bar centres the title, rather than putting it at the leading
-  /// edge ([AdaptiveChrome.centerTitle]; never in the iPhone Duo title band).
+  /// edge ([AdaptiveChrome.centerTitle]; in the iPhone Duo title band
+  /// [AdaptiveChrome.centerTitleBand]).
   final bool centered;
 
   /// [AdaptiveAppBar.chromeData].
@@ -371,6 +372,7 @@ class AdaptiveChrome {
     this.accessoryBuilder,
     this.popoverBuilder,
     this.centerTitle,
+    this.centerTitleBand = false,
     this.tabsInTopStrip = false,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
@@ -416,6 +418,11 @@ class AdaptiveChrome {
   /// Whether titles are centred in the toolbar: on iOS when null, as the
   /// system does, and at the leading edge elsewhere.
   final bool? centerTitle;
+
+  /// Whether the title in the iPhone Duo's title band is centred over the
+  /// page, as the app's own bars centre theirs, rather than at the leading
+  /// edge, where the system sets it.
+  final bool centerTitleBand;
 
   /// Whether the tabs go in the iPhone Duo's top strip, beside the camera and
   /// status cluster, while its inner display is held upright

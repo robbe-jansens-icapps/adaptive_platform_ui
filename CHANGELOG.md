@@ -7,6 +7,8 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **NEW**: `AdaptiveChrome.centerTitleBand` centres the title in the iPhone Duo's title band over the page, as an app's own bars centre theirs, rather than at the leading edge
+* **IMPROVEMENT**: iPhone Duo: the title band moves out of the way as soon as a page scrolls on, before its background has come in, so it no longer flashes up and goes; a scroll view only moves it while its content runs under the band
 * **NEW**: `AdaptiveAppBar.hidesOnScroll`: a page that docks part of its own header under the bar keeps the iPhone Duo's title band where it is, as moving it would leave a gap above what is docked
 * **FIX**: iPhone Duo: scrolling back the list of a scroll view with a header (a `NestedScrollView`) brings the title band back once the header is gone; only the outer scroll view moved it. Scrolling sideways moves it no more
 * **IMPROVEMENT**: `AdaptiveBarBackdrop` is a little more subtle, as the native bars are: less blur and less of the page's colour over the content

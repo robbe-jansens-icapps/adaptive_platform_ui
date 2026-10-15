@@ -550,8 +550,13 @@ class HostedTopToolbar extends StatelessWidget {
                     shown: content.titleBandShown,
                     child: DuoToolbarTitle(
                       title: content.title,
+                      centered: chrome?.centerTitleBand ?? false,
                       titleWidget: chrome != null
-                          ? _customTitle(context, content, centered: false)
+                          ? _customTitle(
+                              context,
+                              content,
+                              centered: chrome!.centerTitleBand,
+                            )
                           : content.titleOverlay,
                     ),
                   )
