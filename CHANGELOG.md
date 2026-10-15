@@ -7,6 +7,11 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: Custom chrome: a scroll view only draws the scroll edge along the bottom where something sits there: the tab bar, an accessory, or a control the page floats over its content, which it marks with the new `AdaptiveBottomControl`. A page with nothing along its bottom but the home indicator (a page pushed over the tabs, a column beside a sidebar, the iPhone Duo with its tabs in the vertical bar) has none, as on iOS
+* **NEW**: Custom chrome: a scroll view below something its page pins above it (a search field, tabs) and clear of the bars fades its content out at its own top as it scrolls under that, a soft edge in the page's colour instead of a hard line (`AdaptiveChromeMetrics.pinnedEdgeHeight`, 24 by default; 0 for none)
+* **IMPROVEMENT**: iPhone Duo held upright: the column of a split view with nothing of the status cluster over it has the strip to itself, and its pages start level with the bar the system sets there instead of below the strip
+* **IMPROVEMENT**: `AdaptivePopover`: the back or close button of a page in a popover sits in its rounded corner, as far from the side as from the top
+* **FIX**: Custom chrome: an accessory floating beside the iPhone Duo's vertical bar with nothing to show (no height) keeps no room at the bottom of the pages, where it kept its margin
 * **FIX**: `AdaptivePopover`: its content no longer keeps the window's padding. A page in a popover (a bar, a list) left room for the status bar at its top, an empty band above its title, though the popover sits inside the safe area. A page's bar in a popover or its sheet keeps `AdaptivePopover.barInset` above itself instead, clear of the surface's rounded corners, with the page's content below it (`AdaptivePopover.isIn`)
 * **FIX**: Custom chrome: a title at the leading edge with no control beside it lines up with the page's 16 point margin, in the hosted bar and in the bar inside a column, sheet or popover, where it sat 12 points further in (`kToolbarTitleSpacing`, the room kept between a title and the controls beside it)
 * **IMPROVEMENT**: `AdaptivePopover` too tall to open above or below its control opens beside it, on the side with more room and level with it, so it still comes out of the control instead of covering it

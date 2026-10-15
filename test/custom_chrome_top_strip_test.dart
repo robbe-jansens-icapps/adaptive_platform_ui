@@ -108,6 +108,43 @@ void main() {
     expect(tabs.paddingOf('Detail').top, 84);
   });
 
+  testWidgets('beside a list the list column has the strip to itself and starts level with its bar; the column under the cluster keeps clear of it', (tester) async {
+    final tabs = await pumpPortrait(tester, chrome: TestChrome.chrome);
+    EdgeInsets? listPadding;
+    EdgeInsets? detailPadding;
+    tabs.navigators[0].currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => AdaptiveSplitView(
+          minWidth: 600,
+          initialDetail: const RouteSettings(name: '/detail'),
+          onGenerateDetailRoute: (settings) => MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => AdaptiveScaffold(
+              body: Builder(
+                builder: (context) {
+                  detailPadding = MediaQuery.paddingOf(context);
+                  return const SizedBox.expand();
+                },
+              ),
+            ),
+          ),
+          master: AdaptiveScaffold(
+            body: Builder(
+              builder: (context) {
+                listPadding = MediaQuery.paddingOf(context);
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(listPadding!.top, DuoTopStrip.barTop);
+    expect(detailPadding!.top, 84);
+  });
+
   testWidgets('without a hinge there is no strip: the tabs go along the bottom', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;

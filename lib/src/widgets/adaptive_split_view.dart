@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/cupertino.dart';
@@ -762,6 +763,14 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     required bool removeRight,
     required Widget child,
   }) {
+    // The iPhone Duo's status cluster is only over the column at its side.
+    final strip = DuoTopStripScope.of(
+      context,
+    )?.within(left: !isDetail, right: isDetail);
+    // A column with nothing of the strip over it has the strip to itself:
+    // its pages start level with the bar the system sets in the strip.
+    final freeStrip =
+        strip != null && strip.clusterLeft == 0 && strip.clusterRight == 0;
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => _pressInMaster = !isDetail,
@@ -769,11 +778,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         state: this,
         isDetail: isDetail,
         duoControls: duoControls,
-        // The iPhone Duo's status cluster is only over the column at its side.
         child: DuoTopStripScope(
-          strip: DuoTopStripScope.of(
-            context,
-          )?.within(left: !isDetail, right: isDetail),
+          strip: strip,
           // The pages draw their own bars, or only their titles while the
           // vertical bar holds their controls.
           child: ToolbarChromeScope(
@@ -788,12 +794,27 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
                 removeLeft: removeLeft,
                 removeRight: removeRight,
                 child: Builder(
-                  builder: (context) => MediaQuery(
-                    data: MediaQuery.of(
-                      context,
-                    ).copyWith(size: constraints.biggest),
-                    child: child,
-                  ),
+                  builder: (context) {
+                    final mediaQuery = MediaQuery.of(context);
+                    final top = freeStrip
+                        ? math.min(mediaQuery.padding.top, DuoTopStrip.barTop)
+                        : mediaQuery.padding.top;
+                    return MediaQuery(
+                      data: mediaQuery.copyWith(
+                        size: constraints.biggest,
+                        padding: mediaQuery.padding.copyWith(top: top),
+                        viewPadding: mediaQuery.viewPadding.copyWith(
+                          top: freeStrip
+                              ? math.min(
+                                  mediaQuery.viewPadding.top,
+                                  DuoTopStrip.barTop,
+                                )
+                              : mediaQuery.viewPadding.top,
+                        ),
+                      ),
+                      child: child,
+                    );
+                  },
                 ),
               ),
             ),

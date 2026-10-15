@@ -498,9 +498,12 @@ class _HostedTabBarState extends State<HostedTabBar>
     );
   }
 
+  /// An accessory with nothing to show (no height) takes no room at all,
+  /// not even its margin above the bottom.
   Widget _reportingHeight(Widget accessory, double bottom) => SizeReporter(
-    onSizeChanged: (size) =>
-        widget.accessoryHeight?.value = size.height + bottom,
+    onSizeChanged: (size) => widget.accessoryHeight?.value = size.height > 0
+        ? size.height + bottom
+        : 0,
     child: accessory,
   );
 

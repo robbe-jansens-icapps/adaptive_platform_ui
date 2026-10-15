@@ -1444,6 +1444,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             top: edgeAlongTop ? top : null,
             titleBand: inBarPose,
             bottom: inner.padding.bottom,
+            bottomChrome: AdaptiveBottomBarInset.of(context) > 0,
             topColor:
                 _opaqueColor(appBar?.backdropColor) ??
                 _opaqueColor(widget.backgroundColor) ??
@@ -2109,6 +2110,11 @@ class _CustomInlineBar extends StatelessWidget {
         ? appBar.actions ?? const <AdaptiveAppBarAction>[]
         : const <AdaptiveAppBarAction>[];
     final leading = showsControls ? appBar.leading : null;
+    // In a popover the controls sit in its rounded corners, as far from the
+    // side as from the top.
+    final side = !titleBand && AdaptivePopover.isIn(context)
+        ? AdaptivePopover.barInset
+        : 16.0;
     return SizedBox(
       height: height,
       child: Stack(
@@ -2121,7 +2127,7 @@ class _CustomInlineBar extends StatelessWidget {
               leading: Padding(
                 padding: EdgeInsetsDirectional.only(
                   start: leading != null || impliesBack
-                      ? 16
+                      ? side
                       : 16 - kToolbarTitleSpacing,
                 ),
                 child:
@@ -2150,7 +2156,7 @@ class _CustomInlineBar extends StatelessWidget {
               trailing: actions.isEmpty
                   ? const SizedBox(width: 16 - kToolbarTitleSpacing)
                   : Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 16),
+                      padding: EdgeInsetsDirectional.only(end: side),
                       child: chrome.actionsBuilder(
                         context,
                         AdaptiveActionsSpec(

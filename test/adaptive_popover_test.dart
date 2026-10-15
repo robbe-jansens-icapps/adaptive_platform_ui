@@ -371,6 +371,26 @@ void main() {
     expect(tabs.paddingOf('Pop').top, AdaptivePopover.barInset + TestChrome.chrome.metrics.toolbarHeight);
   });
 
+  testWidgets('a page\'s back button in a popover sits in its corner, as far from the side as from the top', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+    window(tester, const Size(1000, 800));
+    final tabs = TabsFixture();
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    AdaptivePopover.show<void>(
+      anchor: tabs.navigators[0].currentContext!,
+      anchorRect: const Rect.fromLTWH(400, 100, 44, 44),
+      builder: (_) => SizedBox(key: content, width: 300, height: 300, child: tabs.pageWidget('Pop')),
+    );
+    await tester.pumpAndSettle();
+
+    final surface = tester.getRect(find.byKey(content));
+    final back = tester.getRect(find.ancestor(of: find.text('back'), matching: find.byType(SizedBox)).first);
+    expect(back.left - surface.left, AdaptivePopover.barInset);
+    expect(back.top - surface.top, AdaptivePopover.barInset);
+  });
+
   testWidgets('the overflow control of the iPhone Duo bar opens its menu beside the bar', (tester) async {
     PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
     PlatformInfo.debugIOSVersionOverride = 26;

@@ -137,6 +137,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('one with nothing to show for now keeps no room at the bottom beside the vertical bar, not even its margin', (tester) async {
+    window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+    addTearDown(tester.view.reset);
+    final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const CountingAccessory(height: 0), chrome: TestChrome.withFrames);
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    expect(tabs.insetOf('Tab 0'), 0);
+    expect(tabs.paddingOf('Tab 0').bottom, 34);
+  });
+
   testWidgets('without one, a vertical bar pose keeps no room at the bottom', (tester) async {
     window(tester, phone, const FakeViewPadding(top: 47, bottom: 34));
     addTearDown(tester.view.reset);

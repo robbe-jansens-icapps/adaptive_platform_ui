@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -22,6 +25,15 @@ import 'adaptive_chrome.dart';
 /// Where scroll views nest, the outermost one under the bars along the top
 /// draws it there, as its content is what runs under them, and the innermost
 /// one along the bottom.
+///
+/// Along the bottom there is only an edge where something sits there: chrome
+/// ([bottomChrome]) or a control the page floats over its content
+/// ([AdaptiveBottomControl]). The home indicator alone gets none.
+///
+/// A scroll view below something the page pins above it, such as a search
+/// field or tabs, and clear of the bars, fades its content out at its own top
+/// as it scrolls under that: a soft edge in the page's colour
+/// ([AdaptiveChromeMetrics.pinnedEdgeHeight]) instead of a hard line.
 class AdaptiveScrollEdgeRegion extends StatefulWidget {
   const AdaptiveScrollEdgeRegion({
     super.key,
@@ -31,6 +43,7 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
     required this.bottom,
     required this.child,
     this.titleBand = false,
+    this.bottomChrome = true,
     this.topColor,
     this.bottomColor,
     this.data,
@@ -49,6 +62,11 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
   /// How far up the page the chrome along its bottom reaches: a tab bar, an
   /// accessory, the home indicator. 0 where nothing covers it there.
   final double bottom;
+
+  /// Whether chrome sits along the bottom of the page: a tab bar or an
+  /// accessory. Without it the scroll views draw no edge there, unless the
+  /// page floats a control there ([AdaptiveBottomControl]).
+  final bool bottomChrome;
 
   /// The colour along the top: a header's, or the page's own.
   final Color? topColor;
@@ -72,6 +90,21 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
 
 class _AdaptiveScrollEdgeRegionState extends State<AdaptiveScrollEdgeRegion> {
   final _PageBox _page = _PageBox();
+  final _BottomControls _controls = _BottomControls();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controls.outer = context
+        .dependOnInheritedWidgetOfExactType<_RegionScope>()
+        ?.controls;
+  }
+
+  @override
+  void dispose() {
+    _controls.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +113,7 @@ class _AdaptiveScrollEdgeRegionState extends State<AdaptiveScrollEdgeRegion> {
       child: _RegionScope(
         region: widget,
         page: _page,
+        controls: _controls,
         child: ScrollConfiguration(
           behavior: _ScrollEdgeBehavior.around(ScrollConfiguration.of(context)),
           child: widget.child,
@@ -95,15 +129,97 @@ class _PageBox {
   RenderBox? box;
 }
 
+/// How many controls the page floats along its bottom
+/// ([AdaptiveBottomControl]), counting those of the page around it: a control
+/// floating over a page floats over the pages inside it too.
+class _BottomControls extends ChangeNotifier {
+  int _count = 0;
+  bool _disposed = false;
+  _BottomControls? _outer;
+
+  bool get any => _count > 0 || (_outer?.any ?? false);
+
+  set outer(_BottomControls? value) {
+    if (identical(value, _outer)) return;
+    final wasAny = any;
+    _outer?.removeListener(_onOuter);
+    _outer = value?..addListener(_onOuter);
+    if (any != wasAny) notifyListeners();
+  }
+
+  void _onOuter() {
+    if (_count == 0) notifyListeners();
+  }
+
+  /// Applied after the frame: a control comes and goes while the page is
+  /// built, and the scroll views listening are built with it.
+  void change(int delta) {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (_disposed) return;
+      final wasAny = any;
+      _count += delta;
+      if (any != wasAny) notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _outer?.removeListener(_onOuter);
+    super.dispose();
+  }
+}
+
+/// A control floating at the bottom of a page, over its scroll views, such
+/// as a segmented control that switches what the page lists.
+///
+/// While one is on a page with no chrome along its bottom, the page's scroll
+/// views keep their edge there ([AdaptiveScrollEdgeRegion]), so content
+/// fades out under the control rather than running into it.
+class AdaptiveBottomControl extends StatefulWidget {
+  const AdaptiveBottomControl({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<AdaptiveBottomControl> createState() => _AdaptiveBottomControlState();
+}
+
+class _AdaptiveBottomControlState extends State<AdaptiveBottomControl> {
+  _BottomControls? _controls;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controls = context
+        .dependOnInheritedWidgetOfExactType<_RegionScope>()
+        ?.controls;
+    if (identical(controls, _controls)) return;
+    _controls?.change(-1);
+    _controls = controls?..change(1);
+  }
+
+  @override
+  void dispose() {
+    _controls?.change(-1);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _RegionScope extends InheritedWidget {
   const _RegionScope({
     required this.region,
     required this.page,
+    required this.controls,
     required super.child,
   });
 
   final AdaptiveScrollEdgeRegion region;
   final _PageBox page;
+  final _BottomControls controls;
 
   @override
   bool updateShouldNotify(_RegionScope oldWidget) =>
@@ -112,6 +228,8 @@ class _RegionScope extends InheritedWidget {
       region.top != oldWidget.region.top ||
       region.titleBand != oldWidget.region.titleBand ||
       region.bottom != oldWidget.region.bottom ||
+      region.bottomChrome != oldWidget.region.bottomChrome ||
+      controls != oldWidget.controls ||
       region.topColor != oldWidget.region.topColor ||
       region.bottomColor != oldWidget.region.bottomColor ||
       region.data != oldWidget.region.data;
@@ -258,6 +376,7 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
   final ValueNotifier<double> _top = ValueNotifier<double>(0);
   final ValueNotifier<double> _bottom = ValueNotifier<double>(0);
   _EdgeNode? _node;
+  _BottomControls? _controls;
 
   @override
   void didChangeDependencies() {
@@ -270,10 +389,20 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
       _node = _EdgeNode(parent);
       parent?.children.add(_node!);
     }
+    final controls = context
+        .dependOnInheritedWidgetOfExactType<_RegionScope>()
+        ?.controls;
+    if (!identical(controls, _controls)) {
+      _controls?.removeListener(_onControls);
+      _controls = controls?..addListener(_onControls);
+    }
   }
+
+  void _onControls() => setState(() {});
 
   @override
   void dispose() {
+    _controls?.removeListener(_onControls);
     _node?.parent?.children.remove(_node);
     _top.dispose();
     _bottom.dispose();
@@ -297,12 +426,20 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
     final scope = context.dependOnInheritedWidgetOfExactType<_RegionScope>();
     final region = scope?.region;
     final top = region?.top;
-    final bottom = region == null || region.bottom <= 0 ? null : region.bottom;
+    final bottom =
+        region == null ||
+            region.bottom <= 0 ||
+            !(region.bottomChrome || (scope!.controls.any))
+        ? null
+        : region.bottom;
+    final pinnedHeight = region?.chrome.metrics.pinnedEdgeHeight ?? 0;
+    final pinnedColor = region?.bottomColor ?? region?.topColor;
     return _ScrollEdgeBands(
       node: _node!,
       page: scope?.page,
       top: top,
       bottom: bottom,
+      pinned: pinnedHeight > 0 && pinnedColor != null ? pinnedHeight : null,
       topEdge: _top,
       bottomEdge: _bottom,
       viewport: NotificationListener<Notification>(
@@ -338,6 +475,16 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
                 data: region.data,
               ),
               _bottom,
+            ),
+      pinnedBand: pinnedHeight <= 0 || pinnedColor == null
+          ? null
+          : IgnorePointer(
+              child: ValueListenableBuilder<double>(
+                valueListenable: _top,
+                child: _PinnedEdge(color: pinnedColor),
+                builder: (context, value, child) =>
+                    Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+              ),
             ),
     );
   }
@@ -395,7 +542,34 @@ class _DefaultEdge extends StatelessWidget {
   }
 }
 
-enum _BandSlot { viewport, top, bottom }
+/// The soft edge at the top of a scroll view below something pinned above
+/// it: the page's colour, fading out downwards.
+class _PinnedEdge extends StatelessWidget {
+  const _PinnedEdge({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = color.withValues(alpha: 1);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0, 0.35, 1],
+          colors: [
+            base,
+            base.withValues(alpha: 0.7),
+            base.withValues(alpha: 0),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _BandSlot { viewport, top, bottom, pinned }
 
 class _ScrollEdgeBands
     extends SlottedMultiChildRenderObjectWidget<_BandSlot, RenderBox> {
@@ -404,22 +578,26 @@ class _ScrollEdgeBands
     required this.page,
     required this.top,
     required this.bottom,
+    required this.pinned,
     required this.topEdge,
     required this.bottomEdge,
     required this.viewport,
     required this.topBand,
     required this.bottomBand,
+    required this.pinnedBand,
   });
 
   final _EdgeNode node;
   final _PageBox? page;
   final double? top;
   final double? bottom;
+  final double? pinned;
   final ValueListenable<double> topEdge;
   final ValueListenable<double> bottomEdge;
   final Widget viewport;
   final Widget? topBand;
   final Widget? bottomBand;
+  final Widget? pinnedBand;
 
   @override
   Iterable<_BandSlot> get slots => _BandSlot.values;
@@ -429,11 +607,18 @@ class _ScrollEdgeBands
     _BandSlot.viewport => viewport,
     _BandSlot.top => topBand,
     _BandSlot.bottom => bottomBand,
+    _BandSlot.pinned => pinnedBand,
   };
 
   @override
   _RenderScrollEdgeEffect createRenderObject(BuildContext context) =>
-      _RenderScrollEdgeEffect(node: node, page: page, top: top, bottom: bottom)
+      _RenderScrollEdgeEffect(
+          node: node,
+          page: page,
+          top: top,
+          bottom: bottom,
+          pinned: pinned,
+        )
         ..topEdge = topEdge
         ..bottomEdge = bottomEdge;
 
@@ -447,6 +632,7 @@ class _ScrollEdgeBands
       ..page = page
       ..top = top
       ..bottom = bottom
+      ..pinned = pinned
       ..topEdge = topEdge
       ..bottomEdge = bottomEdge;
   }
@@ -459,10 +645,12 @@ class _RenderScrollEdgeEffect extends RenderBox
     required _PageBox? page,
     required double? top,
     required double? bottom,
+    required double? pinned,
   }) : _node = node,
        _page = page,
        _top = top,
-       _bottom = bottom;
+       _bottom = bottom,
+       _pinned = pinned;
 
   /// How far past the bars the app's background may fade into the content.
   static const double _fadeAllowance = 64;
@@ -500,15 +688,25 @@ class _RenderScrollEdgeEffect extends RenderBox
     markNeedsLayout();
   }
 
+  double? _pinned;
+
+  set pinned(double? value) {
+    if (value == _pinned) return;
+    _pinned = value;
+    markNeedsLayout();
+  }
+
   ValueListenable<double>? topEdge;
   ValueListenable<double>? bottomEdge;
 
   bool _paintsTop = false;
   bool _paintsBottom = false;
+  bool _paintsPinned = false;
 
   RenderBox? get _viewport => childForSlot(_BandSlot.viewport);
   RenderBox? get _topBand => childForSlot(_BandSlot.top);
   RenderBox? get _bottomBand => childForSlot(_BandSlot.bottom);
+  RenderBox? get _pinnedBand => childForSlot(_BandSlot.pinned);
 
   @override
   void attach(PipelineOwner owner) {
@@ -557,6 +755,11 @@ class _RenderScrollEdgeEffect extends RenderBox
     }
     _topBand?.layout(BoxConstraints.tight(Size(size.width, _top ?? 0)));
     _bottomBand?.layout(BoxConstraints.tight(Size(size.width, _bottom ?? 0)));
+    _pinnedBand?.layout(
+      BoxConstraints.tight(
+        Size(size.width, math.min(_pinned ?? 0, size.height)),
+      ),
+    );
   }
 
   /// Where this scroll view is on its page, or null when it is not on one
@@ -600,6 +803,17 @@ class _RenderScrollEdgeEffect extends RenderBox
     return false;
   }
 
+  /// Whether a scroll view on the same page holds this one: its content is
+  /// what scrolls, so this one has nothing pinned above it.
+  bool _insideAnother() {
+    for (var node = _node.parent; node != null; node = node.parent) {
+      final renderObject = node.renderObject;
+      if (renderObject == null || !renderObject.attached) continue;
+      if (identical(renderObject._page, _page)) return true;
+    }
+    return false;
+  }
+
   /// Along the bottom the innermost one does.
   bool _descendantTakesBottom(Rect own, double pageHeight) {
     final pending = <_EdgeNode>[..._node.children];
@@ -620,15 +834,26 @@ class _RenderScrollEdgeEffect extends RenderBox
   void paint(PaintingContext context, Offset offset) {
     _paintsTop = false;
     _paintsBottom = false;
+    _paintsPinned = false;
     final viewport = _viewport;
     if (viewport != null) context.paintChild(viewport, offset);
     final topBand = _topBand;
     final bottomBand = _bottomBand;
-    if (topBand == null && bottomBand == null) return;
+    final pinnedBand = _pinnedBand;
+    if (topBand == null && bottomBand == null && pinnedBand == null) return;
     final rect = _onPage();
     final pageHeight = _page?.box?.size.height;
     if (rect == null || pageHeight == null) return;
     final clip = Offset.zero & size;
+    // Below something the page pins above it, clear of the bars: a soft
+    // edge at its own top.
+    if (pinnedBand != null &&
+        rect.top > 0.5 &&
+        !_underTop(rect) &&
+        !_insideAnother()) {
+      _paintsPinned = true;
+      context.paintChild(pinnedBand, offset);
+    }
     if (topBand != null && _underTop(rect) && !_ancestorTakesTop()) {
       _paintsTop = true;
       context.pushClipRect(
@@ -656,7 +881,7 @@ class _RenderScrollEdgeEffect extends RenderBox
 
   @override
   void applyPaintTransform(RenderBox child, Matrix4 transform) {
-    if (identical(child, _viewport)) return;
+    if (identical(child, _viewport) || identical(child, _pinnedBand)) return;
     final rect = _onPage();
     if (rect == null) return;
     if (identical(child, _topBand)) {
@@ -694,16 +919,19 @@ class _RenderScrollEdgeEffect extends RenderBox
     super.debugFillProperties(properties);
     properties
       ..add(DoubleProperty('top', _top))
-      ..add(DoubleProperty('bottom', _bottom));
+      ..add(DoubleProperty('bottom', _bottom))
+      ..add(DoubleProperty('pinned', _pinned));
   }
 }
 
 /// What the scroll views on screen last drew of the scroll edge effect: for
-/// each one, how far its background along the top and along the bottom is
-/// in, or null where it draws none there.
+/// each one, how far its background along the top and along the bottom, and
+/// its soft edge below something pinned above it, are in, or null where it
+/// draws none there.
 @visibleForTesting
-List<({double? top, double? bottom})> debugScrollEdgesOnScreen() {
-  final result = <({double? top, double? bottom})>[];
+List<({double? top, double? bottom, double? pinned})>
+debugScrollEdgesOnScreen() {
+  final result = <({double? top, double? bottom, double? pinned})>[];
   bool painted(RenderObject node) {
     for (
       var child = node, parent = node.parent;
@@ -720,6 +948,7 @@ List<({double? top, double? bottom})> debugScrollEdgesOnScreen() {
       result.add((
         top: node._paintsTop ? node.topEdge?.value ?? 0 : null,
         bottom: node._paintsBottom ? node.bottomEdge?.value ?? 0 : null,
+        pinned: node._paintsPinned ? node.topEdge?.value ?? 0 : null,
       ));
     }
     node.visitChildren(visit);

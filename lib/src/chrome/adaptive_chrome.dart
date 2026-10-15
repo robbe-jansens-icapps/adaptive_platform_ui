@@ -292,6 +292,7 @@ class AdaptiveChromeMetrics {
     this.sidebarExpandedWindowWidth = 1024,
     this.sidebarWidth = 300,
     this.sidebarCollapsedWidth = 88,
+    this.pinnedEdgeHeight = 24,
   });
 
   /// Height of the toolbar along the top, below the status bar.
@@ -316,6 +317,11 @@ class AdaptiveChromeMetrics {
   /// The sidebar collapsed to a rail of icons.
   final double sidebarCollapsedWidth;
 
+  /// How far the soft edge at the top of a scroll view below something
+  /// pinned above it reaches into its content ([AdaptiveScrollEdgeRegion]);
+  /// 0 for none.
+  final double pinnedEdgeHeight;
+
   @override
   bool operator ==(Object other) =>
       other is AdaptiveChromeMetrics &&
@@ -324,7 +330,8 @@ class AdaptiveChromeMetrics {
       other.sidebarMinWindowWidth == sidebarMinWindowWidth &&
       other.sidebarExpandedWindowWidth == sidebarExpandedWindowWidth &&
       other.sidebarWidth == sidebarWidth &&
-      other.sidebarCollapsedWidth == sidebarCollapsedWidth;
+      other.sidebarCollapsedWidth == sidebarCollapsedWidth &&
+      other.pinnedEdgeHeight == pinnedEdgeHeight;
 
   @override
   int get hashCode => Object.hash(
@@ -334,6 +341,7 @@ class AdaptiveChromeMetrics {
     sidebarExpandedWindowWidth,
     sidebarWidth,
     sidebarCollapsedWidth,
+    pinnedEdgeHeight,
   );
 }
 
