@@ -172,7 +172,11 @@ class TabsFixture {
     this.debugVerticalBarEdge,
     this.accessory,
     this.pageColor,
+    this.extendBody = false,
   });
+
+  /// Whether the pages run their body under the side chrome.
+  final bool extendBody;
 
   final Widget? accessory;
 
@@ -199,6 +203,7 @@ class TabsFixture {
 
   Widget pageWidget(String title, {AdaptiveBackButtonStyle style = AdaptiveBackButtonStyle.back}) => AdaptiveScaffold(
     backgroundColor: pageColor,
+    extendBodyBehindVerticalBar: extendBody,
     appBar: AdaptiveAppBar(title: title, actions: actions, chromeData: chromeData, backButtonStyle: style),
     body: Builder(
       builder: (context) {

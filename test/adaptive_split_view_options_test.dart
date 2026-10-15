@@ -273,6 +273,38 @@ void main() {
       expect(pushed.last.isCurrent, isTrue);
     });
 
+    testWidgets('opensDeeperOver: a page opened from the column opens over the whole split view, and back returns to the columns', (tester) async {
+      tester.view.physicalSize = wide;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      pushed = [];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdaptiveSplitView(
+            onGenerateDetailRoute: onGenerateRoute,
+            initialDetail: detail('A'),
+            opensDeeperOver: true,
+            onPushedOver: pushed.add,
+            master: master('List'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('List B'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('More B'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('List A'), findsNothing);
+      expect(tester.getRect(find.text('Detail B+')).left, lessThan(100));
+      expect([for (final route in pushed) route.settings.arguments], ['B+']);
+
+      Navigator.of(tester.element(find.text('Detail B+'))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('List A'), findsOneWidget);
+      expect(find.text('Detail B'), findsOneWidget);
+    });
+
     testWidgets('hears of nothing that opens in the column', (tester) async {
       await pumpSplit(tester, wide);
       await tester.tap(find.text('List C'));

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../chrome/adaptive_chrome.dart';
 import '../chrome/scroll_edge_effect.dart';
+import '../chrome/sidebar_room.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../toolbar/duo_top_strip.dart';
@@ -508,6 +509,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     // A column of a split view has its own bar, as a column of a
     // UISplitViewController has its own navigation bar.
     if (AdaptiveSplitView.isInColumn(context)) return false;
+    // So has a page in a popover, on a navigator of its own there too.
+    if (AdaptivePopover.isIn(context)) return false;
     final route = ModalRoute.of(context);
     return route == null || route is PageRoute;
   }
@@ -1368,17 +1371,25 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
     // bar's: the content keeps out of it, while the page's background runs
     // under it. A tab layout leaves that to the pages inside it, so each of
     // those has its own background there.
+    // Beside a sidebar the first page under the tab layout runs under it in
+    // the same way, and takes its room over from the tab layout.
+    final sidebarRoom = ownsTabs ? 0.0 : SidebarRoom.of(context);
     final padding = MediaQuery.paddingOf(context);
-    final sideInset =
-        pose == null ||
-            !hosted ||
-            ownsTabs ||
-            widget.extendBodyBehindVerticalBar
-        ? 0.0
-        : pose.onLeft
-        ? padding.left
-        : padding.right;
-    final barOnLeft = pose?.onLeft ?? false;
+    final double sideInset;
+    if (sidebarRoom > 0) {
+      sideInset = widget.extendBodyBehindVerticalBar ? 0.0 : sidebarRoom;
+    } else {
+      sideInset =
+          pose == null ||
+              !hosted ||
+              ownsTabs ||
+              widget.extendBodyBehindVerticalBar
+          ? 0.0
+          : pose.onLeft
+          ? padding.left
+          : padding.right;
+    }
+    final barOnLeft = sidebarRoom > 0 || (pose?.onLeft ?? false);
 
     Widget body = widget.body ?? const SizedBox.shrink();
     if (ownsTabs) {
@@ -1444,7 +1455,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
             top: edgeAlongTop ? top : null,
             titleBand: inBarPose,
             bottom: inner.padding.bottom,
-            bottomChrome: AdaptiveBottomBarInset.of(context) > 0,
+            bottomChrome:
+                placement == AdaptiveChromePlacement.bottom &&
+                AdaptiveBottomBarInset.of(context) > 0,
             topColor:
                 _opaqueColor(appBar?.backdropColor) ??
                 _opaqueColor(widget.backgroundColor) ??
@@ -1480,11 +1493,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold> {
               left: barOnLeft ? sideInset : 0,
               right: barOnLeft ? 0 : sideInset,
             ),
-            child: page,
+            child: sidebarRoom > 0 ? SidebarRoom(width: 0, child: page) : page,
           ),
           if (ownBar)
             Positioned(
-              left: 0,
+              left: sidebarRoom,
               right: 0,
               top: 0,
               child: _CustomInlineBar(
@@ -1927,19 +1940,18 @@ class _BesideSidebarBody extends StatelessWidget {
       builder: (context, sidebarInset, child) {
         final inset = enabled ? sidebarInset : 0.0;
         final mediaQuery = MediaQuery.of(context);
-        return Padding(
-          padding: EdgeInsets.only(left: inset),
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              padding: mediaQuery.padding.copyWith(
-                left: math.max(0, mediaQuery.padding.left - inset),
-              ),
-              viewPadding: mediaQuery.viewPadding.copyWith(
-                left: math.max(0, mediaQuery.viewPadding.left - inset),
-              ),
+        // The pages run on under the sidebar, and the first of them keeps
+        // its content clear of it (SidebarRoom).
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            padding: mediaQuery.padding.copyWith(
+              left: math.max(mediaQuery.padding.left, inset),
             ),
-            child: child!,
+            viewPadding: mediaQuery.viewPadding.copyWith(
+              left: math.max(mediaQuery.viewPadding.left, inset),
+            ),
           ),
+          child: SidebarRoom(width: inset, child: child!),
         );
       },
     );

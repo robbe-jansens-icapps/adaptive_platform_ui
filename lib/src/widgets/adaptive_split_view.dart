@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../platform/platform_info.dart';
+import '../chrome/sidebar_room.dart';
 import '../toolbar/duo_top_strip.dart';
 import '../toolbar/duo_vertical_bar.dart';
 import '../toolbar/fold_scope.dart';
@@ -46,6 +47,7 @@ class AdaptiveSplitView extends StatefulWidget {
     this.backgroundColor,
     this.minWidth = 700,
     this.showsDetailColumn = true,
+    this.opensDeeperOver = false,
     this.onPushedOver,
   });
 
@@ -86,6 +88,14 @@ class AdaptiveSplitView extends StatefulWidget {
   /// move over the list as the window narrows. Lets navigation code that
   /// keeps track of the pages it opens know of these too.
   final ValueChanged<Route<dynamic>>? onPushedOver;
+
+  /// Whether a page opened from the page beside the list opens over the
+  /// whole split view, on the navigator it is on, rather than on top of it
+  /// in the column. The column keeps to what was picked in the list, one
+  /// level deep, and anything deeper takes the window, so it is clear which
+  /// page is in front. Off by default: the column goes on as deep as its
+  /// pages lead, as a split view controller's secondary column does.
+  final bool opensDeeperOver;
 
   /// Opens the page [settings] names from the split view in front: one on
   /// screen (on the selected tab), on the page in front or under the pages
@@ -330,6 +340,12 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         _picked = true;
       });
       navigator.pushAndRemoveUntil(_shownAtOnce(settings), (_) => false);
+    } else if (widget.opensDeeperOver) {
+      final over = _route?.navigator;
+      final route = widget.onGenerateDetailRoute(settings);
+      if (over == null || route == null) return false;
+      over.push(route);
+      widget.onPushedOver?.call(route);
     } else {
       final route = widget.onGenerateDetailRoute(settings);
       if (route == null) return false;
@@ -609,6 +625,9 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     // out, so it learns of a window that widens here: by the width it had to
     // spare at its last layout, it can show the pages beside the list.
     final window = MediaQuery.sizeOf(context).width;
+    // Beside a sidebar the list runs under it: that room is not the split
+    // view's to lay columns out in.
+    final room = SidebarRoom.of(context);
     if (!_wide &&
         widget.showsDetailColumn &&
         _pagesOver.isNotEmpty &&
@@ -631,8 +650,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         // width says nothing new.
         _moving.removeWhere((page) => !page.isActive);
         final stale = _moving.isNotEmpty;
-        if (!stale) _inset = window - constraints.maxWidth;
-        final roomy = constraints.maxWidth >= widget.minWidth;
+        if (!stale) _inset = window - constraints.maxWidth + room;
+        final roomy = constraints.maxWidth - room >= widget.minWidth;
         final wide = stale ? _wide : roomy && widget.showsDetailColumn;
         if (wide != _wide) {
           _wide = wide;
@@ -663,7 +682,10 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     final bar = DuoLayout.barSide(MediaQuery.viewPaddingOf(context));
     final left = bar == DuoBarSide.left ? padding.left : 0.0;
     final right = bar == DuoBarSide.right ? padding.right : 0.0;
-    final width = constraints.maxWidth - left - right;
+    // Beside a sidebar the list column takes its room over and runs under
+    // it; the column beside the list has none of it.
+    final room = SidebarRoom.of(context);
+    final width = constraints.maxWidth - left - right - room;
     final android = PlatformInfo.isAndroid;
     // In the iPhone Duo vertical bar pose, the fixed toolbar holds the
     // controls of every page, those in the columns included: each column
@@ -681,8 +703,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
     final fold = _foldAcross(context);
     final onFold =
         fold != null &&
-        fold - start >= _minColumnOnFold &&
-        fold - start <= width - _minColumnOnFold;
+        fold - start - room >= _minColumnOnFold &&
+        fold - start - room <= width - _minColumnOnFold;
     if (onFold) _foldX = fold;
     _followFold(onFold);
     final detail = _column(
@@ -692,11 +714,14 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
       removeLeft: true,
       removeRight: bar == DuoBarSide.right,
       child: HeroControllerScope.none(
-        child: Navigator(
-          key: _detailKey,
-          observers: [_observer],
-          onGenerateInitialRoutes: _initialRoutes,
-          onGenerateRoute: widget.onGenerateDetailRoute,
+        child: SidebarRoom(
+          width: 0,
+          child: Navigator(
+            key: _detailKey,
+            observers: [_observer],
+            onGenerateInitialRoutes: _initialRoutes,
+            onGenerateRoute: widget.onGenerateDetailRoute,
+          ),
         ),
       ),
     );
@@ -716,7 +741,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         child: AnimatedBuilder(
           animation: _toFold,
           builder: (context, _) {
-            final flat = (width * 0.38).clamp(320.0, 420.0);
+            final flat = room + (width * 0.38).clamp(320.0, 420.0);
             final foldX = _foldX;
             // Centred on the fold.
             final masterWidth = foldX == null
@@ -799,9 +824,15 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
                     final top = freeStrip
                         ? math.min(mediaQuery.padding.top, DuoTopStrip.barTop)
                         : mediaQuery.padding.top;
+                    // The list's room under a sidebar is not room it has
+                    // for its content.
+                    final room = isDetail ? 0.0 : SidebarRoom.of(context);
                     return MediaQuery(
                       data: mediaQuery.copyWith(
-                        size: constraints.biggest,
+                        size: Size(
+                          math.max(0, constraints.maxWidth - room),
+                          constraints.maxHeight,
+                        ),
                         padding: mediaQuery.padding.copyWith(top: top),
                         viewPadding: mediaQuery.viewPadding.copyWith(
                           top: freeStrip

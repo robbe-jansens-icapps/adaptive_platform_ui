@@ -543,15 +543,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                       metrics.sidebarCollapsedWidth +
                       (metrics.sidebarWidth - metrics.sidebarCollapsedWidth) *
                           sidebar.progress.value,
-                  child: sidebar.overlaid
-                      ? child
-                      : Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            _SidebarBackdrop(blend: widget.blend, owner: entry),
-                            child!,
-                          ],
-                        ),
+                  child: child,
                 ),
                 child: chrome.sidebarBuilder!(
                   context,
@@ -590,44 +582,6 @@ class _HostedTabBarState extends State<HostedTabBar>
     return (display.longestSide - viewport.longestSide).abs() > 1 ||
         (display.shortestSide - viewport.shortestSide).abs() > 1;
   }
-}
-
-/// Behind a sidebar beside the pages: the colour of the page in front, so
-/// the page runs on behind the sidebar instead of ending in an edge against
-/// the tab layout's own background. Blended from one page's to the next's
-/// as the pages are.
-class _SidebarBackdrop extends StatelessWidget {
-  const _SidebarBackdrop({required this.blend, required this.owner});
-
-  final ToolbarBlend blend;
-  final ToolbarEntry owner;
-
-  @override
-  Widget build(BuildContext context) {
-    final fallback =
-        _opaque(owner.backgroundColor) ??
-        CupertinoColors.systemBackground.resolveFrom(context);
-    Color colorOf(ToolbarEntry? entry) =>
-        _opaque(entry?.backgroundColor) ?? fallback;
-    return ListenableBuilder(
-      listenable: blend,
-      builder: (context, _) {
-        final upper = colorOf(blend.upper ?? owner);
-        final lower = blend.lower;
-        final driver = blend.driver;
-        if (lower == null || driver == null) return ColoredBox(color: upper);
-        final from = colorOf(lower);
-        return AnimatedBuilder(
-          animation: driver,
-          builder: (context, _) =>
-              ColoredBox(color: Color.lerp(from, upper, driver.value)!),
-        );
-      },
-    );
-  }
-
-  static Color? _opaque(Color? color) =>
-      color == null || color.a < 1 ? null : color;
 }
 
 /// How far a floating tab accessory keeps from the edges of the content.

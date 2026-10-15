@@ -26,9 +26,10 @@ import 'adaptive_chrome.dart';
 /// draws it there, as its content is what runs under them, and the innermost
 /// one along the bottom.
 ///
-/// Along the bottom there is only an edge where something sits there: chrome
-/// ([bottomChrome]) or a control the page floats over its content
-/// ([AdaptiveBottomControl]). The home indicator alone gets none.
+/// Along the bottom there is only an edge where the tab bar sits there
+/// ([bottomChrome]) or a control the page floats over its content asks for
+/// one ([AdaptiveBottomControl]). The home indicator alone gets none, nor
+/// does an accessory floating on its own.
 ///
 /// A scroll view below something the page pins above it, such as a search
 /// field or tabs, and clear of the bars, fades its content out at its own top
@@ -63,9 +64,10 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
   /// accessory, the home indicator. 0 where nothing covers it there.
   final double bottom;
 
-  /// Whether chrome sits along the bottom of the page: a tab bar or an
-  /// accessory. Without it the scroll views draw no edge there, unless the
-  /// page floats a control there ([AdaptiveBottomControl]).
+  /// Whether the tab bar sits along the bottom of the page (with its
+  /// accessory). Without it the scroll views draw no edge there, not for an
+  /// accessory floating on its own either, unless the page floats a control
+  /// there ([AdaptiveBottomControl]).
   final bool bottomChrome;
 
   /// The colour along the top: a header's, or the page's own.

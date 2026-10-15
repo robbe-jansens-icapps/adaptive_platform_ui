@@ -527,6 +527,33 @@ void main() {
   );
 
   testWidgets(
+    'an accessory floating on its own beside the iPhone Duo\'s vertical bar brings no background along the bottom',
+    (tester) async {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      tester.view.physicalSize = const Size(951, 669);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(right: 84, bottom: 34);
+      tester.view.viewPadding = const FakeViewPadding(right: 84, bottom: 34);
+      addTearDown(tester.view.reset);
+      final tabs = TabsFixture(
+        chrome: chrome,
+        debugFold: duo(),
+        accessory: const SizedBox(height: 50),
+        pageColor: pageColor,
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      tabs.navigators[0].currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => listPage('List')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(bottomBackdrop), findsNothing);
+    },
+  );
+
+  testWidgets(
     'a control floating along the bottom brings the background there, and takes it away as it goes',
     (tester) async {
       phone(tester);

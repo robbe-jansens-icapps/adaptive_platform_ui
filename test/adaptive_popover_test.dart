@@ -116,6 +116,22 @@ void main() {
     expect(padding, EdgeInsets.zero);
   });
 
+  testWidgets('with the keyboard up it moves above it, and its content keeps no room for the keyboard', (tester) async {
+    window(tester, const Size(1000, 800));
+    await pumpButton(tester, const Offset(400, 500));
+    final rect = await open(tester);
+    expect(rect.top, greaterThan(500));
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final moved = tester.getRect(find.byKey(content));
+    expect(moved.bottom, lessThanOrEqualTo(500 - AdaptivePopover.gap));
+    expect(moved.left, rect.left);
+    expect(MediaQuery.viewInsetsOf(tester.element(find.byKey(content))).bottom, 0);
+  });
+
   testWidgets('opens as a sheet from the bottom on a compact window', (tester) async {
     window(tester, const Size(390, 844));
     await pumpButton(tester, const Offset(100, 100));
@@ -369,6 +385,37 @@ void main() {
     final title = tester.getRect(find.text('title:Pop'));
     expect(title.center.dy - surface.top, AdaptivePopover.barInset + TestChrome.chrome.metrics.toolbarHeight / 2);
     expect(tabs.paddingOf('Pop').top, AdaptivePopover.barInset + TestChrome.chrome.metrics.toolbarHeight);
+  });
+
+  testWidgets('pages pushed on a navigator of their own in a popover draw their own bar there, not the host', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+    window(tester, const Size(1000, 800));
+    final tabs = TabsFixture();
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    final inner = GlobalKey<NavigatorState>();
+
+    AdaptivePopover.show<void>(
+      anchor: tabs.navigators[0].currentContext!,
+      anchorRect: const Rect.fromLTWH(400, 100, 44, 44),
+      builder: (_) => SizedBox(
+        key: content,
+        width: 300,
+        height: 300,
+        child: Navigator(
+          key: inner,
+          onGenerateRoute: (settings) => MaterialPageRoute<void>(builder: (_) => tabs.pageWidget('First')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    inner.currentState!.push(tabs.page('Second'));
+    await tester.pumpAndSettle();
+
+    final surface = tester.getRect(find.byKey(content));
+    final title = tester.getRect(find.text('title:Second'));
+    expect(surface.contains(title.center), isTrue);
+    expect(find.text('title:Tab 0'), findsOneWidget);
   });
 
   testWidgets('a page\'s back button in a popover sits in its corner, as far from the side as from the top', (tester) async {

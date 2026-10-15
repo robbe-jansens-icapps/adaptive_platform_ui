@@ -45,9 +45,11 @@ abstract final class AdaptivePopover {
   /// sheet, clear of the surface's rounded corners.
   static const double barInset = 8;
 
-  /// Whether [context] is in the content of a popover or its sheet.
+  /// Whether [context] is in the content of a popover or its sheet, or of
+  /// a surface of the app's that marks itself as one
+  /// ([AdaptivePopoverSurface]).
   static bool isIn(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<_PopoverScope>() != null;
+      context.getInheritedWidgetOfExactType<AdaptivePopoverSurface>() != null;
 
   /// Shows [builder]'s content anchored to [anchor], a control on screen,
   /// or to [anchorRect] in global coordinates. Resolves to what the content
@@ -87,7 +89,7 @@ abstract final class AdaptivePopover {
         builder: (context) => _Surface(
           sheet: true,
           data: chromeData,
-          child: _PopoverScope(
+          child: AdaptivePopoverSurface(
             child: SafeArea(top: false, child: builder(context)),
           ),
         ),
@@ -144,11 +146,16 @@ abstract final class AdaptivePopover {
   }
 }
 
-class _PopoverScope extends InheritedWidget {
-  const _PopoverScope({required super.child});
+/// Marks [child] as the content of a popover: the pages in it keep their
+/// bar clear of its rounded top and their controls in its corners
+/// ([AdaptivePopover.barInset]). Popovers and their sheets mark their content
+/// themselves; an app wraps its own floating surfaces, such as a sheet of its
+/// own that a page opens in.
+class AdaptivePopoverSurface extends InheritedWidget {
+  const AdaptivePopoverSurface({super.key, required super.child});
 
   @override
-  bool updateShouldNotify(_PopoverScope oldWidget) => false;
+  bool updateShouldNotify(AdaptivePopoverSurface oldWidget) => false;
 }
 
 /// The surface a popover or its sheet sits on: the custom chrome's, or
@@ -243,25 +250,32 @@ class _PopoverRoute<T> extends PopupRoute<T> {
           maxSize: maxSize,
           placement: placement,
           padding: MediaQuery.paddingOf(context),
+          keyboard: MediaQuery.viewInsetsOf(context).bottom,
           band: pose == null
               ? null
               : (onLeft: pose.onLeft, width: pose.bandWidth),
           fold: FoldScope.foldOf(context),
         ),
         surface: _Surface(sheet: false, data: data),
-        // The popover sits inside the window's safe area, so its content
-        // keeps none of the window's padding (the status bar, the home
-        // indicator) for itself.
-        content: MediaQuery.removePadding(
-          context: context,
-          removeLeft: true,
-          removeTop: true,
-          removeRight: true,
-          removeBottom: true,
-          child: Material(
-            type: MaterialType.transparency,
-            child: _PopoverScope(child: Builder(builder: builder)),
-          ),
+        content: Builder(
+          // The popover sits inside the window's safe area and moves out of
+          // the keyboard's way itself, so its content keeps none of the
+          // window's padding (the status bar, the home indicator) or of the
+          // keyboard's inset for itself.
+          builder: (context) {
+            final mediaQuery = MediaQuery.of(context);
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                padding: EdgeInsets.zero,
+                viewPadding: EdgeInsets.zero,
+                viewInsets: EdgeInsets.zero,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: AdaptivePopoverSurface(child: Builder(builder: builder)),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -274,7 +288,6 @@ class _PopoverRoute<T> extends PopupRoute<T> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) => child;
-
 }
 
 /// Places a popover next to its anchor: below it, or above it when there is
@@ -288,8 +301,14 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
     required this.padding,
     required this.band,
     required this.fold,
+    this.keyboard = 0,
     this.placement = AdaptivePopoverPlacement.beside,
   });
+
+  /// How far the keyboard reaches up the window. The popover keeps above
+  /// it, where it is where it would be without it: it only moves up, its
+  /// fields staying in sight as they are typed in.
+  final double keyboard;
 
   final Rect anchor;
   final Size maxSize;
@@ -380,16 +399,33 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final region = _region(constraints.biggest);
+    final aboveKeyboard = keyboard <= 0
+        ? region.height
+        : constraints.maxHeight -
+              math.max(keyboard, padding.bottom) -
+              _gap -
+              region.top;
     return BoxConstraints.loose(
       Size(
         math.max(0, math.min(maxSize.width, region.width)),
-        math.max(0, math.min(maxSize.height, region.height)),
+        math.max(0, math.min(maxSize.height, aboveKeyboard)),
       ),
     );
   }
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
+    final placed = _placedWithoutKeyboard(size, childSize);
+    if (keyboard <= 0) return placed;
+    final region = _region(size);
+    final top = size.height - math.max(keyboard, padding.bottom) - _gap;
+    return Offset(
+      placed.dx,
+      math.max(region.top, math.min(placed.dy, top - childSize.height)),
+    );
+  }
+
+  Offset _placedWithoutKeyboard(Size size, Size childSize) {
     final region = _region(size);
     double clampX(double x) => x.clamp(
       region.left,
@@ -448,7 +484,8 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
       maxSize != oldDelegate.maxSize ||
       padding != oldDelegate.padding ||
       band != oldDelegate.band ||
-      fold != oldDelegate.fold;
+      fold != oldDelegate.fold ||
+      keyboard != oldDelegate.keyboard;
 }
 
 /// A popover's [surface] growing out of its anchor into the place
