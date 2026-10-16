@@ -504,9 +504,8 @@ void main() {
     expect(tabBarsMade(), hasLength(1));
   }, variant: ios);
 
-  testWidgets('a dialog over the tabs fades the bar out and makes it inert', (
-    tester,
-  ) async {
+  testWidgets('a dialog over a bar that tells of no capsule fades it out and '
+      'makes it inert', (tester) async {
     usePhone(tester);
     final tabs = Tabs();
     addTearDown(tabs.dispose);
@@ -539,6 +538,137 @@ void main() {
     navigator.currentState!.pop();
     await tester.pumpAndSettle();
     expect(coverOpacity(tester), 1);
+    expect(tabBarsMade(), hasLength(1));
+  }, variant: ios);
+
+  /// The native bar tells where its capsule is, as iOS 26 does as it lays the
+  /// bar out.
+  Future<void> reportCapsule(WidgetTester tester, Rect capsule) async {
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      '$tabBarType${'_'}${tabBarsMade().single}',
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('capsuleChanged', {
+          'x': capsule.left,
+          'y': capsule.top,
+          'width': capsule.width,
+          'height': capsule.height,
+        }),
+      ),
+      (_) {},
+    );
+    await tester.pump();
+  }
+
+  final barrierOverTabs = find.descendant(
+    of: find.byType(HostedTabBar),
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is ShapeDecoration &&
+          (widget.decoration as ShapeDecoration).shape is StadiumBorder,
+    ),
+  );
+
+  testWidgets('under a dialog the bar stays, its capsule under the '
+      'dialog\'s barrier; a sheet, which may come up over it, still sends it '
+      'away', (tester) async {
+    usePhone(tester);
+    final tabs = Tabs();
+    addTearDown(tabs.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(hostedApp(navigator, tabsPage(tabs)));
+    await tester.pumpAndSettle();
+    const capsule = Rect.fromLTWH(21, 0, 360, 62);
+    await reportCapsule(tester, capsule);
+    expect(barrierOverTabs, findsNothing);
+
+    showDialog<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Center(child: Text('Sure?')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(coverOpacity(tester), 1);
+    // Coming up with the dialog's own barrier.
+    final rising = tester.widget<DecoratedBox>(barrierOverTabs);
+    expect(
+      (rising.decoration as ShapeDecoration).color!.a,
+      allOf(greaterThan(0), lessThan(Colors.black54.a)),
+    );
+    await tester.pumpAndSettle();
+    expect(coverOpacity(tester), 1);
+    expect(
+      tester.getRect(barrierOverTabs),
+      capsule.shift(tester.getTopLeft(nativeBar)),
+    );
+    // The barrier's colour, laid on lighter: the glass shows the page under
+    // the barrier through it already, and ends up as dim as the page.
+    final over =
+        (tester.widget<DecoratedBox>(barrierOverTabs).decoration
+                as ShapeDecoration)
+            .color!;
+    expect(over.withValues(alpha: 1), Colors.black);
+    expect(over.a, closeTo(0.414, 0.001));
+
+    navigator.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(coverOpacity(tester), 1);
+    await tester.pumpAndSettle();
+    expect(coverOpacity(tester), 1);
+    expect(barrierOverTabs, findsNothing);
+
+    showCupertinoModalPopup<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const SizedBox(height: 300, child: Text('Sheet')),
+    );
+    await tester.pumpAndSettle();
+    expect(coverOpacity(tester), 0);
+    expect(barrierOverTabs, findsNothing);
+
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(coverOpacity(tester), 1);
+    expect(tabBarsMade(), hasLength(1));
+  }, variant: ios);
+
+  testWidgets('a page without tabs pushed over a dialog takes the tabs, '
+      'still under the barrier, away with it, and brings them back', (
+    tester,
+  ) async {
+    usePhone(tester);
+    final tabs = Tabs();
+    addTearDown(tabs.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(hostedApp(navigator, tabsPage(tabs)));
+    await tester.pumpAndSettle();
+    await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+
+    showDialog<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Center(child: Text('Sure?')),
+    );
+    await tester.pumpAndSettle();
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => page('End ride'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    // Not gone at once: it leaves with the page coming up, still dimmed.
+    expect(coverOpacity(tester), 1);
+    expect(layerOpacity(tester), greaterThan(0));
+    expect(barrierOverTabs, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('body:End ride'), findsOneWidget);
+
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(coverOpacity(tester), 1);
+    expect(layerOpacity(tester), 1);
+    expect(barrierOverTabs, findsOneWidget);
     expect(tabBarsMade(), hasLength(1));
   }, variant: ios);
 

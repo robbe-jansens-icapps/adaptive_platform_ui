@@ -19,6 +19,7 @@ class IOS26NativeTabBar extends StatefulWidget {
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
     this.showNativeView = true,
     this.hidden = false,
+    this.onCapsuleChanged,
   });
 
   final List<AdaptiveNavigationDestination> destinations;
@@ -42,6 +43,11 @@ class IOS26NativeTabBar extends StatefulWidget {
   /// Tab bar minimize behavior (iOS 26+)
   /// Controls how the tab bar minimizes when scrolling
   final TabBarMinimizeBehavior minimizeBehavior;
+
+  /// Told where in the bar the capsule is that iOS 26 floats the tabs on,
+  /// whenever that changes; null where it has none. It is what the bar
+  /// shows of itself: the rest of it lets the page show through.
+  final ValueChanged<Rect?>? onCapsuleChanged;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -371,6 +377,27 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     _syncBrightnessIfNeeded();
     _syncDirectionalityIfNeeded();
     _syncPropsToNativeIfNeeded();
+    // Told of every change after this, but maybe laid out before it listened.
+    if (widget.onCapsuleChanged != null) {
+      _invoke<Map<Object?, Object?>>(ch, 'getCapsule').then((frame) {
+        if (mounted && identical(ch, _channel)) {
+          widget.onCapsuleChanged?.call(_rectOf(frame));
+        }
+      });
+    }
+  }
+
+  static Rect? _rectOf(Object? frame) {
+    if (frame is! Map) return null;
+    final x = frame['x'], y = frame['y'];
+    final width = frame['width'], height = frame['height'];
+    if (x is! num || y is! num || width is! num || height is! num) return null;
+    return Rect.fromLTWH(
+      x.toDouble(),
+      y.toDouble(),
+      width.toDouble(),
+      height.toDouble(),
+    );
   }
 
   /// Calls [method] on the native view, if it still listens: one that is gone
@@ -390,6 +417,10 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   }
 
   Future<dynamic> _onMethodCall(MethodCall call) async {
+    if (call.method == 'capsuleChanged') {
+      widget.onCapsuleChanged?.call(_rectOf(call.arguments));
+      return null;
+    }
     if (call.method == 'valueChanged') {
       final args = call.arguments as Map?;
       final idx = (args?['index'] as num?)?.toInt();

@@ -30,6 +30,7 @@ class ToolbarBlend extends ChangeNotifier {
         duration: kToolbarItemSwapDuration,
       ) {
     registry.addListener(_onRegistryChanged);
+    _cover.addStatusListener(_onCoverStatus);
     // A dialog pushed on an outer navigator covers a page inside a tab
     // without that page, or the registry, hearing of it. Every route owns a
     // focus scope that takes focus when pushed and gives it back when popped,
@@ -83,6 +84,45 @@ class ToolbarBlend extends ChangeNotifier {
   /// 0 while the owner is in front, 1 while a dialog or sheet covers it,
   /// following the cover as it comes and goes.
   Animation<double> get cover => _cover;
+
+  /// What covers the owner ([cover]): the route in front of the navigator of
+  /// its page, or of a navigator around it. It stays until the cover has
+  /// gone again, so the chrome keeps to what it does under it all through
+  /// the way out. Null while nothing covers the owner.
+  Route<dynamic>? get coveringRoute => _coveringRoute;
+  Route<dynamic>? _coveringRoute;
+
+  /// Whether [coveringRoute] is a dialog ([RawDialogRoute], which
+  /// `showDialog` and `showCupertinoDialog` push): it comes up in the middle
+  /// of the screen, clear of the bars along its edges, which stay in sight
+  /// under its barrier as they do in UIKit. A sheet or a popover may come up
+  /// over them.
+  bool get coveredByDialog => _coveringRoute is RawDialogRoute;
+
+  void _onCoverStatus(AnimationStatus status) {
+    if (status != AnimationStatus.dismissed || _coveringRoute == null) return;
+    _coveringRoute = null;
+    if (!_disposed) _notify();
+  }
+
+  /// The route in front of [entry]'s page: on the navigator furthest out
+  /// that has one over it, as a dialog there covers everything inside.
+  static Route<dynamic>? _routeOver(ToolbarEntry entry) {
+    final routes = [entry.route, ...entry.enclosingRoutes];
+    for (final route in routes.reversed) {
+      final navigator = route?.navigator;
+      if (route == null || navigator == null || route.isCurrent) continue;
+      // The navigator only says which route is in front by being asked to
+      // pop down to one: the first it asks about, so it pops nothing.
+      Route<dynamic>? front;
+      navigator.popUntil((candidate) {
+        front = candidate;
+        return true;
+      });
+      if (front != null && front != route) return front;
+    }
+    return null;
+  }
 
   /// Opacity of the whole chrome: full in front, dimmed while covered.
   late final Animation<double> chromeOpacity = _cover.drive(
@@ -197,6 +237,7 @@ class ToolbarBlend extends ChangeNotifier {
     }
 
     if (ownerIsCovered) {
+      _coveringRoute = _routeOver(owner!) ?? _coveringRoute;
       _cover.forward();
     } else {
       _cover.reverse();
@@ -215,6 +256,7 @@ class ToolbarBlend extends ChangeNotifier {
   ToolbarEntry? _shownUpperTabs;
   ToolbarEntry? _shownLowerTabs;
   bool _shownCovered = false;
+  Route<dynamic>? _shownCovering;
   int _shownBlendCount = -1;
   bool _shownBlending = false;
 
@@ -229,6 +271,7 @@ class ToolbarBlend extends ChangeNotifier {
       identical(registry.tabBarOwnerFor(upper), _shownUpperTabs) &&
       identical(registry.tabBarOwnerFor(lower), _shownLowerTabs) &&
       ownerIsCovered == _shownCovered &&
+      identical(_coveringRoute, _shownCovering) &&
       blendCount == _shownBlendCount &&
       isBlending == _shownBlending;
 
@@ -240,6 +283,7 @@ class ToolbarBlend extends ChangeNotifier {
     _shownUpperTabs = registry.tabBarOwnerFor(upper);
     _shownLowerTabs = registry.tabBarOwnerFor(lower);
     _shownCovered = ownerIsCovered;
+    _shownCovering = _coveringRoute;
     _shownBlendCount = blendCount;
     _shownBlending = isBlending;
     notifyListeners();

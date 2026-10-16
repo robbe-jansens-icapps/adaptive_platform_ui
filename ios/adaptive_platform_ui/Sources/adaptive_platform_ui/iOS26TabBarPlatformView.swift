@@ -3,12 +3,14 @@ import UIKit
 
 private final class LayoutAwareTabBarContainerView: UIView {
     var onWidthChanged: ((CGFloat) -> Void)?
+    var onLayout: (() -> Void)?
     private var lastReportedWidth: CGFloat = 0
 
     override func layoutSubviews() {
         super.layoutSubviews()
 
         guard window != nil else { return }
+        onLayout?()
 
         let width = bounds.width
         guard width > 0 else { return }
@@ -395,12 +397,54 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         container.onWidthChanged = { [weak self] _ in
             self?.handleContainerWidthChange()
         }
+        container.onLayout = { [weak self] in
+            self?.reportCapsuleIfChanged()
+        }
 
         // Setup method call handler
         channel.setMethodCallHandler { [weak self] call, result in
             guard let self = self else { result(nil); return }
             self.handleMethodCall(call, result: result)
         }
+    }
+
+    /// The capsule the bar floats its tabs on, as last told to Flutter.
+    private var lastCapsule: CGRect?
+
+    /// The capsule the bar floats its tabs on (iOS 26), in the view's
+    /// coordinates: for Flutter to dim it as a dialog's barrier dims the page,
+    /// the bar being above the page, out of the barrier's reach. UIKit has no
+    /// API for it: it is the platter view among the bar's own. Nil where the
+    /// bar has none.
+    private func capsuleFrame() -> CGRect? {
+        guard let bar = tabBar, bar.bounds.width > 0 else { return nil }
+        bar.layoutIfNeeded()
+        let platters = bar.subviews.filter { view in
+            !view.isHidden && view.alpha > 0.01 && !view.bounds.isEmpty &&
+                String(describing: type(of: view)).contains("Platter")
+        }
+        guard let platter = platters.max(by: {
+            $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height
+        }) else { return nil }
+        return platter.convert(platter.bounds, to: container)
+    }
+
+    private static func encode(_ frame: CGRect?) -> [String: Double]? {
+        guard let frame = frame else { return nil }
+        return [
+            "x": Double(frame.minX),
+            "y": Double(frame.minY),
+            "width": Double(frame.width),
+            "height": Double(frame.height),
+        ]
+    }
+
+    /// Tells Flutter where the capsule is whenever a layout moves it.
+    private func reportCapsuleIfChanged() {
+        let frame = capsuleFrame()
+        guard frame != lastCapsule else { return }
+        lastCapsule = frame
+        channel.invokeMethod("capsuleChanged", arguments: Self.encode(frame))
     }
 
     private func applyMinimizeBehavior() {
@@ -716,6 +760,10 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
 
             self.container.isHidden = hidden
             result(nil)
+
+        case "getCapsule":
+            self.lastCapsule = self.capsuleFrame()
+            result(Self.encode(self.lastCapsule))
 
         case "setBadgeCounts":
             guard let args = call.arguments as? [String: Any],

@@ -97,9 +97,18 @@ class _HostedTabBarState extends State<HostedTabBar>
     curve: const Interval(1 - _leaveBy, 1, curve: Curves.easeIn),
   );
 
-  /// Fully out while a dialog or sheet covers the tabs: the bar would show
+  /// Fully out while a sheet or a popover covers the tabs: the bar would show
   /// above them, as it sits above the navigator.
   late Animation<double> _uncovered;
+
+  /// Where each tab layout's native bar has the capsule it floats its tabs on,
+  /// as the bar last said, by the layout's id.
+  final Map<Object, Rect?> _capsules = <Object, Rect?>{};
+
+  void _onCapsuleChanged(Object id, Rect? capsule) {
+    if (!mounted || _capsules[id] == capsule) return;
+    setState(() => _capsules[id] = capsule);
+  }
 
   @override
   void initState() {
@@ -239,12 +248,34 @@ class _HostedTabBarState extends State<HostedTabBar>
         : null;
     final going = driver == null ? null : _goingAndComing().$1;
     final leave = driver?.drive(_bringsUpperIn ? _leaveOnPush : _leaveOnPop);
+    _capsules.removeWhere((id, _) => !_built.any((entry) => entry.id == id));
+    // Under a dialog the native bar stays in sight, under the dialog's
+    // barrier as UIKit's does: the dialog comes up in the middle of the
+    // screen, clear of it. The bar sits above the navigator, out of the
+    // barrier's reach, so the barrier is laid over the capsule it floats its
+    // tabs on here. A sheet or a popover may come up over the bar, which
+    // would show above them: for those, and with no capsule to dim, it makes
+    // way. The tabs it covers are the owner's, or those leaving as a page
+    // without them comes up over the dialog: they leave with that page.
+    final underDialog = ownerTabs ?? going;
+    final dialog =
+        widget.chrome == null &&
+            widget.sidebar == null &&
+            blend.coveredByDialog &&
+            underDialog != null &&
+            _capsules[underDialog.id] != null
+        ? blend.coveringRoute! as ModalRoute<Object?>
+        : null;
     return IgnorePointer(
       ignoring: blend.ownerIsCovered,
       child: FadeTransition(
         // A sidebar stays in sight under a dialog or popover, dimmed as the
         // toolbar is; a bar along the bottom would show above it.
-        opacity: widget.sidebar != null ? blend.chromeOpacity : _uncovered,
+        opacity: widget.sidebar != null
+            ? blend.chromeOpacity
+            : dialog != null
+            ? kAlwaysCompleteAnimation
+            : _uncovered,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -267,6 +298,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                     ? leave
                     : null,
                 interactive: entry.id == ownerTabs?.id,
+                dialog: entry.id == underDialog?.id ? dialog : null,
               ),
           ],
         ),
@@ -281,6 +313,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     ToolbarEntry entry, {
     required Animation<double>? opacity,
     required bool interactive,
+    ModalRoute<Object?>? dialog,
   }) {
     final bar = entry.tabBar!;
     final chrome = widget.chrome;
@@ -315,14 +348,28 @@ class _HostedTabBarState extends State<HostedTabBar>
                 onSizeChanged: (size) => widget.height.value = size.height,
                 child: _Minimizable(
                   minimized: entry.tabBarMinimized,
-                  child: IOS26NativeTabBar(
-                    destinations: bar.items!,
-                    selectedIndex: bar.selectedIndex!,
-                    onTap: bar.onTap!,
-                    tint:
-                        bar.selectedItemColor ??
-                        CupertinoTheme.of(context).primaryColor,
-                    unselectedItemTint: bar.unselectedItemColor,
+                  // The same children whether a dialog covers the tabs or
+                  // not, so the native bar stays put.
+                  child: Stack(
+                    children: [
+                      IOS26NativeTabBar(
+                        destinations: bar.items!,
+                        selectedIndex: bar.selectedIndex!,
+                        onTap: bar.onTap!,
+                        tint:
+                            bar.selectedItemColor ??
+                            CupertinoTheme.of(context).primaryColor,
+                        unselectedItemTint: bar.unselectedItemColor,
+                        onCapsuleChanged: (capsule) =>
+                            _onCapsuleChanged(entry.id, capsule),
+                      ),
+                      Positioned.fill(
+                        child: _BarrierOverTabs(
+                          route: dialog,
+                          capsule: _capsules[entry.id],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -619,6 +666,69 @@ class HostedSidebar {
   /// Called after a tab is picked in the sidebar: one expanded over the
   /// content closes.
   final VoidCallback onTabTapped;
+}
+
+/// The barrier of a dialog ([route]) over the tabs, which sit above the
+/// navigator, out of the reach of the barrier the dialog lays over the page:
+/// in the shape of the [capsule] the native bar floats its tabs on, and only
+/// there, as the rest of the bar lets the page under the barrier show
+/// through. It comes and goes with the dialog, in its colour, as the route
+/// draws its own barrier ([ModalRoute.buildModalBarrier]).
+class _BarrierOverTabs extends StatelessWidget {
+  const _BarrierOverTabs({required this.route, required this.capsule});
+
+  final ModalRoute<Object?>? route;
+  final Rect? capsule;
+
+  /// How much of what is behind it the native bar's glass shows, as measured
+  /// on iOS 26: what is behind it is under the barrier already, so a barrier
+  /// as strong as the page's left the capsule a fifth darker than the page
+  /// around it. Laid over it lighter by as much, it ends up as dim.
+  static const double _glassShowsThrough = 0.4;
+
+  /// The barrier's [color] as laid over the glass.
+  static Color _overGlass(Color color) => color.withValues(
+    alpha: 1 - (1 - color.a) / (1 - _glassShowsThrough * color.a),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final route = this.route;
+    final capsule = this.capsule;
+    final color = route?.barrierColor;
+    final animation = route?.animation;
+    if (route == null ||
+        capsule == null ||
+        color == null ||
+        color.a == 0 ||
+        animation == null) {
+      return const SizedBox.shrink();
+    }
+    final barrier = animation.drive(
+      ColorTween(
+        begin: color.withValues(alpha: 0),
+        end: _overGlass(color),
+      ).chain(CurveTween(curve: route.barrierCurve)),
+    );
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned.fromRect(
+            rect: capsule,
+            child: AnimatedBuilder(
+              animation: barrier,
+              builder: (context, _) => DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: barrier.value,
+                  shape: const StadiumBorder(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Shrinks the bar while its tab layout scrolls, as `minimizeBehavior` asks.

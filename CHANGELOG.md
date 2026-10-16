@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: The native tab bar stays under a dialog (`showDialog`, `showCupertinoDialog`) as UIKit's does, the dialog's barrier laid over the capsule it floats its tabs on, in the barrier's colour and with its animation, rather than fading out. It still makes way for a sheet or a popover, which may come up over it, and wherever iOS shows no such capsule. `IOS26NativeTabBar.onCapsuleChanged` tells where that capsule is
 * **FIX**: iPhone Duo: a page in a column of a split view no longer shows a frosted title band at rest: its background comes in as the content scrolls under it, as the fixed toolbar's does, in the colour of the page's bar (`AdaptiveAppBar.backdropColor`). A list with a large title of its own no longer has an empty band above it
 * **NEW**: `AdaptiveAccessorySpec.room`: how tall the accessory may be. In the iPhone Duo's vertical bar it is what the page's controls and the tabs leave of the bar, as the page's controls come first; an accessory takes a smaller form to fit rather than moving them into the overflow menu. Unbounded elsewhere
 * **FIX**: iPhone Duo: the vertical bar keeps no room for the overflow control while every one of a page's controls fits, so the last ones no longer go into the menu when they would have fitted exactly
