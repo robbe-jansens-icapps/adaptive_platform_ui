@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../../style/glass_button_glyph.dart';
 import '../../style/sf_symbol.dart';
+import 'native_view_settle.dart';
 
 /// iOS 26 native button styles (Liquid Glass design)
 enum IOS26ButtonStyle {
@@ -54,6 +57,11 @@ enum IOS26ButtonSize {
 ///
 /// Note: For complex layouts with custom widgets, use the AdaptiveButton.child() constructor
 /// which will overlay the widget on top of the native iOS 26 button.
+///
+/// The native button is on screen only while its page holds still in front,
+/// as the glass surfaces are ([IOS26GlassSurface]): under a dialog or a sheet,
+/// and while pages move, a Flutter stand-in takes its place, with the glyph as
+/// iOS shows it in the native button ([GlassButtonGlyph]).
 class IOS26Button extends StatefulWidget {
   /// Creates an iOS 26 style button with a text label
   const IOS26Button({
@@ -154,15 +162,35 @@ class IOS26Button extends StatefulWidget {
   /// Default is true for smooth rectangle, set to false for circular
   final bool useSmoothRectangleBorder;
 
+  /// Takes the native path (or not) whatever the platform, for tests.
+  @visibleForTesting
+  static bool? debugHasUIKitOverride;
+
   @override
   State<IOS26Button> createState() => _IOS26ButtonState();
 }
 
-class _IOS26ButtonState extends State<IOS26Button> {
+class _IOS26ButtonState extends State<IOS26Button>
+    with SingleTickerProviderStateMixin, NativeViewSettle<IOS26Button> {
   static int _nextId = 0;
   late final int _id;
   late final MethodChannel _channel;
   bool? _lastIsDark;
+
+  static bool get _hasUIKit =>
+      IOS26Button.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
+
+  /// The stand-in's opacity: 1 while it stands in for the native button, and
+  /// fading out over it once that is back.
+  late final AnimationController _standIn = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  )..addStatusListener(_onStandInStatus);
+
+  /// The glyph of an SF Symbol button, once iOS has handed it over, and what
+  /// it was asked for with.
+  GlassButtonGlyph? _glyph;
+  Object? _glyphKey;
 
   @override
   void initState() {
@@ -175,13 +203,66 @@ class _IOS26ButtonState extends State<IOS26Button> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_hasUIKit) {
+      followRoute();
+      _loadGlyph();
+    }
     _syncBrightnessIfNeeded();
   }
 
   @override
   void dispose() {
+    _standIn.dispose();
     _channel.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  @override
+  void didChangeSettled(bool settled) {
+    if (!settled) {
+      _standIn.value = 1;
+      return;
+    }
+    if (_standIn.value == 0) return;
+    // The native button is back on screen with the next frame; the stand-in
+    // makes way once it is.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !this.settled) return;
+      if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+        _standIn.value = 0;
+      } else {
+        _standIn.reverse(from: 1);
+      }
+    });
+  }
+
+  // Gone once faded out.
+  void _onStandInStatus(AnimationStatus status) {
+    if (status == AnimationStatus.dismissed && mounted) setState(() {});
+  }
+
+  /// Has iOS hand over the glyph of an SF Symbol button, for the stand-in,
+  /// at the size the button is laid out at: long before a dialog or a page
+  /// comes over it.
+  void _loadGlyph() {
+    final symbol = widget.sfSymbol;
+    if (symbol == null) return;
+    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(symbol, widget.sfSymbol)) return;
+      final box = context.findRenderObject();
+      final laidOut = box is RenderBox && box.hasSize && !box.size.isEmpty;
+      final side = laidOut ? box.size.shortestSide : _height;
+      final key = (symbol.name, symbol.size, symbol.weight, side, dark);
+      if (key == _glyphKey) return;
+      _glyphKey = key;
+      GlassButtonGlyph.load(symbol, context, side: side, dark: dark).then((
+        glyph,
+      ) {
+        if (!mounted || key != _glyphKey) return;
+        setState(() => _glyph = glyph);
+      });
+    });
   }
 
   Future<void> _syncBrightnessIfNeeded() async {
@@ -246,6 +327,7 @@ class _IOS26ButtonState extends State<IOS26Button> {
         oldWidget.sfSymbol?.size != widget.sfSymbol?.size ||
         oldWidget.sfSymbol?.color != widget.sfSymbol?.color ||
         oldWidget.sfSymbol?.weight != widget.sfSymbol?.weight) {
+      if (_hasUIKit) _loadGlyph();
       if (widget.sfSymbol != null) {
         _channel.invokeMethod('setIcon', {
           'iconName': widget.sfSymbol!.name,
@@ -336,11 +418,33 @@ class _IOS26ButtonState extends State<IOS26Button> {
   @override
   Widget build(BuildContext context) {
     // Only use native implementation on iOS
-    if (!kIsWeb && Platform.isIOS) {
-      final platformView = UiKitView(
-        viewType: 'adaptive_platform_ui/ios26_button',
-        creationParams: _buildCreationParams(),
-        creationParamsCodec: const StandardMessageCodec(),
+    if (_hasUIKit) {
+      // Laid out all along, so the button keeps its size and the native view
+      // is made once; painted only while its page holds still in front.
+      final platformView = IgnorePointer(
+        ignoring: !settled,
+        child: Opacity(
+          opacity: settled ? 1 : 0,
+          child: UiKitView(
+            viewType: 'adaptive_platform_ui/ios26_button',
+            creationParams: _buildCreationParams(),
+            creationParamsCodec: const StandardMessageCodec(),
+          ),
+        ),
+      );
+      final standIn = !settled || _standIn.value > 0
+          ? FadeTransition(
+              opacity: _standIn,
+              child: _ButtonStandIn(button: widget, glyph: _glyph),
+            )
+          : const SizedBox.shrink();
+      // The same children in every state, so the native view stays put.
+      Widget withStandIn(Widget? content) => Stack(
+        children: [
+          Positioned.fill(child: platformView),
+          Positioned.fill(child: standIn),
+          ?content,
+        ],
       );
 
       // Wrap in SizedBox for height constraint. In child mode the Flutter-drawn
@@ -348,21 +452,20 @@ class _IOS26ButtonState extends State<IOS26Button> {
       // the native pill extends past the label like the native title mode does.
       Widget buttonWidget = SizedBox(
         height: _height,
-        child: widget.isChildMode
-            ? Stack(
-                children: [
-                  Positioned.fill(child: platformView),
-                  Center(
-                    child: IgnorePointer(
-                      child: Padding(
-                        padding: widget.padding ?? const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: widget.child!,
-                      ),
+        child: withStandIn(
+          widget.isChildMode
+              ? Center(
+                  child: IgnorePointer(
+                    child: Padding(
+                      padding:
+                          widget.padding ??
+                          const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: widget.child!,
                     ),
                   ),
-                ],
-              )
-            : platformView,
+                )
+              : null,
+        ),
       );
 
       // Apply width constraint if minSize is provided.
@@ -384,7 +487,7 @@ class _IOS26ButtonState extends State<IOS26Button> {
             : SizedBox(
                 width: widget.minSize!.width,
                 height: _height,
-                child: platformView,
+                child: withStandIn(null),
               );
       }
 
@@ -437,5 +540,136 @@ class _IOS26ButtonState extends State<IOS26Button> {
           child: buttonChild,
         );
     }
+  }
+}
+
+/// The button without a native view, for while its page is covered or moves:
+/// the button's background in its style, the glass as the glass surfaces stand
+/// in for theirs, and its label or glyph where it shows them. In child mode
+/// the child is drawn over it, as over the native button.
+class _ButtonStandIn extends StatelessWidget {
+  const _ButtonStandIn({required this.button, required this.glyph});
+
+  final IOS26Button button;
+  final GlassButtonGlyph? glyph;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final tint = button.color ?? CupertinoColors.systemBlue;
+    final glass = button.style == IOS26ButtonStyle.glass;
+    final (fill, side, foreground) = switch (button.style) {
+      IOS26ButtonStyle.filled => (tint, BorderSide.none, CupertinoColors.white),
+      IOS26ButtonStyle.prominentGlass => (
+        tint,
+        BorderSide.none,
+        CupertinoColors.white,
+      ),
+      IOS26ButtonStyle.tinted => (
+        tint.withValues(alpha: 0.15),
+        BorderSide.none,
+        tint,
+      ),
+      IOS26ButtonStyle.gray => (
+        CupertinoColors.systemGrey5.resolveFrom(context),
+        BorderSide.none,
+        tint,
+      ),
+      IOS26ButtonStyle.bordered => (
+        null,
+        BorderSide(color: tint, width: 1.5),
+        tint,
+      ),
+      IOS26ButtonStyle.plain => (null, BorderSide.none, tint),
+      IOS26ButtonStyle.glass => (
+        dark ? const Color(0xE6303034) : const Color(0xE6FAFAFC),
+        BorderSide(
+          color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
+          width: 0.5,
+        ),
+        tint,
+      ),
+    };
+    final color = button.textColor ?? foreground;
+    final radius = switch (button.size) {
+      IOS26ButtonSize.small => 8.0,
+      IOS26ButtonSize.medium => 10.0,
+      IOS26ButtonSize.large => 12.0,
+    };
+    final ShapeBorder shape = button.useSmoothRectangleBorder
+        ? RoundedSuperellipseBorder(
+            borderRadius: button.borderRadius ?? BorderRadius.circular(radius),
+            side: side,
+          )
+        : StadiumBorder(side: side);
+    final symbol = button.sfSymbol;
+    final glyph = this.glyph;
+    final Widget? content = button.isChildMode
+        ? null
+        : symbol != null
+        ? glyph == null
+              ? null
+              // Where, how large and in what colour the native button shows it.
+              : Transform.translate(
+                  offset: glyph.offset,
+                  child: Image(
+                    image: glyph.image,
+                    color: symbol.color ?? color,
+                    colorBlendMode: BlendMode.srcIn,
+                    gaplessPlayback: true,
+                  ),
+                )
+        : button.label.isEmpty
+        ? null
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              button.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: switch (button.size) {
+                  IOS26ButtonSize.small => 13,
+                  IOS26ButtonSize.medium => 15,
+                  IOS26ButtonSize.large => 17,
+                },
+                fontWeight: button.size == IOS26ButtonSize.large
+                    ? FontWeight.w600
+                    : FontWeight.w500,
+              ),
+            ),
+          );
+    final enabled = button.enabled && button.onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: button.label.isEmpty ? null : button.label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? button.onPressed : null,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.4,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: fill,
+              shape: shape,
+              shadows: glass
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x14000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: content == null
+                ? const SizedBox.expand()
+                : Center(child: ExcludeSemantics(child: content)),
+          ),
+        ),
+      ),
+    );
   }
 }
