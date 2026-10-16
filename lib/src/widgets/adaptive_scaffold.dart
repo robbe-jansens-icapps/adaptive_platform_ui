@@ -873,6 +873,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         minimizeBehavior: widget.minimizeBehavior,
         enableBlur: widget.enableBlur,
         backgroundColor: widget.backgroundColor,
+        backdropColor: widget.appBar?.backdropColor,
+        showsBackdrop: widget.appBar?.showsBackdrop ?? true,
+        scrollEdge: _scrollEdge,
         useHeroBackButton: widget.useHeroBackButton,
         // In a column of a split view the page draws its own bar, as told
         // by the column's chrome.
@@ -898,7 +901,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
             (widget.appBar?.title != null ||
                 widget.appBar?.titleWidget != null),
       );
-      if (hosted) {
+      // The fixed toolbar's background comes in as the content scrolls under
+      // it, and so does that of the title band a page in a column of a split
+      // view draws itself on the iPhone Duo.
+      if (hosted || AdaptiveSplitView.isInColumn(context)) {
         scaffold = NotificationListener<Notification>(
           onNotification: _trackScrollEdge,
           child: scaffold,

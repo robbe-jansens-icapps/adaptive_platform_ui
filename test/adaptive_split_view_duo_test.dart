@@ -6,6 +6,7 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foldable/foldable.dart';
 
@@ -117,6 +118,84 @@ void main() {
 
     await tester.tap(inBar(find.byType(DuoBarBackButton)));
     expect(closes, 1);
+  });
+
+  testWidgets('in the iPhone Duo vertical bar pose the title bands of the '
+      'pages in the columns have no background until their content scrolls '
+      'under them, as the fixed toolbar\'s', (tester) async {
+    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+    PlatformInfo.debugIOSVersionOverride = 26;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          (call) async => null,
+        );
+    addTearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      PlatformInfo.debugIOSVersionOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform_views, null);
+    });
+    tester.view.physicalSize = const Size(951, 669);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(right: 84, bottom: 34);
+    tester.view.viewPadding = const FakeViewPadding(right: 84, bottom: 34);
+    addTearDown(tester.view.reset);
+
+    Widget list(String name) => AdaptiveScaffold(
+      appBar: AdaptiveAppBar(useNativeToolbar: true, title: name),
+      body: ListView(
+        key: ValueKey('$name list'),
+        children: [
+          for (var i = 0; i < 40; i++)
+            SizedBox(height: 60, child: Text('$name $i')),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: root,
+        builder: (context, child) =>
+            AdaptiveToolbarHost(debugFold: duoInnerDisplay(), child: child!),
+        home: AdaptiveSplitView(
+          onGenerateDetailRoute: (settings) => MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => list('Detail'),
+          ),
+          initialDetail: const RouteSettings(name: '/detail'),
+          master: list('Support'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder backdropOf(String name) => find.descendant(
+      of: find.ancestor(
+        of: find.byKey(ValueKey('$name list')),
+        matching: find.byType(AdaptiveScaffold),
+      ),
+      matching: find.byType(DuoTitleBackdrop),
+    );
+    // Both titles in their bands, over the page as it is.
+    expect(find.text('Support'), findsOneWidget);
+    expect(find.text('Detail'), findsOneWidget);
+    expect(backdropOf('Support'), findsNothing);
+    expect(backdropOf('Detail'), findsNothing);
+
+    await tester.drag(
+      find.byKey(const ValueKey('Detail list')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    expect(backdropOf('Detail'), findsOneWidget);
+    expect(backdropOf('Support'), findsNothing);
+
+    await tester.drag(
+      find.byKey(const ValueKey('Detail list')),
+      const Offset(0, 400),
+    );
+    await tester.pumpAndSettle();
+    expect(backdropOf('Detail'), findsNothing);
   });
 
   group('on a foldable held partly open', () {

@@ -45,6 +45,9 @@ class IOS26Scaffold extends StatefulWidget {
     this.tabsHosted = false,
     this.resizeToAvoidBottomInset,
     this.backgroundColor,
+    this.backdropColor,
+    this.showsBackdrop = true,
+    this.scrollEdge,
     @visibleForTesting this.debugVerticalBarEdge,
     required this.children,
   });
@@ -78,6 +81,21 @@ class IOS26Scaffold extends StatefulWidget {
 
   /// Page background; null keeps the Cupertino theme's scaffold colour.
   final Color? backgroundColor;
+
+  /// The colour of the iPhone Duo's title band where the page draws its own
+  /// ([AdaptiveAppBar.backdropColor]); [backgroundColor], or the system
+  /// background, if null.
+  final Color? backdropColor;
+
+  /// Whether that title band has a background at all
+  /// ([AdaptiveAppBar.showsBackdrop]).
+  final bool showsBackdrop;
+
+  /// How far the page's content has scrolled under that title band, from 0
+  /// at its top to 1 once it runs under it ([AdaptiveScrollEdge.of]): the
+  /// band's background comes in with it, as the fixed toolbar's does. Null
+  /// shows the background all the time.
+  final ValueListenable<double>? scrollEdge;
   final bool tabBarHidden;
 
   /// Whether the toolbar host draws the native tab bar at the bottom of the
@@ -222,6 +240,24 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
 
     return (displaySize.longestSide != viewportSize.longestSide) ||
         (displaySize.shortestSide != viewportSize.shortestSide);
+  }
+
+  /// The background of the iPhone Duo's title band the page draws itself, in
+  /// a column of a split view: in as soon as the page's content scrolls under
+  /// it, as the fixed toolbar's is, so a page at its top shows none.
+  Widget _titleBackdrop() {
+    final backdrop = DuoTitleBackdrop(
+      color: widget.backdropColor ?? widget.backgroundColor,
+    );
+    final scrollEdge = widget.scrollEdge;
+    if (scrollEdge == null) return backdrop;
+    return ValueListenableBuilder<double>(
+      valueListenable: scrollEdge,
+      child: backdrop,
+      builder: (context, edge, child) => edge <= 0
+          ? const SizedBox.shrink()
+          : Opacity(opacity: edge.clamp(0.0, 1.0), child: child),
+    );
   }
 
   @override
@@ -487,7 +523,7 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                     fit: StackFit.expand,
                     clipBehavior: Clip.none,
                     children: [
-                      const DuoTitleBackdrop(),
+                      if (widget.showsBackdrop) _titleBackdrop(),
                       DuoToolbarTitle(
                         title: widget.title,
                         titleWidget: widget.titleWidget,

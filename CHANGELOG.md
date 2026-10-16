@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **FIX**: iPhone Duo: a page in a column of a split view no longer shows a frosted title band at rest: its background comes in as the content scrolls under it, as the fixed toolbar's does, in the colour of the page's bar (`AdaptiveAppBar.backdropColor`). A list with a large title of its own no longer has an empty band above it
 * **NEW**: `AdaptiveAccessorySpec.room`: how tall the accessory may be. In the iPhone Duo's vertical bar it is what the page's controls and the tabs leave of the bar, as the page's controls come first; an accessory takes a smaller form to fit rather than moving them into the overflow menu. Unbounded elsewhere
 * **FIX**: iPhone Duo: the vertical bar keeps no room for the overflow control while every one of a page's controls fits, so the last ones no longer go into the menu when they would have fitted exactly
 * **FIX**: An overflow menu with an action's own icon widget (`AdaptiveAppBarAction.iconWidget`) no longer throws on every frame when that widget lays itself out as it goes, such as with a `LayoutBuilder`: the menu draws it as an icon in the colour of the row, and the row performs the action
