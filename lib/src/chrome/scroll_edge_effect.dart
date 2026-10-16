@@ -381,12 +381,17 @@ class _ScrollEdgeBehavior extends ScrollBehavior {
 }
 
 /// The scroll views of one region, so nested ones can leave the edge to the
-/// outermost.
+/// outermost, and the outermost to one inside it that reaches further.
 class _EdgeNode {
-  _EdgeNode(this.parent);
+  _EdgeNode(this.parent) {
+    parent?.children.add(this);
+  }
 
   final _EdgeNode? parent;
+  final Set<_EdgeNode> children = <_EdgeNode>{};
   _RenderScrollEdgeEffect? renderObject;
+
+  void dispose() => parent?.children.remove(this);
 }
 
 class _EdgeNodeScope extends InheritedWidget {
@@ -417,11 +422,15 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
     final parent = context
         .dependOnInheritedWidgetOfExactType<_EdgeNodeScope>()
         ?.node;
-    if (_node == null || _node!.parent != parent) _node = _EdgeNode(parent);
+    if (_node == null || _node!.parent != parent) {
+      _node?.dispose();
+      _node = _EdgeNode(parent);
+    }
   }
 
   @override
   void dispose() {
+    _node?.dispose();
     _edge.dispose();
     super.dispose();
   }
@@ -755,6 +764,31 @@ class _RenderScrollEdgeEffect extends RenderBox
     return false;
   }
 
+  /// A scroll view inside this one draws the bar's background over all of
+  /// it: its content runs under the bars from the top of the page and its
+  /// band reaches at least as far down, below something pinned under the
+  /// bar. Its content is what is under the bars then, so this one leaves
+  /// the band to it rather than laying a second one over the bar.
+  bool _descendantTakesIt() {
+    bool covers(_EdgeNode node) {
+      for (final child in node.children) {
+        final renderObject = child.renderObject;
+        if (renderObject != null &&
+            renderObject.attached &&
+            renderObject._paints &&
+            identical(renderObject._page, _page) &&
+            (renderObject._top ?? 0) >= (_top ?? 0) - 0.5) {
+          final rect = renderObject._onPage();
+          if (rect != null && rect.top <= 0.5) return true;
+        }
+        if (covers(child)) return true;
+      }
+      return false;
+    }
+
+    return covers(_node);
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     _paints = false;
@@ -763,7 +797,12 @@ class _RenderScrollEdgeEffect extends RenderBox
     final band = _band;
     if (band == null) return;
     final rect = _onPage();
-    if (rect == null || !_underTop(rect) || _ancestorTakesIt()) return;
+    if (rect == null ||
+        !_underTop(rect) ||
+        _ancestorTakesIt() ||
+        _descendantTakesIt()) {
+      return;
+    }
     _paints = true;
     context.pushClipRect(
       needsCompositing,
@@ -810,7 +849,19 @@ class _RenderScrollEdgeEffect extends RenderBox
 /// drew it, one entry for each that did: as far as content has scrolled
 /// under the bar, and as far as the bar is shown.
 @visibleForTesting
-List<double> debugScrollEdgesOnScreen() {
+List<double> debugScrollEdgesOnScreen() => _paintedEdges(
+  (node) => (node.edge?.value ?? 0) * (node.visibility?.value ?? 1),
+);
+
+/// How far down the page the bar's background reaches where the scroll
+/// views on screen last drew it, one entry for each that did.
+@visibleForTesting
+List<double> debugScrollEdgeHeightsOnScreen() =>
+    _paintedEdges((node) => node._top ?? 0);
+
+List<double> _paintedEdges(
+  double Function(_RenderScrollEdgeEffect node) value,
+) {
   final result = <double>[];
   bool painted(RenderObject node) {
     for (
@@ -828,7 +879,7 @@ List<double> debugScrollEdgesOnScreen() {
         node.attached &&
         node._paints &&
         painted(node)) {
-      result.add((node.edge?.value ?? 0) * (node.visibility?.value ?? 1));
+      result.add(value(node));
     }
     node.visitChildren(visit);
   }

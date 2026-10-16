@@ -451,6 +451,51 @@ void main() {
   );
 
   testWidgets(
+    'a list running under the bar from below a docked header, with something pinned under the bar, draws the one background for both, and the outer scroll view none',
+    (tester) async {
+      phone(tester);
+      const pinned = ValueKey<String>('pinned');
+      const inner = ValueKey<String>('inner');
+      const bar = 47 + kHostedToolbarHeight;
+      await pumpApp(
+        tester,
+        AdaptiveScaffold(
+          backgroundColor: pageColor,
+          appBar: const AdaptiveAppBar(title: 'Docked'),
+          body: NestedScrollView(
+            headerSliverBuilder: (context, _) => const [
+              SliverToBoxAdapter(child: SizedBox(height: 300)),
+            ],
+            // The body runs on under the bar, as a page that docks its
+            // header there lays it out, and keeps clear of it by padding.
+            body: AdaptiveSafeAreaBar(
+              bar: const SizedBox(key: pinned, height: 56),
+              child: Builder(
+                builder: (context) => ListView(
+                  key: inner,
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.paddingOf(context).top,
+                  ),
+                  children: [
+                    for (var i = 0; i < 60; i++) const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.drag(find.byKey(inner), const Offset(0, -900));
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(inner)).top, lessThanOrEqualTo(0.5));
+      expect(debugScrollEdgesOnScreen(), [1]);
+      expect(debugScrollEdgeHeightsOnScreen(), [bar + 56]);
+    },
+  );
+
+  testWidgets(
     'a page without scroll views, such as a map, has no background under the bar',
     (tester) async {
       phone(tester);
