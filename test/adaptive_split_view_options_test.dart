@@ -227,6 +227,66 @@ void main() {
     });
   });
 
+  group('showDetail with replace', () {
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    Future<void> pumpSplit(WidgetTester tester, Size size) async {
+      setSize(tester, size);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          home: AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master('List')),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    bool selected(WidgetTester tester, String title) => tester.widget<ListTile>(find.widgetWithText(ListTile, title)).selected;
+
+    testWidgets('picks the page in the list after a press in the column: it replaces what the column shows, and the selection follows', (tester) async {
+      await pumpSplit(tester, wide);
+      await tester.tap(find.text('More A'));
+      await tester.pumpAndSettle();
+      expect(find.text('Detail A+'), findsOneWidget);
+
+      // From outside the split view, such as an accessory over the tabs.
+      expect(AdaptiveSplitView.showDetail(detail('C'), replace: true), isTrue);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Detail C'), findsOneWidget);
+      expect(find.text('Detail A+', skipOffstage: false), findsNothing);
+      expect(find.text('Detail A', skipOffstage: false), findsNothing);
+      expect(find.text('List A'), findsOneWidget);
+      expect(selected(tester, 'List C'), isTrue);
+      expect(selected(tester, 'List A'), isFalse);
+      expect(navigatorKey.currentState!.canPop(), isFalse);
+    });
+
+    testWidgets('without it, a page shown after a press in the column goes on top of it there', (tester) async {
+      await pumpSplit(tester, wide);
+      await tester.tap(find.text('More A'));
+      await tester.pumpAndSettle();
+
+      expect(AdaptiveSplitView.showDetail(detail('C')), isTrue);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Detail C'), findsOneWidget);
+      expect(find.text('Detail A+', skipOffstage: false), findsOneWidget);
+      expect(selected(tester, 'List A'), isTrue);
+    });
+
+    testWidgets('on a narrow window it still opens the page over the list', (tester) async {
+      await pumpSplit(tester, narrow);
+
+      expect(AdaptiveSplitView.showDetail(detail('C'), replace: true), isTrue);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Detail C'), findsOneWidget);
+      expect(find.text('List A'), findsNothing);
+      expect(navigatorKey.currentState!.canPop(), isTrue);
+    });
+  });
+
   group('onPushedOver', () {
     final navigatorKey = GlobalKey<NavigatorState>();
     late List<Route<dynamic>> pushed;

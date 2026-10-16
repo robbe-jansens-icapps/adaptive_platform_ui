@@ -106,11 +106,19 @@ class AdaptiveSplitView extends StatefulWidget {
   /// it opens over the list, as it would anyway, and the split view keeps it
   /// in mind to show it beside the list once the window widens.
   ///
+  /// Where the last press was tells a page picked in the list from one
+  /// opened from the column. With [replace] the page is a pick in the list
+  /// wherever the press was, or with none at all: it replaces what the
+  /// column shows, and the list's selection follows
+  /// ([selectedDetailOf]). For a page opened from outside the split view,
+  /// such as from a tab accessory over the tabs or a notification. On a
+  /// narrow window it still opens over the list.
+  ///
   /// Returns false when no split view is in front: the caller then opens the
   /// page itself, as it always did.
-  static bool showDetail(RouteSettings settings) {
+  static bool showDetail(RouteSettings settings, {bool replace = false}) {
     for (final state in _AdaptiveSplitViewState._mounted.reversed) {
-      if (state._isInFront) return state._show(settings);
+      if (state._isInFront) return state._show(settings, replace: replace);
     }
     return false;
   }
@@ -331,11 +339,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         TickerMode.getValuesNotifier(context).value.enabled;
   }
 
-  bool _show(RouteSettings settings) {
+  bool _show(RouteSettings settings, {bool replace = false}) {
     if (!_wide) return _showOver(settings);
     final navigator = _detailKey.currentState;
     if (navigator == null) return false;
-    if (_pressInMaster) {
+    if (replace || _pressInMaster) {
       setState(() {
         _selected = settings;
         _picked = true;
