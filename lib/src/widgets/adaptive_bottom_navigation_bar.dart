@@ -26,6 +26,7 @@ class AdaptiveBottomNavigationBar {
     this.selectedItemColor,
     this.unselectedItemColor,
     this.hidesWhenPushed = false,
+    this.hidesFor,
     this.chromeData,
     this.accessory,
   });
@@ -99,6 +100,13 @@ class AdaptiveBottomNavigationBar {
   /// ([AdaptiveToolbarHost.chrome]); a sidebar stays.
   final bool hidesWhenPushed;
 
+  /// Which of the pages pushed inside the tab layout the tabs leave for, with
+  /// [hidesWhenPushed]: asked about the route of each page pushed between the
+  /// tabs and the page in front, and every one of them when null. The tabs
+  /// stay for the pages it says no to, unless such a page is pushed above
+  /// one it picks: they stay away until that one is popped, as with UIKit.
+  final RoutePredicate? hidesFor;
+
   /// Anything the app's custom chrome wants to know about these tabs, handed
   /// to its tab bar builder as [AdaptiveTabBarSpec.data].
   final Object? chromeData;
@@ -123,6 +131,7 @@ class AdaptiveBottomNavigationBar {
     Color? selectedItemColor,
     Color? unselectedItemColor,
     bool? hidesWhenPushed,
+    RoutePredicate? hidesFor,
     Object? chromeData,
     Widget? accessory,
   }) {
@@ -136,6 +145,7 @@ class AdaptiveBottomNavigationBar {
       selectedItemColor: selectedItemColor ?? this.selectedItemColor,
       unselectedItemColor: unselectedItemColor ?? this.unselectedItemColor,
       hidesWhenPushed: hidesWhenPushed ?? this.hidesWhenPushed,
+      hidesFor: hidesFor ?? this.hidesFor,
       chromeData: chromeData ?? this.chromeData,
       accessory: accessory ?? this.accessory,
     );

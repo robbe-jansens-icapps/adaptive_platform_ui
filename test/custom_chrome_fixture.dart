@@ -164,6 +164,7 @@ abstract final class TestChrome {
 class TabsFixture {
   TabsFixture({
     this.hidesWhenPushed = false,
+    this.hidesFor,
     this.actions = const <AdaptiveAppBarAction>[],
     this.chromeData,
     this.tabCount = 2,
@@ -184,6 +185,7 @@ class TabsFixture {
   final Color? pageColor;
 
   final bool hidesWhenPushed;
+  final RoutePredicate? hidesFor;
   final List<AdaptiveAppBarAction> actions;
   final Object? chromeData;
   final int tabCount;
@@ -214,10 +216,14 @@ class TabsFixture {
     ),
   );
 
-  Route<void> page(String title, {bool fullscreenDialog = false, AdaptiveBackButtonStyle style = AdaptiveBackButtonStyle.back}) =>
-      MaterialPageRoute<void>(fullscreenDialog: fullscreenDialog, builder: (_) => pageWidget(title, style: style));
+  Route<void> page(String title, {bool fullscreenDialog = false, AdaptiveBackButtonStyle style = AdaptiveBackButtonStyle.back, String? name}) =>
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: name),
+        fullscreenDialog: fullscreenDialog,
+        builder: (_) => pageWidget(title, style: style),
+      );
 
-  void push(int tab, String title) => navigators[tab].currentState!.push(page(title));
+  void push(int tab, String title, {String? name}) => navigators[tab].currentState!.push(page(title, name: name));
 
   Widget app() => MaterialApp(
     navigatorKey: root,
@@ -236,6 +242,7 @@ class TabsFixture {
           selectedIndex: selected.value,
           onTap: (i) => selected.value = i,
           hidesWhenPushed: hidesWhenPushed,
+          hidesFor: hidesFor,
           chromeData: 'tabs',
           accessory: accessory,
         ),

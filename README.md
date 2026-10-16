@@ -347,7 +347,13 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
 
 - **`hidesWhenPushed`** on the tab bar: the tabs leave while a page pushed on
   a tab's own navigator is in front, as `hidesBottomBarWhenPushed` does, and
-  that page gets the room back. A sidebar stays.
+  that page gets the room back. They fade with the page all through the push
+  and the pop. `hidesFor` picks the pages they leave for, and they stay
+  away for whatever is pushed above one of those. A sidebar stays.
+- **Keyboard**: the tabs and their accessory fade out as the keyboard comes
+  up and back in as it goes down, rather than having it slide over them.
+  Wrap what a page floats along the bottom in `AdaptiveKeyboardFade` to have
+  it go with them.
 - **`accessory`** on the tab bar: a mini player or the like, above the tabs
   along the bottom, in the iPhone Duo's vertical bar above the tabs, docked
   in the sidebar; one widget all along, so its state survives folding and

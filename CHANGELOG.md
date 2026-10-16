@@ -7,6 +7,10 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **NEW**: `AdaptiveBottomNavigationBar.hidesFor` picks the pages pushed inside the tab layout that the tabs leave for with `hidesWhenPushed`; they stay for the others. A page pushed above one it picks keeps them away until that one is popped, as with UIKit, and gets the room at the bottom back the same way
+* **NEW**: `AdaptiveKeyboardFade` fades what it wraps out as the keyboard comes up and back in as it goes down: once the text field it came up for lets go of the focus, or the keyboard is down past half its height, without waiting for the system to report it gone. It takes no touches meanwhile, and a hardware keyboard, which takes no room, hides nothing. Custom chrome fades its tabs and their accessory with it wherever the keyboard would slide over them: along the bottom, in the iPhone Duo's vertical bar and floating at the bottom of the content; tabs in the top strip or a sidebar stay
+* **IMPROVEMENT**: Custom chrome: tabs that leave for a page without them, or come back from one, fade all through the transition as the page covers or uncovers them, under the finger during a back swipe, rather than going in the first half of a push and only coming back at the very end of a pop. Between two tab layouts they still cross as the toolbar's controls do
+
 * **IMPROVEMENT**: Content pinned below a bar (`AdaptiveSafeAreaBar`) is frosted with the bar as one surface rather than solid, with the hairline below it; `AdaptiveSafeAreaBar.color` sets the colour of that surface. A list below something pinned inside a scroll view with a header (a `NestedScrollView`) draws that surface itself, where the outer scroll view only reaches as far as the bar
 * **NEW**: `AdaptiveAppBar.showsHairline`: off for a page whose bar runs on into something docked below it, so the two read as one surface
 * **NEW**: `AdaptiveChrome.keepsTabsInVerticalBar`: the tabs in the iPhone Duo's vertical bar stay while a page is pushed inside the tab layout, as in a sidebar, the page's back button and actions above them

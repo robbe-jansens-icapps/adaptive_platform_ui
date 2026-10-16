@@ -204,7 +204,7 @@ class ToolbarRegistry extends ChangeNotifier {
       if (depth < 0) continue;
       if (!keepsTabsOnPush &&
           (candidate.tabBar?.hidesWhenPushed ?? false) &&
-          isPushedWithin(entry, depth)) {
+          isPushedWithin(entry, depth, candidate.tabBar?.hidesFor)) {
         return null;
       }
       return candidate;
@@ -215,11 +215,45 @@ class ToolbarRegistry extends ChangeNotifier {
   /// Whether [entry] is a page pushed on a navigator inside the route at
   /// [depth] of its [ToolbarEntry.enclosingRoutes], rather than the first
   /// page of every navigator in between: a page opened on a tab, rather than
-  /// the tab itself.
-  static bool isPushedWithin(ToolbarEntry entry, int depth) {
-    if (!(entry.route?.isFirst ?? true)) return true;
+  /// the tab itself. With [hidesFor], only a page the tabs leave for
+  /// ([hidesTabsFor]).
+  bool isPushedWithin(
+    ToolbarEntry entry,
+    int depth, [
+    RoutePredicate? hidesFor,
+  ]) {
+    bool pushed(Route<dynamic>? route) =>
+        route != null &&
+        !route.isFirst &&
+        (hidesFor == null || hidesTabsFor(route, hidesFor));
+    if (pushed(entry.route)) return true;
     for (var i = 0; i < depth; i++) {
-      if (!entry.enclosingRoutes[i].isFirst) return true;
+      if (pushed(entry.enclosingRoutes[i])) return true;
+    }
+    return false;
+  }
+
+  /// Whether the tabs leave for [route] by [hidesFor]
+  /// ([AdaptiveBottomNavigationBar.hidesFor]): it is a page [hidesFor] picks,
+  /// or one pushed above such a page on the same navigator, as UIKit keeps
+  /// the bar hidden for everything pushed above a view controller that hid
+  /// it. The pages below are the ones registered before [route]'s that are
+  /// still on its navigator; pages mount in the order they are pushed.
+  bool hidesTabsFor(Route<dynamic> route, RoutePredicate hidesFor) {
+    if (route.isFirst) return false;
+    if (hidesFor(route)) return true;
+    final index = _entries.indexWhere((entry) => entry.route == route);
+    final navigator = route.navigator;
+    for (var i = 0; i < index; i++) {
+      final below = _entries[i].route;
+      if (below == null ||
+          below == route ||
+          below.navigator != navigator ||
+          below.isFirst ||
+          !below.isActive) {
+        continue;
+      }
+      if (hidesFor(below)) return true;
     }
     return false;
   }

@@ -5,8 +5,10 @@ import '../chrome/adaptive_chrome.dart';
 import '../utils/size_reporter.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
+import '../widgets/adaptive_keyboard_fade.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
 import 'duo_vertical_bar.dart';
+import 'hosted_tab_bar.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -48,15 +50,24 @@ class HostedDuoBar extends StatelessWidget {
     // navigation leaves or enters the tabs.
     final upperTabs = blend.registry.tabBarOwnerFor(upperEntry);
     final lowerTabs = blend.registry.tabBarOwnerFor(lowerEntry);
+    // The app's tabs fade all through a transition to a page without them,
+    // as along the bottom (tabsFollowingPages).
+    Animation<double> tabOpacity(
+      ToolbarEntry tabs,
+      Animation<double> blended,
+    ) => chrome == null
+        ? blended
+        : tabsFollowingPages(blend, tabs, upper: upperTabs, lower: lowerTabs) ??
+              blended;
     final tabLayers = <(ToolbarEntry, Animation<double>)>[
       if (lowerTabs != null && lowerTabs.id != upperTabs?.id)
-        (lowerTabs, lowerOpacity),
+        (lowerTabs, tabOpacity(lowerTabs, lowerOpacity)),
       if (upperTabs != null)
         (
           upperTabs,
           lowerTabs?.id == upperTabs.id
               ? kAlwaysCompleteAnimation
-              : upperOpacity,
+              : tabOpacity(upperTabs, upperOpacity),
         ),
     ];
 
@@ -149,15 +160,20 @@ class HostedDuoBar extends StatelessWidget {
                 alwaysIncludeSemantics: true,
                 child: ExcludeSemantics(
                   excluding: tabs.id != upperTabs?.id,
-                  child: DuoVerticalBar(
-                    tabBar: tabs.tabBar,
-                    accessory: _accessory(
-                      context,
-                      tabs,
-                      reports: tabs.id == upperTabs?.id,
+                  // The app's tabs at the foot of the bar get out of the
+                  // keyboard's way rather than going under it.
+                  child: AdaptiveKeyboardFade(
+                    enabled: chrome != null,
+                    child: DuoVerticalBar(
+                      tabBar: tabs.tabBar,
+                      accessory: _accessory(
+                        context,
+                        tabs,
+                        reports: tabs.id == upperTabs?.id,
+                      ),
+                      regions: regions,
+                      chrome: chrome,
                     ),
-                    regions: regions,
-                    chrome: chrome,
                   ),
                 ),
               ),

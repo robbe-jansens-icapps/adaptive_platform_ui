@@ -8,6 +8,7 @@ import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../utils/size_reporter.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
+import '../widgets/adaptive_keyboard_fade.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
@@ -254,13 +255,12 @@ class _HostedTabBarState extends State<HostedTabBar>
                 // pages: in as a page with the tabs comes in and out as it
                 // leaves, under the finger during a back swipe.
                 opacity: widget.chrome != null
-                    ? entry.id == upperTabs?.id
-                          ? lowerTabs?.id == upperTabs!.id
-                                ? kAlwaysCompleteAnimation
-                                : blend.upperOpacity
-                          : entry.id == lowerTabs?.id
-                          ? blend.lowerOpacity
-                          : null
+                    ? tabsFollowingPages(
+                        blend,
+                        entry,
+                        upper: upperTabs,
+                        lower: lowerTabs,
+                      )
                     : entry.id == shown?.id
                     ? _reveal
                     : entry.id == going?.id
@@ -418,10 +418,13 @@ class _HostedTabBarState extends State<HostedTabBar>
           // covers the tabs.
           child: SizeReporter(
             onSizeChanged: (size) => widget.height.value = size.height,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [?accessory, ?tabs],
+            // Out of the way of the keyboard rather than under it.
+            child: AdaptiveKeyboardFade(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [?accessory, ?tabs],
+              ),
             ),
           ),
         ),
@@ -489,16 +492,18 @@ class _HostedTabBarState extends State<HostedTabBar>
       left: kFloatingAccessoryMargin + (onLeft ? band : 0),
       right: kFloatingAccessoryMargin + (onLeft ? 0 : band),
       bottom: bottom,
-      child: framed
-          ? _reportingHeight(accessory, bottom)
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: kFloatingAccessoryMaxWidth,
+      child: AdaptiveKeyboardFade(
+        child: framed
+            ? _reportingHeight(accessory, bottom)
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: kFloatingAccessoryMaxWidth,
+                  ),
+                  child: _reportingHeight(accessory, bottom),
                 ),
-                child: _reportingHeight(accessory, bottom),
               ),
-            ),
+      ),
     );
   }
 
@@ -642,4 +647,31 @@ class _Minimizable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The opacity of the tabs of [entry] while the pages move with custom
+/// chrome, given the tabs of the page shown at the [upper] and the [lower]
+/// end of the blend; null while they are of neither.
+///
+/// Where only one of the two pages has tabs, they fade all through the
+/// transition, as the page without them covers or uncovers them, rather
+/// than in half of it: there is no second bar for them to blur with.
+/// Between two tab layouts they cross as the toolbar's controls do.
+Animation<double>? tabsFollowingPages(
+  ToolbarBlend blend,
+  ToolbarEntry entry, {
+  required ToolbarEntry? upper,
+  required ToolbarEntry? lower,
+}) {
+  final driver = blend.driver;
+  if (entry.id == upper?.id) {
+    if (lower?.id == upper!.id) return kAlwaysCompleteAnimation;
+    if (lower == null && driver != null) return driver;
+    return blend.upperOpacity;
+  }
+  if (entry.id == lower?.id) {
+    if (upper == null && driver != null) return ReverseAnimation(driver);
+    return blend.lowerOpacity;
+  }
+  return null;
 }

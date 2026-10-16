@@ -436,7 +436,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       return;
     }
     if (metrics.pixels > metrics.maxScrollExtent) return;
-    final on = metrics.axisDirection == AxisDirection.up ? delta < 0 : delta > 0;
+    final on = metrics.axisDirection == AxisDirection.up
+        ? delta < 0
+        : delta > 0;
     if (on != _scrollingOn) {
       _scrollingOn = on;
       _travel = 0;
@@ -447,8 +449,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
   }
 
   void _showTitleBand(bool shown) {
-    if (shown ? _titleBand.status == AnimationStatus.forward ||
-              _titleBand.value == 1
+    if (shown
+        ? _titleBand.status == AnimationStatus.forward || _titleBand.value == 1
         : _titleBand.status == AnimationStatus.reverse ||
               _titleBand.value == 0) {
       return;
@@ -520,6 +522,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       hidden: widget.tabBarHidden,
       ownerRoute: ownerRoute,
       hidesWhenPushed: widget.bottomNavigationBar?.hidesWhenPushed ?? false,
+      hidesFor: widget.bottomNavigationBar?.hidesFor,
       child: body,
     );
   }
@@ -1500,6 +1503,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       body = _TabLayout(
         ownerRoute: ModalRoute.of(context),
         hidesWhenPushed: tabs.hidesWhenPushed,
+        hidesFor: tabs.hidesFor,
         child: _withBottomBarInset(
           context,
           placement == AdaptiveChromePlacement.sidebar
@@ -1933,6 +1937,7 @@ class _BottomBarInset extends StatelessWidget {
     required this.child,
     this.ownerRoute,
     this.hidesWhenPushed = false,
+    this.hidesFor,
   });
 
   final ValueListenable<double> height;
@@ -1946,6 +1951,10 @@ class _BottomBarInset extends StatelessWidget {
   final ModalRoute<Object?>? ownerRoute;
   final bool hidesWhenPushed;
 
+  /// Which of those pages the tabs leave for
+  /// ([AdaptiveBottomNavigationBar.hidesFor]).
+  final RoutePredicate? hidesFor;
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<double>(
@@ -1958,6 +1967,7 @@ class _BottomBarInset extends StatelessWidget {
           child: _BottomBarPadding(
             height: inset,
             ownerRoute: hidesWhenPushed ? ownerRoute : null,
+            hidesFor: hidesFor,
             child: child!,
           ),
         );
@@ -1975,6 +1985,7 @@ class _BottomBarPadding extends StatelessWidget {
     required this.height,
     required this.child,
     this.ownerRoute,
+    this.hidesFor,
   });
 
   final double height;
@@ -1983,6 +1994,9 @@ class _BottomBarPadding extends StatelessWidget {
   /// The route of the page with the tabs, when they leave while a page is
   /// pushed inside them.
   final ModalRoute<Object?>? ownerRoute;
+
+  /// Which of those pages the tabs leave for.
+  final RoutePredicate? hidesFor;
 
   @override
   Widget build(BuildContext context) {
@@ -1996,6 +2010,7 @@ class _BottomBarPadding extends StatelessWidget {
       ),
       child: _RaisedForTabs(
         ownerRoute: ownerRoute,
+        hidesFor: hidesFor,
         padding: bottom - mediaQuery.padding.bottom,
         viewPadding: viewBottom - mediaQuery.viewPadding.bottom,
         child: child,
@@ -2013,16 +2028,21 @@ class _RaisedForTabs extends InheritedWidget {
     required this.padding,
     required this.viewPadding,
     required super.child,
+    this.hidesFor,
   });
 
   /// Null when the tabs stay while pages are pushed inside them.
   final ModalRoute<Object?>? ownerRoute;
+
+  /// Which of those pages the tabs leave for; all of them when null.
+  final RoutePredicate? hidesFor;
   final double padding;
   final double viewPadding;
 
   @override
   bool updateShouldNotify(_RaisedForTabs oldWidget) =>
       ownerRoute != oldWidget.ownerRoute ||
+      hidesFor != oldWidget.hidesFor ||
       padding != oldWidget.padding ||
       viewPadding != oldWidget.viewPadding;
 }
@@ -2073,10 +2093,12 @@ class _TabLayout extends InheritedWidget {
     required this.ownerRoute,
     required this.hidesWhenPushed,
     required super.child,
+    this.hidesFor,
   });
 
   final ModalRoute<Object?>? ownerRoute;
   final bool hidesWhenPushed;
+  final RoutePredicate? hidesFor;
 
   /// Whether the tabs show while the page at [context] is in front: it is
   /// in a tab layout, and is not a page pushed inside one whose tabs leave
@@ -2089,13 +2111,18 @@ class _TabLayout extends InheritedWidget {
     if (ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false) {
       return true;
     }
-    return !_TabsLeaveWhenPushed._pushedWithin(context, ownerRoute);
+    return !_TabsLeaveWhenPushed._pushedWithin(
+      context,
+      ownerRoute,
+      layout.hidesFor,
+    );
   }
 
   @override
   bool updateShouldNotify(_TabLayout oldWidget) =>
       ownerRoute != oldWidget.ownerRoute ||
-      hidesWhenPushed != oldWidget.hidesWhenPushed;
+      hidesWhenPushed != oldWidget.hidesWhenPushed ||
+      hidesFor != oldWidget.hidesFor;
 }
 
 /// Gives a page pushed inside a tab layout whose tabs leave for it
@@ -2116,7 +2143,7 @@ class _TabsLeaveWhenPushed extends StatelessWidget {
         ToolbarRegistry.maybeOf(context)?.keepsTabsOnPush ?? false;
     if (ownerRoute == null ||
         keepsTabs ||
-        !_pushedWithin(context, ownerRoute)) {
+        !_pushedWithin(context, ownerRoute, raised?.hidesFor)) {
       return child;
     }
     final mediaQuery = MediaQuery.of(context);
@@ -2146,15 +2173,22 @@ class _TabsLeaveWhenPushed extends StatelessWidget {
 
   /// Whether the page at [context] was pushed on a navigator inside
   /// [ownerRoute], rather than being the first page of each navigator in
-  /// between: the same rule the toolbar registry hides the tabs by.
+  /// between, by a route that [hidesFor] the tabs leave for: the same rule
+  /// the toolbar registry hides the tabs by.
   static bool _pushedWithin(
     BuildContext context,
-    ModalRoute<Object?> ownerRoute,
-  ) {
+    ModalRoute<Object?> ownerRoute, [
+    RoutePredicate? hidesFor,
+  ]) {
     var route = ModalRoute.of(context);
     var navigator = Navigator.maybeOf(context);
+    final registry = ToolbarRegistry.maybeOf(context);
     while (route != null && route != ownerRoute) {
-      if (!route.isFirst) return true;
+      if (!route.isFirst &&
+          (hidesFor == null ||
+              (registry?.hidesTabsFor(route, hidesFor) ?? hidesFor(route)))) {
+        return true;
+      }
       final outer = navigator?.context;
       if (outer == null) return false;
       route = ModalRoute.of(outer);

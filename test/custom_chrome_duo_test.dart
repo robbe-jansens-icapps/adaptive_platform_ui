@@ -50,6 +50,24 @@ void main() {
       expect(tester.getCenter(find.text('title:Tab 0')).dy, 48);
     });
 
+    testWidgets('the app\'s tabs at the foot of the bar fade out of the keyboard\'s way and come back once it has gone; the title stays', (tester) async {
+      window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+      final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]));
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      double opacityOf(Finder finder) =>
+          tester.widgetList<FadeTransition>(find.ancestor(of: finder, matching: find.byType(FadeTransition))).fold<double>(1, (value, fade) => value * fade.opacity.value);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pumpAndSettle();
+      expect(opacityOf(find.byKey(TestChrome.tabBarKey)), 0);
+      expect(opacityOf(find.text('title:Tab 0')), 1);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(opacityOf(find.byKey(TestChrome.tabBarKey)), 1);
+    });
+
     testWidgets('pages keep out of the strip and below the title band', (tester) async {
       window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
       final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]));

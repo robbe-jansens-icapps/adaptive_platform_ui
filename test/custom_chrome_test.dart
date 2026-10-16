@@ -119,10 +119,88 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 75));
-      final halfway = tester.widget<FadeTransition>(
-        find.ancestor(of: find.byKey(TestChrome.tabBarKey), matching: find.byType(FadeTransition)).first,
-      );
-      expect(halfway.opacity.value, inExclusiveRange(0, 1));
+      final opacity = tester
+          .widgetList<FadeTransition>(find.ancestor(of: find.byKey(TestChrome.tabBarKey), matching: find.byType(FadeTransition)))
+          .fold<double>(1, (value, fade) => value * fade.opacity.value);
+      expect(opacity, inExclusiveRange(0, 1));
+    });
+
+    testWidgets('the tabs come back all through the pop, as the page uncovers them, rather than at its end', (tester) async {
+      phone(tester);
+      final tabs = TabsFixture(hidesWhenPushed: true);
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      final detail = tabs.page('Detail') as ModalRoute<void>;
+      tabs.navigators[0].currentState!.push(detail);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('back'));
+      await tester.pump();
+      for (var i = 0; i < 120 && detail.animation!.value > 0.5; i++) {
+        await tester.pump(const Duration(milliseconds: 8));
+      }
+      final opacity = tester
+          .widgetList<FadeTransition>(find.ancestor(of: find.byKey(TestChrome.tabBarKey), matching: find.byType(FadeTransition)))
+          .fold<double>(1, (value, fade) => value * fade.opacity.value);
+
+      expect(opacity, closeTo(1 - detail.animation!.value, 0.05));
+    });
+
+    testWidgets('the tabs fade out as the keyboard comes up and back in as it goes down', (tester) async {
+      phone(tester);
+      final tabs = TabsFixture();
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      double opacity() => tester
+          .widgetList<FadeTransition>(find.ancestor(of: find.byKey(TestChrome.tabBarKey), matching: find.byType(FadeTransition)))
+          .fold<double>(1, (value, fade) => value * fade.opacity.value);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 120);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(opacity(), inExclusiveRange(0, 1));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 336);
+      await tester.pumpAndSettle();
+      expect(opacity(), 0);
+      await tester.tap(find.text('tab:Tab 1'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(tabs.selected.value, 0);
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 290);
+      await tester.pumpAndSettle();
+      expect(opacity(), 0, reason: 'a keyboard that only changes height stays up');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 120);
+      await tester.pump();
+      await tester.pump(AdaptiveKeyboardFade.fadeInDuration ~/ 2);
+      expect(opacity(), inExclusiveRange(0, 1));
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(opacity(), 1);
+    });
+
+    testWidgets('with hidesFor, the tabs only leave for the pages it picks', (tester) async {
+      phone(tester);
+      final tabs = TabsFixture(hidesWhenPushed: true, hidesFor: (route) => route.settings.name == 'detail');
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+
+      tabs.push(0, 'Other', name: 'other');
+      await tester.pumpAndSettle();
+      expect(find.text('title:Other'), findsOneWidget);
+      expect(find.byKey(TestChrome.tabBarKey), findsOneWidget);
+      expect(tabs.paddingOf('Other').bottom, TestChrome.tabBarHeight);
+
+      tabs.push(0, 'Detail', name: 'detail');
+      await tester.pumpAndSettle();
+      expect(find.text('title:Detail'), findsOneWidget);
+      expect(find.byKey(TestChrome.tabBarKey), findsNothing);
+      expect(tabs.paddingOf('Detail').bottom, 34);
+      expect(tabs.insetOf('Detail'), 0);
+
+      tabs.push(0, 'Deeper', name: 'other');
+      await tester.pumpAndSettle();
+      expect(find.byKey(TestChrome.tabBarKey), findsNothing);
+      expect(tabs.paddingOf('Deeper').bottom, 34);
     });
 
     testWidgets('without it, the tabs stay for a page pushed on a tab', (tester) async {
