@@ -41,6 +41,7 @@ class AdaptiveToolbarHost extends StatefulWidget {
     required this.child,
     this.chrome,
     this.hostsTabBar = true,
+    this.sheetNavigatorKey,
     @visibleForTesting this.debugFold,
     @visibleForTesting this.debugVerticalBarEdge,
   });
@@ -62,6 +63,16 @@ class AdaptiveToolbarHost extends StatefulWidget {
   /// bar in the tab layout's page. The tabs of a [chrome] are always the
   /// host's.
   final bool hostsTabBar;
+
+  /// The key of a navigator the host lays over its bars, for sheets that come
+  /// up over all of the screen as UIKit presents a sheet: over the toolbar,
+  /// the tabs and their accessory, the iPhone Duo's bar, which stay in sight
+  /// under the sheet's barrier, dimmed with the page, rather than making way
+  /// as they do for a sheet on the app's navigator (which they are drawn
+  /// over). Push such a sheet's route here. Without it there is no such
+  /// navigator. It holds nothing but what is pushed on it, and takes no
+  /// touches while empty.
+  final GlobalKey<NavigatorState>? sheetNavigatorKey;
 
   /// Replaces the platform's fold readings (the reserved regions) and the
   /// iOS 26 check, so the chrome can be exercised in widget tests anywhere.
@@ -426,6 +437,13 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                                   ),
                                 ),
                               ),
+                            if (widget.sheetNavigatorKey case final key?)
+                              _SheetLayer(
+                                key: const ValueKey<String>(
+                                  'adaptive_sheet_layer',
+                                ),
+                                navigatorKey: key,
+                              ),
                           ],
                         ),
                       ),
@@ -439,6 +457,33 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
       ),
     );
   }
+}
+
+/// The navigator over the bars ([AdaptiveToolbarHost.sheetNavigatorKey]):
+/// nothing in it but the sheets pushed on it, over a first route that draws
+/// nothing and takes no touches, so the bars and the pages under it work as
+/// if it were not there.
+class _SheetLayer extends StatelessWidget {
+  const _SheetLayer({super.key, required this.navigatorKey});
+
+  final GlobalKey<NavigatorState> navigatorKey;
+
+  @override
+  Widget build(BuildContext context) => HeroControllerScope.none(
+    // The app's navigator has the app's hero controller; a sheet flies none.
+    child: Navigator(
+      key: navigatorKey,
+      onGenerateInitialRoutes: (navigator, initialRoute) => [_NoSheet()],
+    ),
+  );
+}
+
+/// The first route of the sheets' navigator: nothing, not even a barrier.
+class _NoSheet extends OverlayRoute<void> {
+  @override
+  Iterable<OverlayEntry> createOverlayEntries() => [
+    OverlayEntry(builder: (context) => const SizedBox.shrink()),
+  ];
 }
 
 /// The app's own bars sit above the navigator, outside any page: give them

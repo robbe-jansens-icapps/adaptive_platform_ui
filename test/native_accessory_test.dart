@@ -141,8 +141,11 @@ class NativeTabs {
     this.accessory,
     this.actions = const <AdaptiveAppBarAction>[],
     this.layout = AdaptiveTabAccessoryLayout.floating,
+    this.sheetNavigatorKey,
     FoldableData? fold,
   }) : fold = fold ?? forcedChrome();
+
+  final GlobalKey<NavigatorState>? sheetNavigatorKey;
 
   final Widget? accessory;
   final AdaptiveTabAccessoryLayout layout;
@@ -174,8 +177,11 @@ class NativeTabs {
 
   Widget app() => MaterialApp(
     navigatorKey: root,
-    builder: (context, child) =>
-        AdaptiveToolbarHost(debugFold: fold, child: child!),
+    builder: (context, child) => AdaptiveToolbarHost(
+      debugFold: fold,
+      sheetNavigatorKey: sheetNavigatorKey,
+      child: child!,
+    ),
     home: AdaptiveScaffold(
       bottomNavigationBar: AdaptiveBottomNavigationBar(
         items: const [
@@ -747,6 +753,101 @@ void main() {
     tabs.root.currentState!.pop();
     await tester.pumpAndSettle();
     expect(barriers, findsNothing);
+    unmockPlatformViews();
+  });
+
+  testWidgets('on a tray under a dialog one barrier dims the tray, its '
+      'accessory and the tabs together', (tester) async {
+    mockPlatformViews();
+    IOS26NativeTabBar.debugHasUIKitOverride = true;
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    barHeight = 84;
+    final tabs = NativeTabs(
+      accessory: const RentalAccessory(),
+      layout: AdaptiveTabAccessoryLayout.tray,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+    await tester.pumpAndSettle();
+
+    Finder barriers(Type shape) => find.descendant(
+      of: find.byType(HostedTabBar),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            widget.decoration is ShapeDecoration &&
+            (widget.decoration as ShapeDecoration).shape.runtimeType == shape,
+      ),
+    );
+    showDialog<void>(
+      context: tabs.root.currentContext!,
+      builder: (_) => const Center(child: Text('Sure?')),
+    );
+    await tester.pumpAndSettle();
+    expect(barriers(StadiumBorder), findsNothing);
+    expect(barriers(RoundedSuperellipseBorder), findsOneWidget);
+    expect(
+      tester.getRect(barriers(RoundedSuperellipseBorder)),
+      tester.getRect(trayGlass),
+    );
+    unmockPlatformViews();
+  });
+
+  testWidgets('sheets on the host\'s sheet navigator come up over the bars, '
+      'which stay in sight under them; empty, it takes no touches', (
+    tester,
+  ) async {
+    mockPlatformViews();
+    IOS26NativeTabBar.debugHasUIKitOverride = true;
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    final sheets = GlobalKey<NavigatorState>();
+    final tabs = NativeTabs(
+      accessory: const RentalAccessory(),
+      sheetNavigatorKey: sheets,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    final bar = tester.getRect(nativeBar);
+    final tabsBox = tester.renderObject(nativeBar);
+    bool hitsTabs() => tester
+        .hitTestOnBinding(bar.center)
+        .path
+        .any((entry) => entry.target == tabsBox);
+    expect(hitsTabs(), isTrue);
+
+    sheets.currentState!.push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: const Color(0x33000000),
+        pageBuilder: (_, _, _) => const Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            key: ValueKey('sheet'),
+            width: double.infinity,
+            height: 300,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Over the tabs, which stay in sight.
+    expect(hitsTabs(), isFalse);
+    expect(opacityOf(tester, accessory), 1);
+
+    sheets.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(hitsTabs(), isTrue);
     unmockPlatformViews();
   });
 

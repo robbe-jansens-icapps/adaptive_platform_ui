@@ -10,6 +10,9 @@ import 'package:flutter/physics.dart';
 import '../../chrome/adaptive_chrome.dart';
 import '../../platform/platform_info.dart';
 import '../../toolbar/duo_vertical_bar.dart';
+import '../../toolbar/hosted_top_toolbar.dart'
+    show kHostedToolbarBottomPadding, kHostedToolbarHeight;
+import '../../toolbar/toolbar_chrome_scope.dart';
 import '../../utils/size_reporter.dart';
 import '../adaptive_glass.dart';
 import '../ios26/ios26_glass_surface.dart';
@@ -169,6 +172,7 @@ class _Metrics {
     required this.material,
     required this.rtl,
     this.sides = EdgeInsets.zero,
+    this.toolbar = 0,
   });
 
   final Size size;
@@ -176,6 +180,11 @@ class _Metrics {
   final bool sidePanel;
   final bool material;
   final bool rtl;
+
+  /// Room the sheet leaves below the top padding at its tallest: the toolbar
+  /// the host draws over the page under a modal sheet, which stays in sight
+  /// above it, dimmed, rather than the sheet going under it.
+  final double toolbar;
 
   /// Room a floating sheet leaves at its sides: the band of the iPhone Duo
   /// vertical bar, which carries the tab bar and toolbar along that edge.
@@ -189,11 +198,12 @@ class _Metrics {
       other.sidePanel == sidePanel &&
       other.material == material &&
       other.rtl == rtl &&
-      other.sides == sides;
+      other.sides == sides &&
+      other.toolbar == toolbar;
 
   @override
   int get hashCode =>
-      Object.hash(size, padding, sidePanel, material, rtl, sides);
+      Object.hash(size, padding, sidePanel, material, rtl, sides, toolbar);
 }
 
 class _AdaptiveSheetState extends State<AdaptiveSheet>
@@ -273,7 +283,24 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A sheet that is a popup route of its own (a modal sheet) slides out of
+    // view as the route goes, however it is popped: the barrier tapped, a
+    // button, back. A page's own sheet stays with its page.
+    final route = ModalRoute.of(context);
+    final popup = route is PopupRoute<Object?> ? route : null;
+    if (popup == _route) return;
+    _route?.animation?.removeStatusListener(_onRouteStatus);
+    _route?.animation?.removeListener(_followRouteOut);
+    _route = popup;
+    popup?.animation?.addStatusListener(_onRouteStatus);
+  }
+
+  @override
   void dispose() {
+    _route?.animation?.removeStatusListener(_onRouteStatus);
+    _route?.animation?.removeListener(_followRouteOut);
     widget.controller?._detach(this);
     _scrollController.dispose();
     _scrolled.dispose();
@@ -314,7 +341,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       _grabberHeight + (_headerHeight ?? 0) + _bottomGap(m) + _safeBottom(m);
 
   double _largeExtent(_Metrics m) =>
-      m.size.height - m.padding.top - (m.material ? 0 : _floatingGap);
+      m.size.height -
+      m.padding.top -
+      m.toolbar -
+      (m.material ? 0 : _floatingGap);
 
   double _fitExtent(_Metrics m) =>
       _bottomGap(m) +
@@ -492,6 +522,49 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     widget.onSettled?.call(obstruction);
   }
 
+  // Going with its route ------------------------------------------------------
+
+  /// How tall the toolbar is that the host draws over the pages, for a modal
+  /// sheet to stop below it: the title band along the top of the iPhone Duo,
+  /// whose other controls are in its vertical bar, or the whole toolbar.
+  double _hostedToolbarHeight() {
+    final chrome = ToolbarChromeScope.maybeOf(context);
+    if (chrome == null) return 0;
+    if (chrome.hostsDuoControls) return kDuoTitleBandHeight;
+    if (chrome.hostsToolbar) {
+      return kHostedToolbarHeight + kHostedToolbarBottomPadding;
+    }
+    return 0;
+  }
+
+  /// The popup route the sheet is the content of, if it is.
+  PopupRoute<Object?>? _route;
+
+  /// Where the sheet was as its route started to go: it slides down from
+  /// there, with the route's animation, rather than fading where it is.
+  double? _leavingFrom;
+
+  void _onRouteStatus(AnimationStatus status) {
+    if (status != AnimationStatus.reverse || _leavingFrom != null) return;
+    // From where it is, also on its way out after a drag.
+    _interrupt();
+    _dragging = false;
+    _leavingFrom = _extent.value;
+    _route?.animation?.addListener(_followRouteOut);
+  }
+
+  void _followRouteOut() {
+    final from = _leavingFrom;
+    final animation = _route?.animation;
+    if (from == null || animation == null || !mounted) return;
+    // Away at once and easing out, as UIKit's sheets go, so it is all but out
+    // of view before what it covered (the tabs) comes back.
+    final out = Curves.easeOutCubic.transform(
+      (1 - animation.value).clamp(0.0, 1.0),
+    );
+    _extent.value = from * (1 - out);
+  }
+
   // Dragging ----------------------------------------------------------------
 
   void _interrupt() {
@@ -544,14 +617,25 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   /// Whether a drag on the content moves the sheet rather than scrolling:
   /// only while the content is at its top, and only when the sheet can move
-  /// that way.
-  bool _takesDrag({required bool expanding, required bool contentAtTop}) {
+  /// that way. Content with nothing to scroll ([contentFits]) never takes a
+  /// drag: the sheet follows the finger at once, past its last detent with
+  /// resistance, as a sheet whose content does not scroll does.
+  bool _takesDrag({
+    required bool expanding,
+    required bool contentAtTop,
+    bool contentFits = false,
+  }) {
     final m = _metrics;
-    if (m == null || m.sidePanel || !contentAtTop) return false;
+    if (m == null || m.sidePanel) return false;
+    if (contentFits) return true;
+    if (!contentAtTop) return false;
     final extent = _extent.value;
     final atMin = extent <= _minExtent + 0.5;
     final atMax = extent >= _maxExtent - 0.5;
     if (!atMin && !atMax) return true;
+    // One that can be dismissed follows the finger down from its lowest
+    // detent too, all the way out.
+    if (atMin && !expanding && widget.onDismissed != null) return true;
     return (atMin && expanding) || (atMax && !expanding);
   }
 
@@ -648,6 +732,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           material: material,
           rtl: rtl,
           sides: _sidesOf(context, material: material),
+          toolbar: _route == null || material ? 0 : _hostedToolbarHeight(),
         );
         if (metrics != _metrics) {
           _metrics = metrics;
@@ -995,7 +1080,11 @@ class _SheetScrollPosition extends ScrollPositionWithSingleContext {
   @override
   void applyUserOffset(double delta) {
     // A positive delta: the finger moves down.
-    if (sheet._takesDrag(expanding: delta < 0, contentAtTop: _atTop)) {
+    if (sheet._takesDrag(
+      expanding: delta < 0,
+      contentAtTop: _atTop,
+      contentFits: maxScrollExtent <= minScrollExtent,
+    )) {
       _movedSheet = true;
       sheet._dragBy(-delta);
       return;

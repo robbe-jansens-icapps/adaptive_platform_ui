@@ -332,6 +332,11 @@ class _HostedTabBarState extends State<HostedTabBar>
   }) {
     final bar = entry.tabBar!;
     final chrome = widget.chrome;
+    // With a tray, one barrier dims the tray, the accessory and the tabs on
+    // it together, over all of them, rather than each part on its own.
+    final onTray =
+        bar.accessory != null &&
+        bar.accessoryLayout == AdaptiveTabAccessoryLayout.tray;
     // The native views of the accessory and its tray leave the screen while
     // they fade.
     final fade = AnimationMin<double>(
@@ -377,11 +382,14 @@ class _HostedTabBarState extends State<HostedTabBar>
                     fade: fade,
                     dialog: dialog,
                   ),
-                  tray:
-                      bar.accessory == null ||
-                          bar.accessoryLayout != AdaptiveTabAccessoryLayout.tray
-                      ? null
-                      : _tray(fade: fade, dialog: dialog),
+                  tray: onTray ? _tray(fade: fade) : null,
+                  cover: onTray
+                      ? _BarrierOverTabs(
+                          route: dialog,
+                          fills: true,
+                          borderRadius: _trayCorners,
+                        )
+                      : null,
                   tabs: _Minimizable(
                     minimized: entry.tabBarMinimized,
                     // The same children whether a dialog covers the tabs or
@@ -401,7 +409,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                         ),
                         Positioned.fill(
                           child: _BarrierOverTabs(
-                            route: dialog,
+                            route: onTray ? null : dialog,
                             capsule: _capsules[entry.id],
                           ),
                         ),
@@ -474,45 +482,35 @@ class _HostedTabBarState extends State<HostedTabBar>
   }
 
   /// The glass tray the accessory and the tabs share
-  /// ([AdaptiveTabAccessoryLayout.tray]), under a dialog's barrier with them.
-  /// It takes the touches that miss them, as a sheet would, rather than
-  /// letting them through to the page. While [fade] is not fully in, its
-  /// native glass leaves the screen and its stand-in fades.
-  Widget _tray({
-    required Animation<double> fade,
-    required ModalRoute<Object?>? dialog,
-  }) {
+  /// ([AdaptiveTabAccessoryLayout.tray]). It takes the touches that miss
+  /// them, as a sheet would, rather than letting them through to the page.
+  /// While [fade] is not fully in, its native glass leaves the screen and its
+  /// stand-in fades.
+  Widget _tray({required Animation<double> fade}) {
     return NativeViewSettleScope(
       fade: fade,
-      child: AdaptiveKeyboardFade(
+      child: const AdaptiveKeyboardFade(
         holdsNativeViews: true,
         child: AbsorbPointer(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              const IOS26GlassSurface(
-                corners: GlassSurfaceCorners.concentric,
-                cornerRadius: kAccessoryTrayCornerRadius,
-              ),
-              _BarrierOverTabs(
-                route: dialog,
-                fills: true,
-                borderRadius: BorderRadius.vertical(
-                  top: const Radius.circular(kAccessoryTrayCornerRadius),
-                  bottom: Radius.circular(
-                    IOS26GlassSurface.concentricRadius(
-                      inset: kAccessoryTrayInset,
-                      minimum: kAccessoryTrayCornerRadius,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          child: IOS26GlassSurface(
+            corners: GlassSurfaceCorners.concentric,
+            cornerRadius: kAccessoryTrayCornerRadius,
           ),
         ),
       ),
     );
   }
+
+  /// The corners of the tray, for the barrier laid over it.
+  static BorderRadius get _trayCorners => BorderRadius.vertical(
+    top: const Radius.circular(kAccessoryTrayCornerRadius),
+    bottom: Radius.circular(
+      IOS26GlassSurface.concentricRadius(
+        inset: kAccessoryTrayInset,
+        minimum: kAccessoryTrayCornerRadius,
+      ),
+    ),
+  );
 
   /// One tab layout's tabs and accessory with custom chrome, wherever the
   /// placement puts them: both along the bottom; the tabs in the iPhone Duo's
@@ -939,7 +937,7 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
   }
 }
 
-enum _TabsSlot { tray, accessory, tabs }
+enum _TabsSlot { tray, accessory, tabs, cover }
 
 /// Where [_RenderAccessoryOverTabs] puts its children: its size, where the
 /// tabs and the accessory go, and the tray under both, if it shows.
@@ -966,14 +964,20 @@ class _AccessoryOverTabs
     required this.accessory,
     required this.tabs,
     this.tray,
+    this.cover,
     this.layout = AdaptiveTabAccessoryLayout.floating,
   });
 
   final AdaptiveTabAccessoryLayout layout;
 
+  /// Laid over all of it, as the tray is, or as the capsule of the tabs is
+  /// while there is no tray to show: a dialog's barrier.
+
   final Rect? capsule;
   final Widget? accessory;
   final Widget tabs;
+
+  final Widget? cover;
 
   /// The glass under the accessory and the tabs on a tray.
   final Widget? tray;
@@ -986,6 +990,7 @@ class _AccessoryOverTabs
     _TabsSlot.tray => tray,
     _TabsSlot.accessory => accessory,
     _TabsSlot.tabs => tabs,
+    _TabsSlot.cover => cover,
   };
 
   @override
@@ -1030,14 +1035,13 @@ class _RenderAccessoryOverTabs extends RenderBox
   RenderBox? get _tray => childForSlot(_TabsSlot.tray);
   RenderBox? get _accessory => childForSlot(_TabsSlot.accessory);
   RenderBox? get _tabs => childForSlot(_TabsSlot.tabs);
+  RenderBox? get _cover => childForSlot(_TabsSlot.cover);
 
-  // Painted and hit in this order: the tray under the bar, the accessory
-  // over it.
-  Iterable<RenderBox> get _painted => [
-    if (_trayShown) ?_tray,
-    ?_tabs,
-    ?_accessory,
-  ];
+  // Hit in this order, reversed: the tray under the bar, the accessory over
+  // it. The cover over all of them takes no touches.
+  Iterable<RenderBox> get _hit => [if (_trayShown) ?_tray, ?_tabs, ?_accessory];
+
+  Iterable<RenderBox> get _painted => [..._hit, ?_cover];
 
   /// Where the accessory goes across: over the capsule, at most
   /// [kFloatingAccessoryMaxWidth] wide.
@@ -1243,6 +1247,15 @@ class _RenderAccessoryOverTabs extends RenderBox
       (tray.parentData! as BoxParentData).offset =
           placed.tray?.topLeft ?? Offset.zero;
     }
+    if (_cover case final cover?) {
+      // Over the tray, or with no tray to show over the capsule of the tabs.
+      final capsule = _capsule;
+      final rect =
+          placed.tray ??
+          (capsule == null ? Rect.zero : capsule.shift(placed.tabs));
+      cover.layout(BoxConstraints.tight(rect.size));
+      (cover.parentData! as BoxParentData).offset = rect.topLeft;
+    }
   }
 
   @override
@@ -1257,7 +1270,7 @@ class _RenderAccessoryOverTabs extends RenderBox
 
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    for (final child in _painted.toList().reversed) {
+    for (final child in _hit.toList().reversed) {
       final offset = (child.parentData! as BoxParentData).offset;
       final hit = result.addWithPaintOffset(
         offset: offset,
@@ -1347,14 +1360,19 @@ class _BarrierOverTabs extends StatelessWidget {
         end: _overGlass(color),
       ).chain(CurveTween(curve: route.barrierCurve)),
     );
-    final dim = AnimatedBuilder(
-      animation: barrier,
-      builder: (context, _) => DecoratedBox(
-        decoration: ShapeDecoration(
-          color: barrier.value,
-          shape: borderRadius == null
-              ? const StadiumBorder()
-              : RoundedSuperellipseBorder(borderRadius: borderRadius!),
+    final dim = LayoutBuilder(
+      builder: (context, constraints) => AnimatedBuilder(
+        animation: barrier,
+        builder: (context, _) => DecoratedBox(
+          decoration: ShapeDecoration(
+            color: barrier.value,
+            // The tray's corners; a capsule's where it covers only that.
+            shape:
+                borderRadius == null ||
+                    constraints.maxHeight <= kNativeTabCapsuleHeight + 1
+                ? const StadiumBorder()
+                : RoundedSuperellipseBorder(borderRadius: borderRadius!),
+          ),
         ),
       ),
     );
