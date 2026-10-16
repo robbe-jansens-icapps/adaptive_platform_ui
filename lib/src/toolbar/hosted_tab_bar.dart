@@ -162,6 +162,17 @@ class _HostedTabBarState extends State<HostedTabBar>
     );
   }
 
+  /// What the tray opens into is laid out this tall: with nothing left to
+  /// show, an open tray closes.
+  void _onOpenExtent(double extent) {
+    _openExtent = extent;
+    // Once: closing, it is on its way already.
+    if (extent > 0 || !_trayOpening) return;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _openExtent == 0 && _trayOpening) _settleTray(open: false);
+    });
+  }
+
   /// [child], with vertical drags on it opening and closing the tray under
   /// the finger.
   Widget _trayDrag(
@@ -487,7 +498,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                 layout: bar.accessoryLayout,
                 expansion: opens ? _trayOpen : null,
                 onRestingHeight: (height) => widget.height.value = height,
-                onOpenExtent: (extent) => _openExtent = extent,
+                onOpenExtent: _onOpenExtent,
                 accessory: _nativeAccessory(
                   entry,
                   bar,

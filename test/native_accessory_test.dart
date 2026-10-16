@@ -973,6 +973,46 @@ void main() {
       unmockPlatformViews();
     });
 
+    testWidgets('open, it closes once there is nothing left to open into', (
+      tester,
+    ) async {
+      mockPlatformViews();
+      IOS26NativeTabBar.debugHasUIKitOverride = true;
+      window(
+        tester,
+        const Size(402, 874),
+        const FakeViewPadding(top: 62, bottom: 34),
+      );
+      addTearDown(tester.view.reset);
+      barHeight = 84;
+      final content = ValueNotifier<double>(opened);
+      final tabs = NativeTabs(
+        accessory: const RentalAccessory(),
+        layout: AdaptiveTabAccessoryLayout.tray,
+        expanded: ValueListenableBuilder<double>(
+          valueListenable: content,
+          builder: (context, height, _) =>
+              SizedBox(width: double.infinity, height: height),
+        ),
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+      await tester.pumpAndSettle();
+      final expansion = AdaptiveAccessoryScope.expansionOf(
+        tester.element(accessory),
+      )!;
+      expansion.open();
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isTrue);
+
+      content.value = 0;
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isFalse);
+      expect(expansion.value.value, closeTo(0, 0.001));
+      unmockPlatformViews();
+    });
+
     testWidgets('opened through the accessory\'s scope, it closes as '
         'another tab is picked', (tester) async {
       final tabs = await pumpTray(tester);
