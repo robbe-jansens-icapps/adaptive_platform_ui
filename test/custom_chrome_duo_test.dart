@@ -148,6 +148,27 @@ void main() {
       expect(find.text('title:Tab 0'), findsOneWidget);
       expect(find.byKey(TestChrome.tabBarKey), findsOneWidget);
     });
+
+    testWidgets('with keepsTabsInVerticalBar the tabs stay while a page is pushed, its back button above them', (tester) async {
+      window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+      final chrome = AdaptiveChrome(
+        tabBarBuilder: TestChrome.chrome.tabBarBuilder,
+        titleBuilder: TestChrome.chrome.titleBuilder,
+        backButtonBuilder: TestChrome.chrome.backButtonBuilder,
+        actionsBuilder: TestChrome.chrome.actionsBuilder,
+        keepsTabsInVerticalBar: true,
+      );
+      final tabs = TabsFixture(chrome: chrome, debugFold: duo(regions: [duoCamera]), hidesWhenPushed: true);
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+
+      tabs.push(0, 'Detail');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(TestChrome.tabBarKey), findsOneWidget);
+      expect(find.text('title:Detail'), findsOneWidget);
+      expect(tester.getRect(find.text('back')).bottom, lessThan(tester.getRect(find.byKey(TestChrome.tabBarKey)).top));
+    });
   });
 
   testWidgets('on the cover display, actions that do not fit move into one overflow control; the tabs stay', (tester) async {

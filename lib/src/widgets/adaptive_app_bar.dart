@@ -40,6 +40,7 @@ class AdaptiveAppBar {
     this.automaticallyImplyLeading = true,
     this.showsBackdrop = true,
     this.hidesOnScroll = true,
+    this.showsHairline = true,
     this.backdropColor,
     this.chromeData,
   });
@@ -125,6 +126,12 @@ class AdaptiveAppBar {
   /// what is docked.
   final bool hidesOnScroll;
 
+  /// Whether the bar's background ends in a hairline once content scrolls
+  /// under it. Off for a page that docks part of its own header right below
+  /// the bar, which then reads as part of the bar and draws the line below
+  /// itself.
+  final bool showsHairline;
+
   /// The color of the page behind the fixed iOS 26 toolbar. Its backdrop
   /// takes it, so the bar blends into the page at rest and only fades out
   /// what scrolls underneath, like the system's scroll edge effect. Defaults
@@ -153,6 +160,7 @@ class AdaptiveAppBar {
     bool? automaticallyImplyLeading,
     bool? showsBackdrop,
     bool? hidesOnScroll,
+    bool? showsHairline,
     Color? backdropColor,
     Object? chromeData,
   }) {
@@ -173,6 +181,7 @@ class AdaptiveAppBar {
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
       showsBackdrop: showsBackdrop ?? this.showsBackdrop,
       hidesOnScroll: hidesOnScroll ?? this.hidesOnScroll,
+      showsHairline: showsHairline ?? this.showsHairline,
       backdropColor: backdropColor ?? this.backdropColor,
       chromeData: chromeData ?? this.chromeData,
     );

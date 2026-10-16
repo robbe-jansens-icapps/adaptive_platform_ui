@@ -244,6 +244,7 @@ class AdaptiveBarBackgroundSpec {
     this.color,
     this.titleBand = false,
     this.pinned = false,
+    this.hairline = true,
     this.scrollEdge = const AlwaysStoppedListenable<double>(0),
     this.data,
   });
@@ -268,8 +269,13 @@ class AdaptiveBarBackgroundSpec {
   /// Whether the page pins something below the bar that the background
   /// reaches behind, such as a search field or tabs
   /// ([AdaptiveSafeAreaBar]): a bar that holds more than its controls reads
-  /// as solid.
+  /// as one surface with it.
   final bool pinned;
+
+  /// Whether it ends in a hairline along its bottom edge: off for a page
+  /// whose bar runs on into something docked below it
+  /// ([AdaptiveAppBar.showsHairline]).
+  final bool hairline;
 
   /// [AdaptiveAppBar.chromeData].
   final Object? data;
@@ -374,6 +380,7 @@ class AdaptiveChrome {
     this.centerTitle,
     this.centerTitleBand = false,
     this.tabsInTopStrip = false,
+    this.keepsTabsInVerticalBar = false,
     this.glass = const AdaptiveGlassStyle(),
     this.metrics = const AdaptiveChromeMetrics(),
   });
@@ -430,6 +437,12 @@ class AdaptiveChrome {
   /// bottom there, at full size, as the system's tab bar does, and the
   /// toolbar sits in the strip.
   final bool tabsInTopStrip;
+
+  /// Whether the tabs in the iPhone Duo's vertical bar stay while a page is
+  /// pushed inside the tab layout, as they do in a sidebar, rather than
+  /// leaving as [AdaptiveBottomNavigationBar.hidesWhenPushed] has them leave
+  /// a bar along the bottom. The page's controls keep above them.
+  final bool keepsTabsInVerticalBar;
 
   /// The glass of every [AdaptiveGlass] below the host that brings none of
   /// its own: the app's builders and its sheets.

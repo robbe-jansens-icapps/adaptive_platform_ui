@@ -333,6 +333,10 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
 
   static const double _gap = AdaptivePopover.gap;
 
+  /// Less room than this below and above its control, and a popover goes
+  /// beside the control instead.
+  static const double _minRoom = 240;
+
   /// Where the popover may go in a window of [size].
   Rect _region(Size size) {
     var region = Rect.fromLTRB(
@@ -419,10 +423,21 @@ class _PopoverLayout extends SingleChildLayoutDelegate {
               math.max(keyboard, padding.bottom) -
               _gap -
               region.top;
+    var height = math.min(maxSize.height, aboveKeyboard);
+    // Next to its control it takes no more than the room below or above
+    // the control, so it comes out of the control rather than over it,
+    // unless that room is too small to be of use.
+    if (placement == AdaptivePopoverPlacement.beside &&
+        !_inBand(constraints.biggest)) {
+      final below = region.bottom - anchor.bottom - _gap;
+      final above = anchor.top - _gap - region.top;
+      final room = math.max(below, above);
+      if (room >= _minRoom) height = math.min(height, room);
+    }
     return BoxConstraints.loose(
       Size(
         math.max(0, math.min(maxSize.width, region.width)),
-        math.max(0, math.min(maxSize.height, aboveKeyboard)),
+        math.max(0, height),
       ),
     );
   }
@@ -566,7 +581,11 @@ class _RenderPopoverMorph extends RenderBox
   /// The surface springs out of its control, passing its place a little and
   /// settling, as the system's popovers do; it springs back into the control
   /// without.
-  static const AdaptiveSpringCurve _grow = AdaptiveSpringCurve.bouncy;
+  static const AdaptiveSpringCurve _grow = AdaptiveSpringCurve(
+    response: 0.4,
+    dampingRatio: 0.86,
+    duration: Duration(milliseconds: 580),
+  );
   static const AdaptiveSpringCurve _shrinkSpring = AdaptiveSpringCurve(
     response: 0.3,
     dampingRatio: 1,
@@ -616,6 +635,7 @@ class _RenderPopoverMorph extends RenderBox
   double _progress = 0;
 
   final LayerHandle<ClipRRectLayer> _clip = LayerHandle<ClipRRectLayer>();
+  final LayerHandle<ClipPathLayer> _hole = LayerHandle<ClipPathLayer>();
   final LayerHandle<TransformLayer> _transform = LayerHandle<TransformLayer>();
   final LayerHandle<OpacityLayer> _opacity = LayerHandle<OpacityLayer>();
 
@@ -645,6 +665,7 @@ class _RenderPopoverMorph extends RenderBox
   @override
   void dispose() {
     _clip.layer = null;
+    _hole.layer = null;
     _transform.layer = null;
     _opacity.layer = null;
     super.dispose();
@@ -687,6 +708,7 @@ class _RenderPopoverMorph extends RenderBox
     final t = _t;
     if (t == 0) {
       _clip.layer = null;
+      _hole.layer = null;
       _transform.layer = null;
       _opacity.layer = null;
       return;
@@ -696,6 +718,7 @@ class _RenderPopoverMorph extends RenderBox
     if (_reduceMotion) {
       context.paintChild(surface, offset + surfaceData.offset);
       _clip.layer = null;
+      _hole.layer = null;
       _transform.layer = null;
       _opacity.layer = context.pushOpacity(
         offset,
@@ -706,12 +729,57 @@ class _RenderPopoverMorph extends RenderBox
       );
       return;
     }
+    // On its way in and out the surface comes from behind its control: the
+    // control's room stays clear, so the control stays on top.
+    final behind =
+        t < 1 &&
+        _layout.placement != AdaptivePopoverPlacement.over &&
+        _surface.overlaps(_anchor);
+    if (!behind) {
+      _hole.layer = null;
+      _paintMorph(context, offset, surface, content, surfaceData, contentData);
+      return;
+    }
+    final anchor = RRect.fromRectAndRadius(
+      _anchor.inflate(2),
+      Radius.circular(_anchor.shortestSide / 2 + 2),
+    );
+    final hole = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRRect(anchor);
+    _hole.layer = context.pushClipPath(
+      needsCompositing,
+      offset,
+      Offset.zero & size,
+      hole,
+      (context, offset) => _paintMorph(
+        context,
+        offset,
+        surface,
+        content,
+        surfaceData,
+        contentData,
+      ),
+      oldLayer: _hole.layer,
+    );
+  }
+
+  void _paintMorph(
+    PaintingContext context,
+    Offset offset,
+    RenderBox surface,
+    RenderBox content,
+    _MorphParentData surfaceData,
+    _MorphParentData contentData,
+  ) {
     context.paintChild(surface, offset + surfaceData.offset);
-    // The content comes in with the surface rather than after it, and is
-    // gone before the surface is back in its control.
+    // The content comes in once the surface has grown some way, and is gone
+    // before the surface is back in its control.
+    final progress = _progress;
     final reveal = _closing
-        ? Curves.easeIn.transform(((t - 0.5) / 0.5).clamp(0.0, 1.0))
-        : Curves.easeOut.transform(((t - 0.05) / 0.3).clamp(0.0, 1.0));
+        ? Curves.easeIn.transform(((progress - 0.4) / 0.45).clamp(0.0, 1.0))
+        : Curves.easeOut.transform(((progress - 0.25) / 0.45).clamp(0.0, 1.0));
     if (reveal == 0) {
       _clip.layer = null;
       _transform.layer = null;
@@ -719,10 +787,29 @@ class _RenderPopoverMorph extends RenderBox
       return;
     }
     final radius = math.min(_radius, _surface.shortestSide / 2);
-    final scale = 0.9 + 0.1 * _progress;
+    // The content grows with the surface, from the point nearest the
+    // control, rather than being cut off by it.
     final origin = _origin;
+    final fx = _target.width <= 0
+        ? 0.5
+        : (origin.dx - _target.left) / _target.width;
+    final fy = _target.height <= 0
+        ? 0.5
+        : (origin.dy - _target.top) / _target.height;
+    final at = Offset(
+      _surface.left + _surface.width * fx,
+      _surface.top + _surface.height * fy,
+    );
+    final scale = _target.isEmpty
+        ? 1.0
+        : math
+              .max(
+                _surface.width / _target.width,
+                _surface.height / _target.height,
+              )
+              .clamp(0.6, 1.06);
     final matrix = Matrix4.identity()
-      ..translateByDouble(origin.dx, origin.dy, 0, 1)
+      ..translateByDouble(at.dx, at.dy, 0, 1)
       ..scaleByDouble(scale, scale, 1, 1)
       ..translateByDouble(-origin.dx, -origin.dy, 0, 1);
     _clip.layer = context.pushClipRRect(

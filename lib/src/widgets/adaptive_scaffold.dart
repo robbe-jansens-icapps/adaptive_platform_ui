@@ -1461,12 +1461,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
               (_TabLayout.showsTabs(context) || _nativeTabBar != null)
           ? chrome.metrics.toolbarHeight
           : strip.overhang;
+    } else if (ownBar && AdaptivePopover.isIn(context)) {
+      // In a popover the bar is as tall as its controls, which sit in its
+      // rounded corners as far from the top as from the side.
+      topInset = chrome.metrics.backButtonSize + AdaptivePopover.barInset;
     } else {
-      topInset =
-          chrome.metrics.toolbarHeight +
-          (ownBar && AdaptivePopover.isIn(context)
-              ? AdaptivePopover.barInset
-              : 0);
+      topInset = chrome.metrics.toolbarHeight;
     }
 
     final tabs = _nativeTabBar;
@@ -1562,6 +1562,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
             placement: placement,
             top: edgeAlongTop ? top : null,
             titleBand: inBarPose,
+            hairline: appBar?.showsHairline ?? true,
             visibility: titleBand
                 ? _titleBandShown
                 : const AlwaysStoppedListenable<double>(1),
@@ -2194,9 +2195,10 @@ class _CustomInlineBar extends StatelessWidget {
             ? AdaptivePopover.barInset
             : 0);
     final metrics = chrome.metrics;
+    final inPopover = !titleBand && AdaptivePopover.isIn(context);
     final height = titleBand
         ? kDuoTitleBandHeight
-        : top + metrics.toolbarHeight;
+        : top + (inPopover ? metrics.backButtonSize : metrics.toolbarHeight);
     final centered = titleBand
         ? chrome.centerTitleBand
         : chrome.centersTitle(defaultTargetPlatform);

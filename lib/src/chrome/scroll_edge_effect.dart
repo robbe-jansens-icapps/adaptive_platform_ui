@@ -33,6 +33,7 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
     required this.top,
     required this.child,
     this.titleBand = false,
+    this.hairline = true,
     this.visibility = const AlwaysStoppedListenable<double>(1),
     this.color,
     this.data,
@@ -47,6 +48,10 @@ class AdaptiveScrollEdgeRegion extends StatefulWidget {
 
   /// The bars along the top are the iPhone Duo's title band.
   final bool titleBand;
+
+  /// Whether the bar's background ends in a hairline
+  /// ([AdaptiveAppBar.showsHairline]).
+  final bool hairline;
 
   /// How far the bars along the top are shown, from 0 to 1: the iPhone Duo's
   /// title band moves out of the way while content scrolls on, and comes
@@ -77,6 +82,7 @@ class _AdaptiveScrollEdgeRegionState extends State<AdaptiveScrollEdgeRegion> {
         region: widget,
         top: widget.top,
         pinned: false,
+        color: widget.color,
         page: _page,
         child: ScrollConfiguration(
           behavior: _ScrollEdgeBehavior.around(ScrollConfiguration.of(context)),
@@ -91,7 +97,8 @@ class _AdaptiveScrollEdgeRegionState extends State<AdaptiveScrollEdgeRegion> {
 /// or tabs, like SwiftUI's `safeAreaBar`: the page's [child] runs under both,
 /// its padding along the top grows by the height of [bar], and the bar's
 /// background ([AdaptiveScrollEdgeRegion]) reaches below [bar] too, behind
-/// it, solid rather than see-through ([AdaptiveBarBackgroundSpec.pinned]).
+/// it, frosted with the bar as one surface
+/// ([AdaptiveBarBackgroundSpec.pinned]).
 ///
 /// On the iPhone Duo, where the title band moves out of the way while
 /// content scrolls on, [bar] goes with it.
@@ -100,6 +107,7 @@ class AdaptiveSafeAreaBar extends StatefulWidget {
     super.key,
     required this.bar,
     required this.child,
+    this.color,
   });
 
   /// Pinned below the bar. Its height is measured; a [PreferredSizeWidget]
@@ -107,6 +115,10 @@ class AdaptiveSafeAreaBar extends StatefulWidget {
   final Widget bar;
 
   final Widget child;
+
+  /// The colour of the bar's background behind [bar] and the content
+  /// below it, where it differs from the page's.
+  final Color? color;
 
   @override
   State<AdaptiveSafeAreaBar> createState() => _AdaptiveSafeAreaBarState();
@@ -152,8 +164,13 @@ class _AdaptiveSafeAreaBarState extends State<AdaptiveSafeAreaBar> {
             if (scope == null) return content;
             return _RegionScope(
               region: scope.region,
-              top: (scope.top ?? top) + height,
+              // Nothing pinned on a page without a bar background keeps
+              // that: no background along the top.
+              top: scope.top == null && height <= 0
+                  ? null
+                  : (scope.top ?? top) + height,
               pinned: scope.pinned || height > 0,
+              color: widget.color ?? scope.color,
               page: scope.page,
               child: content,
             );
@@ -202,6 +219,7 @@ class _RegionScope extends InheritedWidget {
     required this.region,
     required this.top,
     required this.pinned,
+    required this.color,
     required this.page,
     required super.child,
   });
@@ -214,6 +232,9 @@ class _RegionScope extends InheritedWidget {
 
   /// Whether something sits pinned below the bar ([AdaptiveSafeAreaBar]).
   final bool pinned;
+
+  /// The colour of the bar's background here.
+  final Color? color;
   final _PageBox page;
 
   @override
@@ -222,7 +243,9 @@ class _RegionScope extends InheritedWidget {
       region.placement != oldWidget.region.placement ||
       top != oldWidget.top ||
       pinned != oldWidget.pinned ||
+      color != oldWidget.color ||
       region.titleBand != oldWidget.region.titleBand ||
+      region.hairline != oldWidget.region.hairline ||
       region.visibility != oldWidget.region.visibility ||
       region.color != oldWidget.region.color ||
       region.data != oldWidget.region.data;
@@ -417,9 +440,10 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
               AdaptiveBarBackgroundSpec(
                 placement: region.placement,
                 height: top,
-                color: region.color,
+                color: scope!.color,
                 titleBand: region.titleBand,
-                pinned: scope!.pinned,
+                pinned: scope.pinned,
+                hairline: region.hairline || scope.pinned,
                 scrollEdge: _edge,
                 data: region.data,
               ),
@@ -434,7 +458,10 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
   ) {
     final background =
         region.chrome.barBackgroundBuilder?.call(context, spec) ??
-        AdaptiveBarBackdrop(color: spec.color, tint: spec.pinned ? 1 : null);
+        AdaptiveBarBackdrop(
+          color: spec.color,
+          hairline: spec.hairline ? AdaptiveBarBackdrop.defaultHairline : null,
+        );
     final shown = Listenable.merge([_edge, region.visibility]);
     return IgnorePointer(
       child: ListenableBuilder(
@@ -697,7 +724,13 @@ class _RenderScrollEdgeEffect extends RenderBox
       if (renderObject == null || !renderObject.attached) continue;
       if (!identical(renderObject._page, _page)) return false;
       final rect = renderObject._onPage();
-      if (rect != null && renderObject._underTop(rect)) return true;
+      // One whose band reaches less far down leaves this one its own: a
+      // list below something pinned in a scroll view with a header.
+      if (rect != null &&
+          renderObject._underTop(rect) &&
+          (renderObject._top ?? 0) >= (_top ?? 0) - 0.5) {
+        return true;
+      }
     }
     return false;
   }

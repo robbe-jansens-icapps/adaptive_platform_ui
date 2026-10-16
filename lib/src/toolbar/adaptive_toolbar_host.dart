@@ -255,8 +255,12 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
       chrome: chrome,
     );
     final sidebar = placement == AdaptiveChromePlacement.sidebar;
-    // Tabs in a sidebar stay while pages are pushed inside the tab layout.
-    _registry.keepsTabsOnPush = sidebar;
+    // Tabs in a sidebar stay while pages are pushed inside the tab layout,
+    // and in the iPhone Duo's vertical bar where the app asks for it.
+    _registry.keepsTabsOnPush =
+        sidebar ||
+        (placement == AdaptiveChromePlacement.vertical &&
+            (chrome?.keepsTabsInVerticalBar ?? false));
     if (sidebar != _hasSidebar) {
       _hasSidebar = sidebar;
       _updateSidebarInset();

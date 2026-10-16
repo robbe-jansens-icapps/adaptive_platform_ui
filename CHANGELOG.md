@@ -7,6 +7,12 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **IMPROVEMENT**: Content pinned below a bar (`AdaptiveSafeAreaBar`) is frosted with the bar as one surface rather than solid, with the hairline below it; `AdaptiveSafeAreaBar.color` sets the colour of that surface. A list below something pinned inside a scroll view with a header (a `NestedScrollView`) draws that surface itself, where the outer scroll view only reaches as far as the bar
+* **NEW**: `AdaptiveAppBar.showsHairline`: off for a page whose bar runs on into something docked below it, so the two read as one surface
+* **NEW**: `AdaptiveChrome.keepsTabsInVerticalBar`: the tabs in the iPhone Duo's vertical bar stay while a page is pushed inside the tab layout, as in a sidebar, the page's back button and actions above them
+* **IMPROVEMENT**: `AdaptivePopover` comes out from behind its control: the control stays on top while the surface grows out of it and shrinks back into it, on a softer spring, its content growing with the surface instead of being cut off by it. Next to its control it keeps to the room below or above it rather than opening over it
+* **IMPROVEMENT**: A page's bar in a popover is as tall as its controls, which sit in the popover's rounded corners
+* **FIX**: iPhone Duo: a page without a bar background (its title hidden over its header) no longer draws an empty, frosted title band as its content scrolls under it
 * **NEW**: `AdaptiveChrome.centerTitleBand` centres the title in the iPhone Duo's title band over the page, as an app's own bars centre theirs, rather than at the leading edge
 * **IMPROVEMENT**: iPhone Duo: the title band moves out of the way as soon as a page scrolls on, before its background has come in, so it no longer flashes up and goes; a scroll view only moves it while its content runs under the band
 * **NEW**: `AdaptiveAppBar.hidesOnScroll`: a page that docks part of its own header under the bar keeps the iPhone Duo's title band where it is, as moving it would leave a gap above what is docked
