@@ -644,6 +644,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       _usesFixedToolbar(context) &&
       (ToolbarChromeScope.maybeOf(context)?.hostsBottomTabBar ?? false);
 
+  /// Whether the page's native tabs have an accessory and are in the iPhone
+  /// Duo's vertical bar for now. Such tabs count as the host's at the bottom
+  /// too, so they are back there in the very frame the pose ends, before
+  /// the page has been told: the accessory moves there from the bar keeping
+  /// its state, where it would otherwise be gone for a frame and made anew.
+  bool get _accessoryInDuoBar =>
+      _tabsInDuoBar &&
+      PlatformInfo.isIOS26OrHigher() &&
+      (widget.bottomNavigationBar?.useNativeBottomBar ?? false) &&
+      widget.bottomNavigationBar?.accessory != null &&
+      _nativeTabBar != null;
+
   /// The custom chrome of the toolbar host above, if it has any: read once
   /// per dependency change, as the registry is.
   AdaptiveChrome? _customChrome;
@@ -699,7 +711,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         // Custom chrome draws the tabs of every tab layout, wherever they go.
         tabBarHosted: _customChrome != null
             ? _nativeTabBar != null && _usesFixedToolbar(context)
-            : _tabsHostedAtBottom(context),
+            : _tabsHostedAtBottom(context) || _accessoryInDuoBar,
         tabBarMinimized: _tabBarMinimized,
         scrollEdge: _scrollEdge,
         titleBandShown: _titleBandShown,

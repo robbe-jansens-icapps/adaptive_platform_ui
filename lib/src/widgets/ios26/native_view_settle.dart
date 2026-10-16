@@ -17,6 +17,9 @@ import '../../toolbar/toolbar_blend.dart';
 ///
 /// Call [followRoute] from `didChangeDependencies`, and react to changes in
 /// [didChangeSettled].
+///
+/// Outside a page's route, such as in the chrome above the navigator, a
+/// [NativeViewSettleScope] says when the view holds still instead.
 mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   /// The animations of the page the view is on: its own (coming and going)
   /// and the one of the page over it (being covered and uncovered).
@@ -28,6 +31,10 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   /// `AdaptiveToolbarHost`): a page that comes in or leaves as a full-screen
   /// dialog does not move the one below it, so its animations say nothing.
   ValueListenable<bool>? _routeTransition;
+
+  /// What fades the view as a whole, from a [NativeViewSettleScope] around
+  /// it: it holds still only while that is fully in.
+  ValueListenable<bool>? _scope;
 
   bool _settled = true;
   bool _firstSettle = true;
@@ -47,6 +54,7 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   void followRoute() {
     final route = ModalRoute.of(context);
     _route = route;
+    _scope = NativeViewSettleScope.maybeOf(context);
     final transition = route == null
         ? null
         : RouteTransitionScope.maybeOf(context);
@@ -104,11 +112,110 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
         // A page that has just been pushed spends its first frame off stage,
         // its animation still reporting the end it starts from.
         (route == null || !route.offstage) &&
-        !(_routeTransition?.value ?? false);
+        !(_routeTransition?.value ?? false) &&
+        // Faded as a whole, as the tab accessory over the native tab bar is.
+        (_scope?.value ?? true);
     if (settled == _settled && !_firstSettle) return;
     _firstSettle = false;
     _settled = settled;
     didChangeSettled(settled);
     if (rebuild && mounted) setState(() {});
   }
+}
+
+/// Holds the native views below it ([NativeViewSettle]: glass surfaces,
+/// native buttons) off screen while [fade] is not fully in or still moves,
+/// and while a scope around it does, their Flutter stand-ins taking their
+/// place: a fade turns into an alpha on a native view, which breaks its
+/// glass. For native views that something fades as a whole outside a page's
+/// route, such as the tab accessory the toolbar host lays above the native
+/// tab bar.
+class NativeViewSettleScope extends StatefulWidget {
+  const NativeViewSettleScope({
+    super.key,
+    required this.fade,
+    required this.child,
+  });
+
+  /// The opacity of what holds the native views.
+  final Animation<double> fade;
+
+  final Widget child;
+
+  /// Whether the native views at [context] may be on screen, by the scopes
+  /// around it; null where there is none. [context] is built again when it
+  /// changes.
+  static ValueListenable<bool>? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SettleScope>()?.notifier;
+
+  @override
+  State<NativeViewSettleScope> createState() => _NativeViewSettleScopeState();
+}
+
+class _NativeViewSettleScopeState extends State<NativeViewSettleScope> {
+  final ValueNotifier<bool> _settled = ValueNotifier<bool>(true);
+
+  /// The scope around this one.
+  ValueListenable<bool>? _outer;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen(widget.fade);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _outer = NativeViewSettleScope.maybeOf(context);
+    _update();
+  }
+
+  @override
+  void didUpdateWidget(NativeViewSettleScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.fade, widget.fade)) {
+      _unlisten(oldWidget.fade);
+      _listen(widget.fade);
+      _update();
+    }
+  }
+
+  @override
+  void dispose() {
+    _unlisten(widget.fade);
+    _settled.dispose();
+    super.dispose();
+  }
+
+  void _listen(Animation<double> fade) {
+    fade
+      ..addListener(_update)
+      ..addStatusListener(_onStatus);
+  }
+
+  void _unlisten(Animation<double> fade) {
+    fade
+      ..removeListener(_update)
+      ..removeStatusListener(_onStatus);
+  }
+
+  void _onStatus(AnimationStatus _) => _update();
+
+  void _update() {
+    final fade = widget.fade;
+    _settled.value =
+        (_outer?.value ?? true) && fade.value >= 1 && !fade.isAnimating;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      _SettleScope(settled: _settled, child: widget.child);
+}
+
+class _SettleScope extends InheritedNotifier<ValueListenable<bool>> {
+  const _SettleScope({
+    required ValueListenable<bool> settled,
+    required super.child,
+  }) : super(notifier: settled);
 }

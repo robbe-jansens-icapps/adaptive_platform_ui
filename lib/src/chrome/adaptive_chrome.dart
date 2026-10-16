@@ -108,7 +108,10 @@ class AdaptiveSidebarSpec {
   final Object? data;
 }
 
-/// Where a tab accessory goes, for the frame the app draws around it.
+/// Where a tab accessory goes, for the frame the app draws around it, and
+/// for the accessory itself (`AdaptiveAccessoryScope`), with the native
+/// chrome too: a full capsule along the bottom, a round control in the
+/// iPhone Duo's vertical bar.
 @immutable
 class AdaptiveAccessorySpec {
   const AdaptiveAccessorySpec({
@@ -129,6 +132,15 @@ class AdaptiveAccessorySpec {
   /// than moving the page's controls into the overflow menu. Unbounded
   /// elsewhere.
   final double room;
+
+  @override
+  bool operator ==(Object other) => other is AdaptiveAccessorySpec && other.placement == placement && other.compact == compact && other.room == room;
+
+  @override
+  int get hashCode => Object.hash(placement, compact, room);
+
+  @override
+  String toString() => 'AdaptiveAccessorySpec(${placement.name}, compact: $compact, room: $room)';
 }
 
 /// What a popover sits on, for the surface the app draws

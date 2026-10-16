@@ -1,14 +1,17 @@
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../utils/size_reporter.dart';
+import '../widgets/adaptive_accessory_scope.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_keyboard_fade.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
+import '../widgets/ios26/native_view_settle.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_tab_bar.dart';
 import 'toolbar_blend.dart';
@@ -19,6 +22,11 @@ import 'toolbar_registry.dart';
 /// button that both pages show stays put instead of fading out and in.
 ///
 /// With [chrome] its controls and tabs are the app's own.
+///
+/// The tab layout's accessory ([AdaptiveBottomNavigationBar.accessory]) sits
+/// above the tabs, in what the page's controls leave of the bar: on a glass
+/// capsule as wide as the bar's controls with the native chrome, in the
+/// app's frame with [chrome].
 class HostedDuoBar extends StatelessWidget {
   const HostedDuoBar({
     super.key,
@@ -72,6 +80,15 @@ class HostedDuoBar extends StatelessWidget {
               : tabOpacity(upperTabs, upperOpacity),
         ),
     ];
+    // An accessory that has gone takes the room it measured with it: what
+    // measures the next one starts anew.
+    final accessoryHeight = blend.registry.barAccessoryHeight;
+    if (accessoryHeight.value != 0 &&
+        tabLayers.every((layer) => layer.$1.tabBar?.accessory == null)) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => accessoryHeight.value = 0,
+      );
+    }
 
     // The back button is drawn in a layer of its own: one control that stays
     // still when both pages show it the same way. Otherwise each page's own
@@ -177,6 +194,7 @@ class HostedDuoBar extends StatelessWidget {
                           upperOwns ? upper : lower,
                           tabCount: tabs.tabBar?.items?.length ?? 0,
                         ),
+                        opacity: opacity,
                       ),
                       regions: regions,
                       chrome: chrome,
@@ -190,33 +208,51 @@ class HostedDuoBar extends StatelessWidget {
     );
   }
 
-  /// The accessory of the tab layout [tabs] (a mini player), in the app's
-  /// frame for the vertical bar, above the tabs. Its height is what the
-  /// page's controls keep clear of, as long as it [reports] it.
+  /// The accessory of the tab layout [tabs] (a mini player) for the
+  /// vertical bar, above the tabs: in the app's frame, or with the native
+  /// chrome on a glass capsule as wide as the bar's controls. Its height is
+  /// what the page's controls keep clear of, as long as it [reports] it.
+  ///
+  /// With the native chrome its native views leave the screen while the
+  /// tabs fade ([opacity]) or the bar dims, and it fades for the keyboard,
+  /// as along the bottom.
   Widget? _accessory(
     BuildContext context,
     ToolbarEntry tabs, {
     required bool reports,
     required double room,
+    required Animation<double> opacity,
   }) {
     final accessory = tabs.tabBar?.accessory;
-    final frame = chrome?.accessoryBuilder;
-    if (accessory == null || chrome == null) return null;
+    if (accessory == null) return null;
     final registry = blend.registry;
-    final framed = KeyedSubtree(
-      key: registry.accessoryKey(tabs.id),
-      child: frame == null
-          ? accessory
-          : frame(
-              context,
-              AdaptiveAccessorySpec(
-                placement: AdaptiveChromePlacement.vertical,
-                compact: true,
-                room: room,
-              ),
-              accessory,
-            ),
+    final spec = AdaptiveAccessorySpec(
+      placement: AdaptiveChromePlacement.vertical,
+      compact: true,
+      room: room,
     );
+    final chrome = this.chrome;
+    final frame = chrome?.accessoryBuilder;
+    final Widget framed = chrome == null
+        ? NativeViewSettleScope(
+            fade: AnimationMin<double>(opacity, blend.chromeOpacity),
+            child: AdaptiveKeyboardFade(
+              holdsNativeViews: true,
+              child: SizedBox(
+                width: IOS26GlassCapsule.width,
+                child: nativeAccessory(registry, tabs, accessory, spec),
+              ),
+            ),
+          )
+        : KeyedSubtree(
+            key: registry.accessoryKey(tabs.id),
+            child: AdaptiveAccessoryScope(
+              spec: spec,
+              child: frame == null
+                  ? accessory
+                  : frame(context, spec, accessory),
+            ),
+          );
     if (!reports) return framed;
     return SizeReporter(
       onSizeChanged: (size) => registry.barAccessoryHeight.value = size.height,
@@ -289,9 +325,7 @@ class HostedDuoBar extends StatelessWidget {
                       : null),
               actions: content.actions,
               reservedTabs: reservedTabs,
-              reservedAccessory: reservedTabs > 0 && chrome != null
-                  ? accessory
-                  : 0,
+              reservedAccessory: reservedTabs > 0 ? accessory : 0,
               tint: content.tint,
               regions: regions,
               navigator: content.navigator,

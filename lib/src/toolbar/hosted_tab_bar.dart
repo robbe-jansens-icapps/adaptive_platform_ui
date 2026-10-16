@@ -2,13 +2,17 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../utils/size_reporter.dart';
+import '../widgets/adaptive_accessory_scope.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_keyboard_fade.dart';
+import '../widgets/ios26/ios26_glass_surface.dart';
+import '../widgets/ios26/native_view_settle.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
@@ -38,6 +42,11 @@ import 'toolbar_registry.dart';
 ///
 /// With [chrome] it is the app's own tab bar, drawn by Flutter, that sits
 /// there and comes and goes the same way.
+///
+/// The tab layout's accessory ([AdaptiveBottomNavigationBar.accessory]) goes
+/// with the tabs: above the native bar on a glass capsule of its own, as
+/// iOS 26 shows a tab bar's bottom accessory, or in the app's frame with
+/// [chrome].
 class HostedTabBar extends StatefulWidget {
   const HostedTabBar({
     super.key,
@@ -266,16 +275,17 @@ class _HostedTabBarState extends State<HostedTabBar>
             _capsules[underDialog.id] != null
         ? blend.coveringRoute! as ModalRoute<Object?>
         : null;
+    // A sidebar stays in sight under a dialog or popover, dimmed as the
+    // toolbar is; a bar along the bottom would show above it.
+    final uncovered = widget.sidebar != null
+        ? blend.chromeOpacity
+        : dialog != null
+        ? kAlwaysCompleteAnimation
+        : _uncovered;
     return IgnorePointer(
       ignoring: blend.ownerIsCovered,
       child: FadeTransition(
-        // A sidebar stays in sight under a dialog or popover, dimmed as the
-        // toolbar is; a bar along the bottom would show above it.
-        opacity: widget.sidebar != null
-            ? blend.chromeOpacity
-            : dialog != null
-            ? kAlwaysCompleteAnimation
-            : _uncovered,
+        opacity: uncovered,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -299,6 +309,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                     : null,
                 interactive: entry.id == ownerTabs?.id,
                 dialog: entry.id == underDialog?.id ? dialog : null,
+                uncovered: uncovered,
               ),
           ],
         ),
@@ -308,11 +319,15 @@ class _HostedTabBarState extends State<HostedTabBar>
 
   /// The bar of one tab layout; off stage while no [opacity] shows it. The
   /// widgets around the native bar are the same in every state, so it is
-  /// never made again.
+  /// never made again, also as an accessory comes and goes above it.
+  ///
+  /// [uncovered] is the opacity of all the bars, as a sheet or a popover
+  /// covers them.
   Widget _layer(
     ToolbarEntry entry, {
     required Animation<double>? opacity,
     required bool interactive,
+    required Animation<double> uncovered,
     ModalRoute<Object?>? dialog,
   }) {
     final bar = entry.tabBar!;
@@ -344,37 +359,88 @@ class _HostedTabBarState extends State<HostedTabBar>
               excluding: !interactive,
               // Laid out off stage too, so the height holds while a page
               // covers the tabs, and the tabs are not laid out again for it.
+              // The accessory is part of it, so the pages keep clear of both.
               child: SizeReporter(
                 onSizeChanged: (size) => widget.height.value = size.height,
-                child: _Minimizable(
-                  minimized: entry.tabBarMinimized,
-                  // The same children whether a dialog covers the tabs or
-                  // not, so the native bar stays put.
-                  child: Stack(
-                    children: [
-                      IOS26NativeTabBar(
-                        destinations: bar.items!,
-                        selectedIndex: bar.selectedIndex!,
-                        onTap: bar.onTap!,
-                        tint:
-                            bar.selectedItemColor ??
-                            CupertinoTheme.of(context).primaryColor,
-                        unselectedItemTint: bar.unselectedItemColor,
-                        onCapsuleChanged: (capsule) =>
-                            _onCapsuleChanged(entry.id, capsule),
-                      ),
-                      Positioned.fill(
-                        child: _BarrierOverTabs(
-                          route: dialog,
-                          capsule: _capsules[entry.id],
+                child: _AccessoryOverTabs(
+                  capsule: _capsules[entry.id],
+                  accessory: _nativeAccessory(
+                    entry,
+                    bar,
+                    // Its native views leave the screen while it fades.
+                    fade: AnimationMin<double>(
+                      opacity ?? kAlwaysDismissedAnimation,
+                      uncovered,
+                    ),
+                    dialog: dialog,
+                  ),
+                  tabs: _Minimizable(
+                    minimized: entry.tabBarMinimized,
+                    // The same children whether a dialog covers the tabs or
+                    // not, so the native bar stays put.
+                    child: Stack(
+                      children: [
+                        IOS26NativeTabBar(
+                          destinations: bar.items!,
+                          selectedIndex: bar.selectedIndex!,
+                          onTap: bar.onTap!,
+                          tint:
+                              bar.selectedItemColor ??
+                              CupertinoTheme.of(context).primaryColor,
+                          unselectedItemTint: bar.unselectedItemColor,
+                          onCapsuleChanged: (capsule) =>
+                              _onCapsuleChanged(entry.id, capsule),
                         ),
-                      ),
-                    ],
+                        Positioned.fill(
+                          child: _BarrierOverTabs(
+                            route: dialog,
+                            capsule: _capsules[entry.id],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// The tab layout's accessory above the native bar, or null when it has
+  /// none: on its glass capsule, out of the keyboard's way rather than under
+  /// it, and under a dialog's barrier with the tabs. While [fade] is not
+  /// fully in, its native views leave the screen and their stand-ins fade.
+  Widget? _nativeAccessory(
+    ToolbarEntry entry,
+    AdaptiveBottomNavigationBar bar, {
+    required Animation<double> fade,
+    required ModalRoute<Object?>? dialog,
+  }) {
+    final accessory = bar.accessory;
+    if (accessory == null) return null;
+    return NativeViewSettleScope(
+      fade: fade,
+      child: AdaptiveKeyboardFade(
+        holdsNativeViews: true,
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            nativeAccessory(
+              widget.blend.registry,
+              entry,
+              accessory,
+              const AdaptiveAccessorySpec(
+                placement: AdaptiveChromePlacement.bottom,
+                compact: false,
+              ),
+            ),
+            Positioned.fill(
+              child: _BarrierOverTabs(route: dialog, fills: true),
+            ),
+          ],
         ),
       ),
     );
@@ -508,15 +574,13 @@ class _HostedTabBarState extends State<HostedTabBar>
     final accessory = bar.accessory;
     if (accessory == null) return null;
     final frame = chrome.accessoryBuilder;
+    final spec = AdaptiveAccessorySpec(placement: placement, compact: compact);
     return KeyedSubtree(
       key: widget.blend.registry.accessoryKey(entry.id),
-      child: frame == null
-          ? accessory
-          : frame(
-              context,
-              AdaptiveAccessorySpec(placement: placement, compact: compact),
-              accessory,
-            ),
+      child: AdaptiveAccessoryScope(
+        spec: spec,
+        child: frame == null ? accessory : frame(context, spec, accessory),
+      ),
     );
   }
 
@@ -643,8 +707,234 @@ class _HostedTabBarState extends State<HostedTabBar>
 /// How far a floating tab accessory keeps from the edges of the content.
 const double kFloatingAccessoryMargin = 12;
 
-/// The widest a floating tab accessory gets.
+/// The widest a floating tab accessory gets, and one above the native tab
+/// bar.
 const double kFloatingAccessoryMaxWidth = 420;
+
+/// The room between a tab accessory and the capsule the native tab bar
+/// floats its tabs on, below it.
+const double kNativeAccessoryGap = 8;
+
+/// How far in from the sides of the window the native tab bar has the
+/// capsule it floats its tabs on, on an iPhone held upright: where the
+/// accessory goes until the bar has said where its capsule is.
+const double kNativeTabCapsuleInset = 21;
+
+/// A tab layout's [accessory] with the native chrome: in [spec]'s
+/// [AdaptiveAccessoryScope], on its glass capsule ([NativeAccessoryGlass]),
+/// in the key that keeps its state wherever the host shows it.
+Widget nativeAccessory(
+  ToolbarRegistry registry,
+  ToolbarEntry tabs,
+  Widget accessory,
+  AdaptiveAccessorySpec spec,
+) => KeyedSubtree(
+  key: registry.accessoryKey(tabs.id),
+  child: AdaptiveAccessoryScope(
+    spec: spec,
+    child: NativeAccessoryGlass(child: accessory),
+  ),
+);
+
+/// The Liquid Glass capsule the native chrome floats a tab accessory on, as
+/// iOS 26 floats the bottom accessory of its tab bar: the accessory's size,
+/// with the accessory on it. An accessory with nothing to show (no size)
+/// gets no glass.
+class NativeAccessoryGlass extends StatefulWidget {
+  const NativeAccessoryGlass({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<NativeAccessoryGlass> createState() => _NativeAccessoryGlassState();
+}
+
+class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
+  /// Whether the accessory had no size when last laid out.
+  bool _empty = false;
+
+  void _onSize(Size size) {
+    final empty = size.isEmpty;
+    if (mounted && empty != _empty) setState(() => _empty = empty);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        // In the same place either way, so the accessory keeps its own.
+        Positioned.fill(
+          child: _empty
+              ? const SizedBox.shrink()
+              : const IOS26GlassSurface(
+                  corners: GlassSurfaceCorners.capsule,
+                  interactive: true,
+                ),
+        ),
+        SizeReporter(onSizeChanged: _onSize, child: widget.child),
+      ],
+    );
+  }
+}
+
+enum _TabsSlot { accessory, tabs }
+
+/// The native tab bar ([tabs]) with the tab layout's [accessory] above it:
+/// as wide as the [capsule] the bar floats its tabs on (in the bar's
+/// coordinates), at most [kFloatingAccessoryMaxWidth] wide and centred over
+/// it, and [kNativeAccessoryGap] above it. It is as tall as the two
+/// together, for the pages to keep clear of both; an accessory with nothing
+/// to show takes no room. The bar keeps its place at the bottom, and its
+/// element, as the accessory comes and goes.
+class _AccessoryOverTabs
+    extends SlottedMultiChildRenderObjectWidget<_TabsSlot, RenderBox> {
+  const _AccessoryOverTabs({
+    required this.capsule,
+    required this.accessory,
+    required this.tabs,
+  });
+
+  final Rect? capsule;
+  final Widget? accessory;
+  final Widget tabs;
+
+  @override
+  Iterable<_TabsSlot> get slots => _TabsSlot.values;
+
+  @override
+  Widget? childForSlot(_TabsSlot slot) => switch (slot) {
+    _TabsSlot.accessory => accessory,
+    _TabsSlot.tabs => tabs,
+  };
+
+  @override
+  _RenderAccessoryOverTabs createRenderObject(BuildContext context) =>
+      _RenderAccessoryOverTabs(capsule);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAccessoryOverTabs renderObject,
+  ) {
+    renderObject.capsule = capsule;
+  }
+}
+
+class _RenderAccessoryOverTabs extends RenderBox
+    with SlottedContainerRenderObjectMixin<_TabsSlot, RenderBox> {
+  _RenderAccessoryOverTabs(this._capsule);
+
+  Rect? _capsule;
+  set capsule(Rect? value) {
+    if (value == _capsule) return;
+    _capsule = value;
+    markNeedsLayout();
+  }
+
+  RenderBox? get _accessory => childForSlot(_TabsSlot.accessory);
+  RenderBox? get _tabs => childForSlot(_TabsSlot.tabs);
+
+  // Painted and hit in this order: the accessory over the bar.
+  Iterable<RenderBox> get _painted => [?_tabs, ?_accessory];
+
+  /// Where the accessory goes across: over the capsule, at most
+  /// [kFloatingAccessoryMaxWidth] wide.
+  (double, double) _across(double width) {
+    final capsule = _capsule;
+    var left = capsule?.left ?? kNativeTabCapsuleInset;
+    var right = capsule?.right ?? width - kNativeTabCapsuleInset;
+    if (right - left > kFloatingAccessoryMaxWidth) {
+      final centre = (left + right) / 2;
+      left = centre - kFloatingAccessoryMaxWidth / 2;
+      right = centre + kFloatingAccessoryMaxWidth / 2;
+    }
+    left = left.clamp(0.0, width);
+    return (left, right.clamp(left, width));
+  }
+
+  /// Lays the children out with [layoutChild]; the size, and where each
+  /// child goes.
+  (Size, Offset, Offset) _layOut(
+    BoxConstraints constraints,
+    Size Function(RenderBox child, BoxConstraints constraints) layoutChild,
+  ) {
+    final tabs = _tabs;
+    final tabsSize = tabs == null ? Size.zero : layoutChild(tabs, constraints);
+    final width = constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : tabsSize.width;
+    final accessory = _accessory;
+    var above = 0.0;
+    var at = Offset.zero;
+    if (accessory != null) {
+      final (left, right) = _across(width);
+      final capsuleTop = _capsule?.top ?? 0;
+      final size = layoutChild(
+        accessory,
+        BoxConstraints.tightFor(width: right - left).copyWith(
+          maxHeight: math.max(
+            0.0,
+            constraints.maxHeight - tabsSize.height - kNativeAccessoryGap,
+          ),
+        ),
+      );
+      if (!size.isEmpty) {
+        above = math.max(0, size.height + kNativeAccessoryGap - capsuleTop);
+      }
+      at = Offset(left, above + capsuleTop - kNativeAccessoryGap - size.height);
+    }
+    return (
+      constraints.constrain(Size(width, tabsSize.height + above)),
+      Offset(0, above),
+      at,
+    );
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) =>
+      _layOut(constraints, (child, c) => child.getDryLayout(c)).$1;
+
+  @override
+  void performLayout() {
+    final (size, tabsAt, accessoryAt) = _layOut(constraints, (child, c) {
+      child.layout(c, parentUsesSize: true);
+      return child.size;
+    });
+    this.size = size;
+    if (_tabs case final tabs?) {
+      (tabs.parentData! as BoxParentData).offset = tabsAt;
+    }
+    if (_accessory case final accessory?) {
+      (accessory.parentData! as BoxParentData).offset = accessoryAt;
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    for (final child in _painted) {
+      context.paintChild(
+        child,
+        offset + (child.parentData! as BoxParentData).offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    for (final child in _painted.toList().reversed) {
+      final offset = (child.parentData! as BoxParentData).offset;
+      final hit = result.addWithPaintOffset(
+        offset: offset,
+        position: position,
+        hitTest: (result, transformed) =>
+            child.hitTest(result, position: transformed),
+      );
+      if (hit) return true;
+    }
+    return false;
+  }
+}
 
 /// The state of the sidebar the toolbar host keeps for custom chrome.
 @immutable
@@ -675,10 +965,17 @@ class HostedSidebar {
 /// through. It comes and goes with the dialog, in its colour, as the route
 /// draws its own barrier ([ModalRoute.buildModalBarrier]).
 class _BarrierOverTabs extends StatelessWidget {
-  const _BarrierOverTabs({required this.route, required this.capsule});
+  const _BarrierOverTabs({
+    required this.route,
+    this.capsule,
+    this.fills = false,
+  });
 
   final ModalRoute<Object?>? route;
   final Rect? capsule;
+
+  /// Whether the capsule is all of it: the glass of the tab accessory.
+  final bool fills;
 
   /// How much of what is behind it the native bar's glass shows, as measured
   /// on iOS 26: what is behind it is under the barrier already, so a barrier
@@ -698,7 +995,7 @@ class _BarrierOverTabs extends StatelessWidget {
     final color = route?.barrierColor;
     final animation = route?.animation;
     if (route == null ||
-        capsule == null ||
+        (capsule == null && !fills) ||
         color == null ||
         color.a == 0 ||
         animation == null) {
@@ -710,21 +1007,22 @@ class _BarrierOverTabs extends StatelessWidget {
         end: _overGlass(color),
       ).chain(CurveTween(curve: route.barrierCurve)),
     );
+    final dim = AnimatedBuilder(
+      animation: barrier,
+      builder: (context, _) => DecoratedBox(
+        decoration: ShapeDecoration(
+          color: barrier.value,
+          shape: const StadiumBorder(),
+        ),
+      ),
+    );
     return IgnorePointer(
       child: Stack(
         children: [
-          Positioned.fromRect(
-            rect: capsule,
-            child: AnimatedBuilder(
-              animation: barrier,
-              builder: (context, _) => DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: barrier.value,
-                  shape: const StadiumBorder(),
-                ),
-              ),
-            ),
-          ),
+          if (fills)
+            Positioned.fill(child: dim)
+          else
+            Positioned.fromRect(rect: capsule!, child: dim),
         ],
       ),
     );

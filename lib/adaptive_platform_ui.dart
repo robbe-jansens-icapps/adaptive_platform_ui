@@ -78,6 +78,7 @@ export 'src/toolbar/fold_scope.dart';
 export 'src/toolbar/hosted_top_toolbar.dart' show kHostedToolbarHeight;
 export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
+export 'src/widgets/adaptive_accessory_scope.dart';
 export 'src/widgets/adaptive_app_bar.dart';
 export 'src/widgets/adaptive_bottom_navigation_bar.dart';
 export 'src/widgets/adaptive_button.dart';

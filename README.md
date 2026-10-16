@@ -272,6 +272,27 @@ AdaptiveAppBarAction(
 )
 ```
 
+- **Tab accessory.** `AdaptiveBottomNavigationBar.accessory` (a mini
+  player, an active rental) floats on a Liquid Glass capsule above the tabs,
+  as wide as theirs, and sits in the iPhone Duo's vertical bar above the
+  tabs, on a capsule as wide as the bar's controls, in what the page's
+  controls leave of the bar. It is one widget all along, so it keeps its
+  state, goes with the tabs, and fades for the keyboard; the pages keep
+  clear of it. `AdaptiveAccessoryScope.of(context)` tells it where it is
+  shown, to take the form that fits there:
+
+```dart
+class RentalAccessory extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final spec = AdaptiveAccessoryScope.of(context);
+    return spec.compact
+        ? lockButton // a round control in the iPhone Duo's bar
+        : SizedBox(height: 48, child: rentalRow); // a capsule above the tabs
+  }
+}
+```
+
 - **Folds.** `FoldScope.foldOf(context)` gives the fold of a partly open
   foldable, the iPhone Duo's (which iOS does not put in the media query) or
   an Android hinge or half-opened fold. `AdaptiveTwoPane` lays two panes of

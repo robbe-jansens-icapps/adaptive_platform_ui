@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'ios26/native_view_settle.dart';
+
 /// Fades [child] out as the keyboard comes up and back in as it goes down,
 /// rather than having the keyboard slide over it: what sits along the bottom
 /// of the window, such as the tabs and a control floating over a page.
@@ -16,11 +18,19 @@ class AdaptiveKeyboardFade extends StatefulWidget {
   const AdaptiveKeyboardFade({
     super.key,
     this.enabled = true,
+    this.holdsNativeViews = false,
     required this.child,
   });
 
   /// Whether [child] fades for the keyboard at all.
   final bool enabled;
+
+  /// Whether the native views in [child] (Liquid Glass surfaces, native
+  /// buttons) leave the screen while it fades, Flutter stand-ins fading in
+  /// their place, and come back once it is fully in again: a fade turns into
+  /// an alpha on a native view, which breaks its glass. Keep it the same for
+  /// as long as this widget is there: [child] is built anew when it changes.
+  final bool holdsNativeViews;
 
   final Widget child;
 
@@ -144,7 +154,12 @@ class _AdaptiveKeyboardFadeState extends State<AdaptiveKeyboardFade>
   Widget build(BuildContext context) {
     return IgnorePointer(
       ignoring: _keyboard ?? false,
-      child: FadeTransition(opacity: _opacity, child: widget.child),
+      child: FadeTransition(
+        opacity: _opacity,
+        child: widget.holdsNativeViews
+            ? NativeViewSettleScope(fade: _opacity, child: widget.child)
+            : widget.child,
+      ),
     );
   }
 }

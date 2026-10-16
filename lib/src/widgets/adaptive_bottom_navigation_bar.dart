@@ -115,9 +115,19 @@ class AdaptiveBottomNavigationBar {
   /// mini player): above a tab bar at the bottom, floating at the bottom of
   /// the content where the tabs are on the side or at the top, and at the
   /// bottom of a sidebar. It keeps its state as it moves between them, and
-  /// comes and goes with the tabs. Only with custom chrome
-  /// ([AdaptiveToolbarHost.chrome]), which frames it
-  /// ([AdaptiveChrome.accessoryBuilder]).
+  /// comes and goes with the tabs, out of the keyboard's way. The pages keep
+  /// clear of it as of the tabs; one with nothing to show (no size) takes no
+  /// room.
+  ///
+  /// With the toolbar host's native iOS 26 tab bar it floats on a Liquid
+  /// Glass capsule of its own above the tabs, as wide as theirs, and in the
+  /// iPhone Duo's vertical bar on a capsule as wide as the bar's controls,
+  /// in what the page's controls leave of the bar. With custom chrome
+  /// ([AdaptiveToolbarHost.chrome]) the app frames it
+  /// ([AdaptiveChrome.accessoryBuilder]). Either way it can read where it
+  /// is shown from [AdaptiveAccessoryScope], to take the form that fits
+  /// there: a full capsule along the bottom, a round control in the
+  /// iPhone Duo's bar ([AdaptiveAccessorySpec.compact]).
   final Widget? accessory;
 
   /// Creates a copy of this bottom navigation bar with the given fields replaced
