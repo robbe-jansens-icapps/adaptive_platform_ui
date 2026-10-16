@@ -50,6 +50,7 @@ class AdaptiveSplitView extends StatefulWidget {
     this.showsDetailColumn = true,
     this.opensDeeperOver = false,
     this.onPushedOver,
+    this.followsCrease = false,
   });
 
   /// The page with the list, in the leading column. On a narrow window, the
@@ -97,6 +98,13 @@ class AdaptiveSplitView extends StatefulWidget {
   /// page is in front. Off by default: the column goes on as deep as its
   /// pages lead, as a split view controller's secondary column does.
   final bool opensDeeperOver;
+
+  /// Whether the columns also meet where the fold runs while the device lies
+  /// flat ([FoldScope.creaseOf]), as two pages of a book: the iPhone Duo's
+  /// inner display, an unfolded Android foldable. They always meet on the
+  /// fold of a partly open one. Off by default: the list then keeps its own
+  /// width.
+  final bool followsCrease;
 
   /// Opens the page [settings] names from the split view in front: one on
   /// screen (on the selected tab), on the page in front or under the pages
@@ -276,7 +284,8 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   /// Where a fold of a half-opened foldable runs down the window, from the
   /// left of the window: the columns then meet on it, as on the iPhone Duo
   /// and in the list-detail layout of Material 3. Null for a foldable that
-  /// lies flat and for a fold that runs across the window.
+  /// lies flat, unless the split view [AdaptiveSplitView.followsCrease], and
+  /// for a fold that runs across the window.
   double? _foldAcross(BuildContext context) {
     final folds = <Rect>[
       for (final feature in MediaQuery.displayFeaturesOf(context))
@@ -285,6 +294,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
                 feature.state == DisplayFeatureState.postureHalfOpened))
           feature.bounds,
       ?FoldScope.hingeOf(context),
+      if (widget.followsCrease) ?FoldScope.creaseOf(context),
     ];
     for (final fold in folds) {
       if (fold.height > fold.width) return fold.center.dx;

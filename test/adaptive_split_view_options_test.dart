@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,7 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 const narrow = Size(400, 800);
 const wide = Size(1000, 800);
 
-RouteSettings detail(String name) => RouteSettings(name: '/detail', arguments: name);
+RouteSettings detail(String name) =>
+    RouteSettings(name: '/detail', arguments: name);
 
 Route<dynamic>? onGenerateRoute(RouteSettings settings) {
   final name = settings.arguments! as String;
@@ -15,7 +18,10 @@ Route<dynamic>? onGenerateRoute(RouteSettings settings) {
       body: Column(
         children: [
           Text('Detail $name'),
-          TextButton(onPressed: () => open(context, detail('$name+')), child: Text('More $name')),
+          TextButton(
+            onPressed: () => open(context, detail('$name+')),
+            child: Text('More $name'),
+          ),
         ],
       ),
     ),
@@ -36,7 +42,11 @@ Widget master(String tab) => Scaffold(
       return ListView(
         children: [
           for (final name in ['A', 'B', 'C'])
-            ListTile(title: Text('$tab $name'), selected: opened == name, onTap: () => open(context, detail(name))),
+            ListTile(
+              title: Text('$tab $name'),
+              selected: opened == name,
+              onTap: () => open(context, detail(name)),
+            ),
         ],
       );
     },
@@ -47,7 +57,12 @@ Widget master(String tab) => Scaffold(
 /// out, the ones out of sight faded out with their tickers off, each with a
 /// navigator of its own.
 class FadingTabs extends StatelessWidget {
-  const FadingTabs({super.key, required this.selected, required this.navigators, required this.tabs});
+  const FadingTabs({
+    super.key,
+    required this.selected,
+    required this.navigators,
+    required this.tabs,
+  });
 
   final int selected;
   final List<GlobalKey<NavigatorState>> navigators;
@@ -66,7 +81,10 @@ class FadingTabs extends StatelessWidget {
                 enabled: i == selected,
                 child: Navigator(
                   key: navigators[i],
-                  onGenerateRoute: (settings) => MaterialPageRoute<void>(settings: settings, builder: (_) => tabs[i]),
+                  onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                    settings: settings,
+                    builder: (_) => tabs[i],
+                  ),
                 ),
               ),
             ),
@@ -78,6 +96,7 @@ class FadingTabs extends StatelessWidget {
 
 void main() {
   _columnSizes();
+  _crease();
 
   void setSize(WidgetTester tester, Size size) {
     tester.view.physicalSize = size;
@@ -101,8 +120,15 @@ void main() {
               selected: index,
               navigators: navigators,
               tabs: [
-                AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, master: master('Zero')),
-                AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master('One')),
+                AdaptiveSplitView(
+                  onGenerateDetailRoute: onGenerateRoute,
+                  master: master('Zero'),
+                ),
+                AdaptiveSplitView(
+                  onGenerateDetailRoute: onGenerateRoute,
+                  initialDetail: detail('A'),
+                  master: master('One'),
+                ),
               ],
             ),
           ),
@@ -111,25 +137,30 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('keeps the pages a fold moves over its list until it is selected again', (tester) async {
-      setSize(tester, wide);
-      await pumpTabs(tester);
-      await tester.tap(find.text('More A'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'keeps the pages a fold moves over its list until it is selected again',
+      (tester) async {
+        setSize(tester, wide);
+        await pumpTabs(tester);
+        await tester.tap(find.text('More A'));
+        await tester.pumpAndSettle();
 
-      tab.value = 0;
-      await tester.pumpAndSettle();
-      tester.view.physicalSize = narrow;
-      await tester.pumpAndSettle();
-      expect(navigators[1].currentState!.canPop(), isFalse);
+        tab.value = 0;
+        await tester.pumpAndSettle();
+        tester.view.physicalSize = narrow;
+        await tester.pumpAndSettle();
+        expect(navigators[1].currentState!.canPop(), isFalse);
 
-      tab.value = 1;
-      await tester.pumpAndSettle();
-      expect(navigators[1].currentState!.canPop(), isTrue);
-      expect(find.text('Detail A+'), findsOneWidget);
-    });
+        tab.value = 1;
+        await tester.pumpAndSettle();
+        expect(navigators[1].currentState!.canPop(), isTrue);
+        expect(find.text('Detail A+'), findsOneWidget);
+      },
+    );
 
-    testWidgets('takes no pages: the split view of the tab in sight does', (tester) async {
+    testWidgets('takes no pages: the split view of the tab in sight does', (
+      tester,
+    ) async {
       setSize(tester, narrow);
       await pumpTabs(tester);
       await tester.tap(find.text('One B'));
@@ -173,58 +204,69 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('false keeps the list at the full width of a wide window, and pages open over it', (tester) async {
-      await pumpSplit(tester, wide);
-      showsColumn.value = false;
-      await tester.pumpAndSettle();
+    testWidgets(
+      'false keeps the list at the full width of a wide window, and pages open over it',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        showsColumn.value = false;
+        await tester.pumpAndSettle();
 
-      expect(find.text('Detail A'), findsNothing);
-      expect(tester.getSize(find.byType(ListView)).width, wide.width);
+        expect(find.text('Detail A'), findsNothing);
+        expect(tester.getSize(find.byType(ListView)).width, wide.width);
 
-      await tester.tap(find.text('List B'));
-      await tester.pumpAndSettle();
-      expect(find.text('Detail B'), findsOneWidget);
-      expect(find.text('List B'), findsNothing);
-      expect(navigatorKey.currentState!.canPop(), isTrue);
-    });
+        await tester.tap(find.text('List B'));
+        await tester.pumpAndSettle();
+        expect(find.text('Detail B'), findsOneWidget);
+        expect(find.text('List B'), findsNothing);
+        expect(navigatorKey.currentState!.canPop(), isTrue);
+      },
+    );
 
-    testWidgets('puts the pages of the column away and brings them back with it, never over the list', (tester) async {
-      await pumpSplit(tester, wide);
-      await tester.tap(find.text('List B'));
-      await tester.pump();
-      await tester.tap(find.text('More B'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'puts the pages of the column away and brings them back with it, never over the list',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        await tester.tap(find.text('List B'));
+        await tester.pump();
+        await tester.tap(find.text('More B'));
+        await tester.pumpAndSettle();
 
-      showsColumn.value = false;
-      await tester.pumpAndSettle();
-      expect(find.text('Detail B+'), findsNothing);
-      expect(navigatorKey.currentState!.canPop(), isFalse);
+        showsColumn.value = false;
+        await tester.pumpAndSettle();
+        expect(find.text('Detail B+'), findsNothing);
+        expect(navigatorKey.currentState!.canPop(), isFalse);
 
-      showsColumn.value = true;
-      await tester.pumpAndSettle();
-      expect(find.text('Detail B+'), findsOneWidget);
-      expect(find.text('List A'), findsOneWidget);
-      final opened = tester.widget<ListTile>(find.widgetWithText(ListTile, 'List B'));
-      expect(opened.selected, isTrue);
-    });
+        showsColumn.value = true;
+        await tester.pumpAndSettle();
+        expect(find.text('Detail B+'), findsOneWidget);
+        expect(find.text('List A'), findsOneWidget);
+        final opened = tester.widget<ListTile>(
+          find.widgetWithText(ListTile, 'List B'),
+        );
+        expect(opened.selected, isTrue);
+      },
+    );
 
-    testWidgets('a page opened while the column is away replaces the pages put away', (tester) async {
-      await pumpSplit(tester, wide);
-      await tester.tap(find.text('List B'));
-      await tester.pump();
+    testWidgets(
+      'a page opened while the column is away replaces the pages put away',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        await tester.tap(find.text('List B'));
+        await tester.pump();
 
-      showsColumn.value = false;
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('List C'));
-      await tester.pumpAndSettle();
-      expect(find.text('Detail C'), findsOneWidget);
+        showsColumn.value = false;
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('List C'));
+        await tester.pumpAndSettle();
+        expect(find.text('Detail C'), findsOneWidget);
 
-      showsColumn.value = true;
-      await tester.pumpAndSettle();
-      expect(find.text('Detail C'), findsOneWidget);
-      expect(find.text('Detail B'), findsNothing);
-      expect(navigatorKey.currentState!.canPop(), isFalse);
-    });
+        showsColumn.value = true;
+        await tester.pumpAndSettle();
+        expect(find.text('Detail C'), findsOneWidget);
+        expect(find.text('Detail B'), findsNothing);
+        expect(navigatorKey.currentState!.canPop(), isFalse);
+      },
+    );
   });
 
   group('showDetail with replace', () {
@@ -235,47 +277,63 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           navigatorKey: navigatorKey,
-          home: AdaptiveSplitView(onGenerateDetailRoute: onGenerateRoute, initialDetail: detail('A'), master: master('List')),
+          home: AdaptiveSplitView(
+            onGenerateDetailRoute: onGenerateRoute,
+            initialDetail: detail('A'),
+            master: master('List'),
+          ),
         ),
       );
       await tester.pumpAndSettle();
     }
 
-    bool selected(WidgetTester tester, String title) => tester.widget<ListTile>(find.widgetWithText(ListTile, title)).selected;
+    bool selected(WidgetTester tester, String title) =>
+        tester.widget<ListTile>(find.widgetWithText(ListTile, title)).selected;
 
-    testWidgets('picks the page in the list after a press in the column: it replaces what the column shows, and the selection follows', (tester) async {
-      await pumpSplit(tester, wide);
-      await tester.tap(find.text('More A'));
-      await tester.pumpAndSettle();
-      expect(find.text('Detail A+'), findsOneWidget);
+    testWidgets(
+      'picks the page in the list after a press in the column: it replaces what the column shows, and the selection follows',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        await tester.tap(find.text('More A'));
+        await tester.pumpAndSettle();
+        expect(find.text('Detail A+'), findsOneWidget);
 
-      // From outside the split view, such as an accessory over the tabs.
-      expect(AdaptiveSplitView.showDetail(detail('C'), replace: true), isTrue);
-      await tester.pumpAndSettle();
+        // From outside the split view, such as an accessory over the tabs.
+        expect(
+          AdaptiveSplitView.showDetail(detail('C'), replace: true),
+          isTrue,
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Detail C'), findsOneWidget);
-      expect(find.text('Detail A+', skipOffstage: false), findsNothing);
-      expect(find.text('Detail A', skipOffstage: false), findsNothing);
-      expect(find.text('List A'), findsOneWidget);
-      expect(selected(tester, 'List C'), isTrue);
-      expect(selected(tester, 'List A'), isFalse);
-      expect(navigatorKey.currentState!.canPop(), isFalse);
-    });
+        expect(find.text('Detail C'), findsOneWidget);
+        expect(find.text('Detail A+', skipOffstage: false), findsNothing);
+        expect(find.text('Detail A', skipOffstage: false), findsNothing);
+        expect(find.text('List A'), findsOneWidget);
+        expect(selected(tester, 'List C'), isTrue);
+        expect(selected(tester, 'List A'), isFalse);
+        expect(navigatorKey.currentState!.canPop(), isFalse);
+      },
+    );
 
-    testWidgets('without it, a page shown after a press in the column goes on top of it there', (tester) async {
-      await pumpSplit(tester, wide);
-      await tester.tap(find.text('More A'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'without it, a page shown after a press in the column goes on top of it there',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        await tester.tap(find.text('More A'));
+        await tester.pumpAndSettle();
 
-      expect(AdaptiveSplitView.showDetail(detail('C')), isTrue);
-      await tester.pumpAndSettle();
+        expect(AdaptiveSplitView.showDetail(detail('C')), isTrue);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Detail C'), findsOneWidget);
-      expect(find.text('Detail A+', skipOffstage: false), findsOneWidget);
-      expect(selected(tester, 'List A'), isTrue);
-    });
+        expect(find.text('Detail C'), findsOneWidget);
+        expect(find.text('Detail A+', skipOffstage: false), findsOneWidget);
+        expect(selected(tester, 'List A'), isTrue);
+      },
+    );
 
-    testWidgets('on a narrow window it still opens the page over the list', (tester) async {
+    testWidgets('on a narrow window it still opens the page over the list', (
+      tester,
+    ) async {
       await pumpSplit(tester, narrow);
 
       expect(AdaptiveSplitView.showDetail(detail('C'), replace: true), isTrue);
@@ -308,7 +366,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('hears of a page opened over the list on a narrow window', (tester) async {
+    testWidgets('hears of a page opened over the list on a narrow window', (
+      tester,
+    ) async {
       await pumpSplit(tester, narrow);
       await tester.tap(find.text('List B'));
       await tester.pumpAndSettle();
@@ -318,52 +378,61 @@ void main() {
       expect(pushed.single.isCurrent, isTrue);
     });
 
-    testWidgets('hears of the pages that move over the list as the window narrows', (tester) async {
-      await pumpSplit(tester, wide);
-      await tester.tap(find.text('List B'));
-      await tester.pump();
-      await tester.tap(find.text('More B'));
-      await tester.pumpAndSettle();
-      expect(pushed, isEmpty);
+    testWidgets(
+      'hears of the pages that move over the list as the window narrows',
+      (tester) async {
+        await pumpSplit(tester, wide);
+        await tester.tap(find.text('List B'));
+        await tester.pump();
+        await tester.tap(find.text('More B'));
+        await tester.pumpAndSettle();
+        expect(pushed, isEmpty);
 
-      tester.view.physicalSize = narrow;
-      await tester.pumpAndSettle();
+        tester.view.physicalSize = narrow;
+        await tester.pumpAndSettle();
 
-      expect([for (final route in pushed) route.settings.arguments], ['B', 'B+']);
-      expect(pushed.last.isCurrent, isTrue);
-    });
+        expect(
+          [for (final route in pushed) route.settings.arguments],
+          ['B', 'B+'],
+        );
+        expect(pushed.last.isCurrent, isTrue);
+      },
+    );
 
-    testWidgets('opensDeeperOver: a page opened from the column opens over the whole split view, and back returns to the columns', (tester) async {
-      tester.view.physicalSize = wide;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      pushed = [];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: AdaptiveSplitView(
-            onGenerateDetailRoute: onGenerateRoute,
-            initialDetail: detail('A'),
-            opensDeeperOver: true,
-            onPushedOver: pushed.add,
-            master: master('List'),
+    testWidgets(
+      'opensDeeperOver: a page opened from the column opens over the whole split view, and back returns to the columns',
+      (tester) async {
+        tester.view.physicalSize = wide;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        pushed = [];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AdaptiveSplitView(
+              onGenerateDetailRoute: onGenerateRoute,
+              initialDetail: detail('A'),
+              opensDeeperOver: true,
+              onPushedOver: pushed.add,
+              master: master('List'),
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('List B'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('More B'));
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('List B'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('More B'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('List A'), findsNothing);
-      expect(tester.getRect(find.text('Detail B+')).left, lessThan(100));
-      expect([for (final route in pushed) route.settings.arguments], ['B+']);
+        expect(find.text('List A'), findsNothing);
+        expect(tester.getRect(find.text('Detail B+')).left, lessThan(100));
+        expect([for (final route in pushed) route.settings.arguments], ['B+']);
 
-      Navigator.of(tester.element(find.text('Detail B+'))).pop();
-      await tester.pumpAndSettle();
-      expect(find.text('List A'), findsOneWidget);
-      expect(find.text('Detail B'), findsOneWidget);
-    });
+        Navigator.of(tester.element(find.text('Detail B+'))).pop();
+        await tester.pumpAndSettle();
+        expect(find.text('List A'), findsOneWidget);
+        expect(find.text('Detail B'), findsOneWidget);
+      },
+    );
 
     testWidgets('hears of nothing that opens in the column', (tester) async {
       await pumpSplit(tester, wide);
@@ -378,26 +447,87 @@ void main() {
 }
 
 void _columnSizes() {
-  testWidgets('each column is the window its pages have: they lay out for its width', (tester) async {
-    tester.view.physicalSize = wide;
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    Size? list;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AdaptiveSplitView(
-          onGenerateDetailRoute: onGenerateRoute,
-          master: Builder(
-            builder: (context) {
-              list = MediaQuery.sizeOf(context);
-              return const SizedBox.expand();
-            },
+  testWidgets(
+    'each column is the window its pages have: they lay out for its width',
+    (tester) async {
+      tester.view.physicalSize = wide;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Size? list;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdaptiveSplitView(
+            onGenerateDetailRoute: onGenerateRoute,
+            master: Builder(
+              builder: (context) {
+                list = MediaQuery.sizeOf(context);
+                return const SizedBox.expand();
+              },
+            ),
           ),
         ),
-      ),
+      );
+
+      expect(list!.width, closeTo(wide.width * 0.38, 0.5));
+      expect(list!.height, wide.height);
+    },
+  );
+}
+
+void _crease() {
+  group('followsCrease', () {
+    // An unfolded Android foldable lying flat, its fold down the middle.
+    const size = Size(900, 700);
+    const fold = DisplayFeature(
+      bounds: Rect.fromLTWH(450, 0, 0, 700),
+      type: DisplayFeatureType.fold,
+      state: DisplayFeatureState.postureFlat,
     );
 
-    expect(list!.width, closeTo(wide.width * 0.38, 0.5));
-    expect(list!.height, wide.height);
+    Future<void> pump(
+      WidgetTester tester, {
+      required bool followsCrease,
+    }) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      tester.view.displayFeatures = [fold];
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdaptiveSplitView(
+            followsCrease: followsCrease,
+            onGenerateDetailRoute: onGenerateRoute,
+            initialDetail: detail('A'),
+            master: master('List'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'meets the fold of a device lying flat, as two pages of a book',
+      (tester) async {
+        await pump(tester, followsCrease: true);
+
+        expect(
+          tester.getTopRight(find.text('List A')).dx,
+          lessThanOrEqualTo(450),
+        );
+        expect(
+          tester.getTopLeft(find.text('Detail A')).dx,
+          greaterThanOrEqualTo(450),
+        );
+        expect(tester.getTopLeft(find.text('Detail A')).dx, lessThan(450 + 40));
+      },
+    );
+
+    testWidgets('without it, the list keeps its own width beside a flat fold', (
+      tester,
+    ) async {
+      await pump(tester, followsCrease: false);
+
+      expect(tester.getTopLeft(find.text('Detail A')).dx, lessThan(450 - 40));
+    });
   });
 }
