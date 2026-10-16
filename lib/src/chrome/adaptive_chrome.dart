@@ -108,6 +108,33 @@ class AdaptiveSidebarSpec {
   final Object? data;
 }
 
+/// How the native iOS 26 tab bar along the bottom sets a tab layout's
+/// accessory ([AdaptiveBottomNavigationBar.accessoryLayout]) with its tabs.
+/// Elsewhere (the iPhone Duo's bar, custom chrome) the accessory is placed
+/// the same whichever is asked.
+enum AdaptiveTabAccessoryLayout {
+  /// On its own glass capsule above the tabs, as wide as their capsule, as
+  /// iOS 26 floats the bottom accessory of its tab bar.
+  floating,
+
+  /// In the bar's row at the trailing end of the tabs, as iOS sets a control
+  /// beside its tab bar: as tall as their capsule. The tabs make room for it
+  /// where they fill the width, as on a phone, and the two are centred
+  /// together where they do not; [AdaptiveAccessorySpec.room] says how wide
+  /// it may be, [AdaptiveAccessorySpec.compact] where that is little.
+  beside,
+
+  /// With the tabs on one glass tray, above them, as a sheet at its smallest
+  /// holds the tabs at its bottom: the tray floats close to the edges of the
+  /// screen, its corners concentric with the display's, and the tabs keep
+  /// their whole width on it. The accessory goes on the tray's glass as it
+  /// is, with no glass of its own, as wide as the tabs' capsule, or where
+  /// that is narrower (an iPad), as wide as one floating above them gets;
+  /// [AdaptiveAccessorySpec.room] is that width. An accessory with nothing
+  /// to show takes no tray.
+  tray,
+}
+
 /// Where a tab accessory goes, for the frame the app draws around it, and
 /// for the accessory itself (`AdaptiveAccessoryScope`), with the native
 /// chrome too: a full capsule along the bottom, a round control in the
@@ -118,6 +145,7 @@ class AdaptiveAccessorySpec {
     required this.placement,
     required this.compact,
     this.room = double.infinity,
+    this.layout = AdaptiveTabAccessoryLayout.floating,
   });
 
   final AdaptiveChromePlacement placement;
@@ -133,14 +161,18 @@ class AdaptiveAccessorySpec {
   /// elsewhere.
   final double room;
 
-  @override
-  bool operator ==(Object other) => other is AdaptiveAccessorySpec && other.placement == placement && other.compact == compact && other.room == room;
+  /// How the native tab bar sets it with the tabs: beside them, on a tray
+  /// with them, or floating above them, as everywhere else.
+  final AdaptiveTabAccessoryLayout layout;
 
   @override
-  int get hashCode => Object.hash(placement, compact, room);
+  bool operator ==(Object other) => other is AdaptiveAccessorySpec && other.placement == placement && other.compact == compact && other.room == room && other.layout == layout;
 
   @override
-  String toString() => 'AdaptiveAccessorySpec(${placement.name}, compact: $compact, room: $room)';
+  int get hashCode => Object.hash(placement, compact, room, layout);
+
+  @override
+  String toString() => 'AdaptiveAccessorySpec(${placement.name}, compact: $compact, room: $room, ${layout.name})';
 }
 
 /// What a popover sits on, for the surface the app draws

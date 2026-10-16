@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import '../chrome/adaptive_chrome.dart' show AdaptiveTabAccessoryLayout;
 import 'adaptive_scaffold.dart';
 
 /// Configuration for an adaptive bottom navigation bar
@@ -29,6 +30,7 @@ class AdaptiveBottomNavigationBar {
     this.hidesFor,
     this.chromeData,
     this.accessory,
+    this.accessoryLayout = AdaptiveTabAccessoryLayout.floating,
   });
 
   /// Navigation items for bottom navigation bar
@@ -130,6 +132,15 @@ class AdaptiveBottomNavigationBar {
   /// iPhone Duo's bar ([AdaptiveAccessorySpec.compact]).
   final Widget? accessory;
 
+  /// How the toolbar host's native iOS 26 tab bar along the bottom sets
+  /// [accessory] with the tabs: floating above them on its own glass (the
+  /// default), beside them in the bar's row, or with them on one glass tray,
+  /// as a sheet at its smallest. Its [AdaptiveAccessoryScope] tells the
+  /// accessory which ([AdaptiveAccessorySpec.layout]) and how wide it may be.
+  /// Elsewhere (the iPhone Duo's bar, custom chrome) it is placed as without
+  /// it.
+  final AdaptiveTabAccessoryLayout accessoryLayout;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -144,6 +155,7 @@ class AdaptiveBottomNavigationBar {
     RoutePredicate? hidesFor,
     Object? chromeData,
     Widget? accessory,
+    AdaptiveTabAccessoryLayout? accessoryLayout,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -158,6 +170,7 @@ class AdaptiveBottomNavigationBar {
       hidesFor: hidesFor ?? this.hidesFor,
       chromeData: chromeData ?? this.chromeData,
       accessory: accessory ?? this.accessory,
+      accessoryLayout: accessoryLayout ?? this.accessoryLayout,
     );
   }
 }

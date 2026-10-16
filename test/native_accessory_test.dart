@@ -118,16 +118,34 @@ class FitsInRoom extends StatelessWidget {
   }
 }
 
+/// An accessory beside the tabs: a round control where it is compact, a
+/// capsule otherwise, as tall as it may be.
+class BesideAccessory extends StatelessWidget {
+  const BesideAccessory({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final spec = lastSpec = AdaptiveAccessoryScope.of(context);
+    return SizedBox(
+      key: const ValueKey('accessory'),
+      width: spec.compact ? 62 : 280,
+      height: 62,
+    );
+  }
+}
+
 /// A tab layout with the native chrome: a navigator per tab, the pages with
 /// the native toolbar.
 class NativeTabs {
   NativeTabs({
     this.accessory,
     this.actions = const <AdaptiveAppBarAction>[],
+    this.layout = AdaptiveTabAccessoryLayout.floating,
     FoldableData? fold,
   }) : fold = fold ?? forcedChrome();
 
   final Widget? accessory;
+  final AdaptiveTabAccessoryLayout layout;
   final List<AdaptiveAppBarAction> actions;
   final FoldableData fold;
 
@@ -167,6 +185,7 @@ class NativeTabs {
         selectedIndex: 0,
         onTap: (_) {},
         accessory: accessory,
+        accessoryLayout: layout,
       ),
       body: IndexedStack(
         children: [
@@ -201,6 +220,14 @@ double opacityOf(WidgetTester tester, Finder finder) {
   return opacity;
 }
 
+/// The glass of the tray the accessory and the tabs share.
+final trayGlass = find.byWidgetPredicate(
+  (widget) =>
+      widget is IOS26GlassSurface &&
+      widget.corners == GlassSurfaceCorners.concentric,
+  skipOffstage: false,
+);
+
 /// The glass the accessory floats on.
 Finder glassOf(Finder finder) => find.descendant(
   of: find.ancestor(
@@ -227,9 +254,15 @@ void main() {
   /// The native views made, by id and type.
   final created = <(int, String)>[];
 
+  /// How tall the native tab bar says it is, as on an iPhone held upright:
+  /// its capsule 22 above the bottom of the screen. The bar's own 50 where
+  /// null.
+  double? barHeight;
+
   setUp(() {
     created.clear();
     lastSpec = null;
+    barHeight = null;
     PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
     PlatformInfo.debugIOSVersionOverride = 26;
   });
@@ -247,7 +280,18 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
           if (call.method == 'create') {
             final args = call.arguments as Map<Object?, Object?>;
-            created.add((args['id']! as int, args['viewType']! as String));
+            final id = args['id']! as int;
+            final type = args['viewType']! as String;
+            created.add((id, type));
+            if (type == tabBarType) {
+              TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+                  .setMockMethodCallHandler(
+                    MethodChannel('${tabBarType}_$id'),
+                    (call) async => call.method == 'getIntrinsicSize'
+                        ? {'height': barHeight}
+                        : null,
+                  );
+            }
           }
           return null;
         });
@@ -360,6 +404,221 @@ void main() {
     expect(rect.width, kFloatingAccessoryMaxWidth);
     expect(rect.center.dx, 97 + 500);
     unmockPlatformViews();
+  });
+
+  testWidgets(
+    'beside the tabs on a phone it is a round control at the end of the '
+    'tabs, which make room for it, and the pages keep clear of the tabs '
+    'alone',
+    (tester) async {
+      mockPlatformViews();
+      IOS26NativeTabBar.debugHasUIKitOverride = true;
+      window(
+        tester,
+        const Size(402, 874),
+        const FakeViewPadding(top: 62, bottom: 34),
+      );
+      addTearDown(tester.view.reset);
+      final tabs = NativeTabs(
+        accessory: const BesideAccessory(),
+        layout: AdaptiveTabAccessoryLayout.beside,
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+
+      expect(lastSpec!.layout, AdaptiveTabAccessoryLayout.beside);
+      expect(lastSpec!.compact, isTrue);
+      expect(lastSpec!.room, kBesideAccessoryMinRoom);
+      // The tabs make room: the bar is narrower by the control and the gap.
+      expect(tester.getSize(nativeBar).width, 402 - 62 - kNativeAccessoryGap);
+
+      // The bar tells where its capsule is: the control goes right after it,
+      // centred on it.
+      await reportCapsule(tester, const Rect.fromLTWH(21, 4, 290, 62));
+      await tester.pumpAndSettle();
+      final bar = tester.getRect(nativeBar);
+      final rect = tester.getRect(accessory);
+      expect(rect.left, 21 + 290 + kNativeAccessoryGap);
+      expect(rect.center.dy, bar.top + 4 + 31);
+      expect(rect.right, lessThanOrEqualTo(402 - kNativeTabCapsuleInset));
+      // No taller than the tabs.
+      expect(tabs.insetOf('Tab 0'), bar.height);
+      unmockPlatformViews();
+    },
+  );
+
+  testWidgets(
+    'beside the tabs on a wide window it is a capsule beside the tabs, the '
+    'two centred together',
+    (tester) async {
+      mockPlatformViews();
+      IOS26NativeTabBar.debugHasUIKitOverride = true;
+      window(
+        tester,
+        const Size(1194, 834),
+        const FakeViewPadding(top: 24, bottom: 20),
+      );
+      addTearDown(tester.view.reset);
+      final tabs = NativeTabs(
+        accessory: const BesideAccessory(),
+        layout: AdaptiveTabAccessoryLayout.beside,
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      // The capsule of the tabs as the bar lays it out, in the middle of it.
+      final barWidth = 1194 - 280 - kNativeAccessoryGap;
+      await reportCapsule(
+        tester,
+        Rect.fromLTWH((barWidth - 400) / 2, 4, 400, 62),
+      );
+      await tester.pumpAndSettle();
+
+      expect(lastSpec!.compact, isFalse);
+      expect(
+        lastSpec!.room,
+        1194 - 2 * kNativeTabCapsuleInset - 400 - kNativeAccessoryGap,
+      );
+      final rect = tester.getRect(accessory);
+      expect(rect.width, 280);
+      // Tabs and capsule together in the middle of the window.
+      final left = (barWidth - 400) / 2;
+      expect((left + rect.right) / 2, closeTo(1194 / 2, 0.5));
+      unmockPlatformViews();
+    },
+  );
+
+  testWidgets('on a tray it sits above the tabs, which keep their whole '
+      'width, on one glass with them that floats as a sheet does; the pages '
+      'keep clear of the tray, and touches on it stay on it', (tester) async {
+    mockPlatformViews();
+    IOS26NativeTabBar.debugHasUIKitOverride = true;
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    barHeight = 84;
+    final tabs = NativeTabs(
+      accessory: const RentalAccessory(),
+      layout: AdaptiveTabAccessoryLayout.tray,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+    await tester.pumpAndSettle();
+
+    expect(lastSpec!.layout, AdaptiveTabAccessoryLayout.tray);
+    expect(lastSpec!.compact, isFalse);
+    expect(lastSpec!.room, 360);
+    final bar = tester.getRect(nativeBar);
+    expect(bar.width, 402);
+    expect(bar.height, 84);
+    expect(bar.bottom, 874);
+    // Over the capsule, as wide, the gap above it.
+    final rect = tester.getRect(accessory);
+    expect(rect.left, 21);
+    expect(rect.width, 360);
+    expect(rect.bottom, bar.top - kNativeAccessoryGap);
+    // On the tray's glass, with none of its own.
+    expect(glassOf(accessory), findsNothing);
+    // The tray around both, as far from them as it keeps the capsule from
+    // its bottom, which is the tray's inset from the window's.
+    const padding = 22 - kAccessoryTrayInset;
+    final tray = tester.getRect(trayGlass);
+    expect(tray.bottom, 874 - kAccessoryTrayInset);
+    expect(
+      tray,
+      Rect.fromLTRB(21 - padding, rect.top - padding, 381 + padding, 866),
+    );
+    expect(
+      tester.widget<IOS26GlassSurface>(trayGlass).cornerRadius,
+      kAccessoryTrayCornerRadius,
+    );
+    // The pages keep clear of all of it.
+    expect(tabs.insetOf('Tab 0'), 874 - tray.top);
+    // A touch on the tray beside the accessory does not reach the page.
+    final body = tester.renderObject(
+      find.byKey(const ValueKey('body Tab 0'), skipOffstage: false),
+    );
+    final hits = tester.hitTestOnBinding(Offset(tray.left + 3, rect.center.dy));
+    expect(hits.path.map((entry) => entry.target), isNot(contains(body)));
+    unmockPlatformViews();
+  });
+
+  testWidgets('on a tray on a wide window it is as wide as one floating, '
+      'centred on the tabs, the tray around both', (tester) async {
+    mockPlatformViews();
+    IOS26NativeTabBar.debugHasUIKitOverride = true;
+    window(
+      tester,
+      const Size(1194, 834),
+      const FakeViewPadding(top: 24, bottom: 20),
+    );
+    addTearDown(tester.view.reset);
+    barHeight = 80;
+    final tabs = NativeTabs(
+      accessory: const RentalAccessory(),
+      layout: AdaptiveTabAccessoryLayout.tray,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    await reportCapsule(tester, const Rect.fromLTWH(447, 0, 300, 62));
+    await tester.pumpAndSettle();
+
+    expect(lastSpec!.room, kFloatingAccessoryMaxWidth);
+    final rect = tester.getRect(accessory);
+    expect(rect.width, kFloatingAccessoryMaxWidth);
+    expect(rect.center.dx, 597);
+    const padding = 80 - 62 - kAccessoryTrayInset;
+    expect(
+      tester.getRect(trayGlass),
+      Rect.fromLTRB(
+        rect.left - padding,
+        rect.top - padding,
+        rect.right + padding,
+        834 - kAccessoryTrayInset,
+      ),
+    );
+    unmockPlatformViews();
+  });
+
+  testWidgets('on a tray one with nothing to show takes no tray and no room', (
+    tester,
+  ) async {
+    mockPlatformViews();
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    final tabs = NativeTabs(
+      accessory: const SizedBox.shrink(key: ValueKey('accessory')),
+      layout: AdaptiveTabAccessoryLayout.tray,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(trayGlass), Size.zero);
+    expect(tabs.insetOf('Tab 0'), 50);
+    expect(tester.getBottomLeft(nativeBar), const Offset(0, 874));
+    unmockPlatformViews();
+  });
+
+  test('concentric corners follow the display\'s where they are near them, '
+      'and keep their least radius elsewhere', () {
+    PlatformInfo.debugDisplayCornerRadiusOverride = 55;
+    addTearDown(() => PlatformInfo.debugDisplayCornerRadiusOverride = null);
+    final corners = concentricCornersAt(
+      const Rect.fromLTRB(8, 700, 394, 866),
+      window: const Size(402, 874),
+      minimum: kAccessoryTrayCornerRadius,
+    );
+    expect(corners.topLeft, const Radius.circular(28));
+    expect(corners.topRight, const Radius.circular(28));
+    expect(corners.bottomLeft, const Radius.circular(47));
+    expect(corners.bottomRight, const Radius.circular(47));
   });
 
   testWidgets('it leaves with the tabs when a page without them is pushed, '

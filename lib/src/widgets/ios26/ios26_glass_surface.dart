@@ -263,32 +263,138 @@ class _StandIn extends StatelessWidget {
           );
     final fill = widget.fill;
     final color = fill == null ? tinted : Color.alphaBlend(fill, tinted);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final radius = widget.corners == GlassSurfaceCorners.capsule
-            ? constraints.biggest.shortestSide / 2
-            : widget.cornerRadius;
-        return DecoratedBox(
-          decoration: ShapeDecoration(
-            color: color,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(radius),
-              side: BorderSide(
-                color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
-                width: 0.5,
-              ),
-            ),
-            shadows: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 12,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-        );
-      },
+    ShapeDecoration decorationFor(BorderRadius radius) => ShapeDecoration(
+      color: color,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: radius,
+        side: BorderSide(
+          color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
+          width: 0.5,
+        ),
+      ),
+      shadows: const [
+        BoxShadow(
+          color: Color(0x14000000),
+          blurRadius: 12,
+          offset: Offset(0, 2),
+        ),
+      ],
     );
+    // In the glass's shape where it is on the screen, as the glass's own
+    // corners follow the display's: they would change as the stand-in makes
+    // way for it otherwise, the tray's and a sheet's along the bottom.
+    if (widget.corners == GlassSurfaceCorners.concentric) {
+      return _ConcentricShape(
+        window: MediaQuery.sizeOf(context),
+        minimum: widget.cornerRadius,
+        decorationFor: decorationFor,
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) => DecoratedBox(
+        decoration: decorationFor(
+          BorderRadius.circular(
+            widget.corners == GlassSurfaceCorners.capsule
+                ? constraints.biggest.shortestSide / 2
+                : widget.cornerRadius,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The corners concentric with the display's ([GlassSurfaceCorners.concentric])
+/// of a box at [rect] in a [window] that size: each one the display's radius
+/// less how far the corner is from the display's edges, never below
+/// [minimum], as UIKit rounds container-concentric corners.
+@visibleForTesting
+BorderRadius concentricCornersAt(
+  Rect rect, {
+  required Size window,
+  required double minimum,
+}) {
+  final display = PlatformInfo.displayCornerRadius;
+  Radius at(double fromSide, double fromEnd) =>
+      Radius.circular(math.max(minimum, display - math.max(fromSide, fromEnd)));
+  final right = window.width - rect.right;
+  final bottom = window.height - rect.bottom;
+  return BorderRadius.only(
+    topLeft: at(rect.left, rect.top),
+    topRight: at(right, rect.top),
+    bottomLeft: at(rect.left, bottom),
+    bottomRight: at(right, bottom),
+  );
+}
+
+/// Paints the decoration [decorationFor] makes for the corners concentric
+/// with the display's, where the box is on the screen when painted.
+class _ConcentricShape extends LeafRenderObjectWidget {
+  const _ConcentricShape({
+    required this.window,
+    required this.minimum,
+    required this.decorationFor,
+  });
+
+  final Size window;
+  final double minimum;
+  final ShapeDecoration Function(BorderRadius radius) decorationFor;
+
+  @override
+  _RenderConcentricShape createRenderObject(BuildContext context) =>
+      _RenderConcentricShape(window, minimum, decorationFor);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderConcentricShape renderObject,
+  ) {
+    renderObject
+      ..window = window
+      ..minimum = minimum
+      ..decorationFor = decorationFor;
+  }
+}
+
+class _RenderConcentricShape extends RenderBox {
+  _RenderConcentricShape(this._window, this._minimum, this._decorationFor);
+
+  Size _window;
+  set window(Size value) {
+    if (value == _window) return;
+    _window = value;
+    markNeedsPaint();
+  }
+
+  double _minimum;
+  set minimum(double value) {
+    if (value == _minimum) return;
+    _minimum = value;
+    markNeedsPaint();
+  }
+
+  ShapeDecoration Function(BorderRadius radius) _decorationFor;
+  set decorationFor(ShapeDecoration Function(BorderRadius radius) value) {
+    _decorationFor = value;
+    markNeedsPaint();
+  }
+
+  @override
+  bool get sizedByParent => true;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final radius = concentricCornersAt(
+      localToGlobal(Offset.zero) & size,
+      window: _window,
+      minimum: _minimum,
+    );
+    final painter = _decorationFor(radius).createBoxPainter(markNeedsPaint);
+    painter.paint(context.canvas, offset, ImageConfiguration(size: size));
+    painter.dispose();
   }
 }
 
