@@ -111,13 +111,24 @@ class AdaptiveSidebarSpec {
 /// Where a tab accessory goes, for the frame the app draws around it.
 @immutable
 class AdaptiveAccessorySpec {
-  const AdaptiveAccessorySpec({required this.placement, required this.compact});
+  const AdaptiveAccessorySpec({
+    required this.placement,
+    required this.compact,
+    this.room = double.infinity,
+  });
 
   final AdaptiveChromePlacement placement;
 
   /// Whether there is little room for it: beside the iPhone Duo's vertical
   /// bar, or in a sidebar collapsed to a rail.
   final bool compact;
+
+  /// How tall it may be: in the iPhone Duo's vertical bar, what the page's
+  /// controls and the tabs leave of it, as the page's controls come first.
+  /// An accessory taller than this takes a smaller form, or none, rather
+  /// than moving the page's controls into the overflow menu. Unbounded
+  /// elsewhere.
+  final double room;
 }
 
 /// What a popover sits on, for the surface the app draws

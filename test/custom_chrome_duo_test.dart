@@ -68,6 +68,33 @@ void main() {
       expect(opacityOf(find.byKey(TestChrome.tabBarKey)), 1);
     });
 
+    testWidgets('the overflow menu shows an action\'s own icon widget, even one that lays itself out as it goes, and performs the action picked', (tester) async {
+      window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+      var pressed = -1;
+      final tabs = TabsFixture(
+        debugFold: duo(regions: [duoCamera]),
+        actions: [
+          for (var i = 0; i < 8; i++)
+            AdaptiveAppBarAction(
+              title: 'Action $i',
+              iconWidget: LayoutBuilder(builder: (context, constraints) => const Icon(Icons.star)),
+              onPressed: () => pressed = i,
+            ),
+        ],
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('more'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Action 7'), findsOneWidget);
+
+      await tester.tap(find.text('Action 7'));
+      await tester.pumpAndSettle();
+      expect(pressed, 7);
+    });
+
     testWidgets('pages keep out of the strip and below the title band', (tester) async {
       window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
       final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]));

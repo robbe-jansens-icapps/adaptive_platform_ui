@@ -411,6 +411,17 @@ class DuoVerticalBar extends StatelessWidget {
   /// Reserved regions reported by the system, used to clear the camera.
   final List<ReservedRegion> regions;
 
+  /// How far down the bar a page's controls reach with every one of
+  /// [actions] in sight, below a [leading] control or not.
+  static double controlsExtent({required bool leading, required List<AdaptiveAppBarAction> actions}) {
+    var used = leading ? IOS26GlassCapsule.width : 0.0;
+    for (final group in groupsOf(actions)) {
+      if (group.isEmpty) continue;
+      used += (used > 0 ? kDuoBarGroupSpacing : 0.0) + IOS26GlassCapsule.actionsHeight(group.length);
+    }
+    return used;
+  }
+
   /// [actions] split into the groups that each get a capsule.
   static List<List<AdaptiveAppBarAction>> groupsOf(List<AdaptiveAppBarAction> actions) {
     final groups = <List<AdaptiveAppBarAction>>[];
@@ -492,6 +503,8 @@ class DuoVerticalBar extends StatelessWidget {
     final total = actions.length;
     var used = leading == null ? 0.0 : IOS26GlassCapsule.width;
     final overflowCost = kDuoBarGroupSpacing + IOS26GlassCapsule.actionsHeight(1);
+    // No room is kept for the overflow control where every item fits.
+    final fitsAll = controlsExtent(leading: leading != null, actions: actions) <= room;
 
     final shown = <List<AdaptiveAppBarAction>>[];
     var count = 0;
@@ -506,7 +519,7 @@ class DuoVerticalBar extends StatelessWidget {
             : IOS26GlassCapsule.actionsHeight(capsule.length + 1) - IOS26GlassCapsule.actionsHeight(capsule.length);
         final isLast = count == total - 1;
         // Keep room for the overflow control unless this is the last item.
-        if (used + cost + (isLast ? 0 : overflowCost) > room) {
+        if (used + cost + (isLast || fitsAll ? 0 : overflowCost) > room) {
           if (capsule.isNotEmpty) shown.add(capsule);
           break outer;
         }

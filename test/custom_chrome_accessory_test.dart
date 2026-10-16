@@ -1,4 +1,5 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart' show DuoVerticalBar;
 import 'package:adaptive_platform_ui/src/toolbar/hosted_tab_bar.dart' show kFloatingAccessoryMaxWidth;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -78,6 +79,28 @@ void main() {
     expect(tabs.insetOf('Tab 0'), 0);
     expect(TestChrome.lastAccessorySpec!.placement, AdaptiveChromePlacement.vertical);
     expect(TestChrome.lastAccessorySpec!.compact, isTrue);
+  });
+
+  testWidgets('on the iPhone Duo held sideways it gets what the page\'s controls leave of the bar, so one that fits in that keeps them all in sight', (tester) async {
+    window(tester, innerLandscape, const FakeViewPadding(right: 84, bottom: 34));
+    addTearDown(tester.view.reset);
+    Future<double> roomWith(List<AdaptiveAppBarAction> actions) async {
+      final tabs = TabsFixture(debugFold: duo(regions: [duoCamera]), accessory: const _FitsInRoom(), chrome: TestChrome.withFrames, actions: actions);
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      return TestChrome.lastAccessorySpec!.room;
+    }
+
+    final actions = [for (var i = 0; i < 4; i++) AdaptiveAppBarAction(title: '$i', onPressed: () {})];
+    final alone = await roomWith(const []);
+    final shared = await roomWith(actions);
+
+    expect(alone - shared, DuoVerticalBar.controlsExtent(leading: false, actions: actions) + kDuoBarGroupSpacing);
+    expect(tester.getSize(accessory()).height, shared);
+    expect(find.text('more'), findsNothing);
+    for (var i = 0; i < 4; i++) {
+      expect(find.text('action:$i'), findsOneWidget);
+    }
   });
 
   testWidgets('with the tabs in the top strip, without a frame it floats centred in the content, at most kFloatingAccessoryMaxWidth wide', (tester) async {
@@ -162,4 +185,15 @@ void main() {
     expect(tabs.paddingOf('Tab 0').bottom, 34);
     expect(tabs.insetOf('Tab 0'), 0);
   });
+}
+
+/// An accessory as tall as the bar lets it be, up to 400.
+class _FitsInRoom extends StatelessWidget {
+  const _FitsInRoom();
+
+  @override
+  Widget build(BuildContext context) {
+    final room = TestChrome.lastAccessorySpec?.room ?? double.infinity;
+    return SizedBox(key: const ValueKey('accessory'), width: 48, height: room < 400 ? room : 400);
+  }
 }

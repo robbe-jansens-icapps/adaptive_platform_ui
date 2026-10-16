@@ -120,8 +120,25 @@ class AdaptiveSafeAreaBar extends StatefulWidget {
   /// below it, where it differs from the page's.
   final Color? color;
 
+  /// Whether [context] is in the [bar] of an [AdaptiveSafeAreaBar] that has
+  /// the bar's background behind it. What is pinned there leaves its own
+  /// background out, or it covers the bar's frost with a band of its own.
+  static bool isIn(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PinnedBar>()?.onBackground ??
+      false;
+
   @override
   State<AdaptiveSafeAreaBar> createState() => _AdaptiveSafeAreaBarState();
+}
+
+class _PinnedBar extends InheritedWidget {
+  const _PinnedBar({required this.onBackground, required super.child});
+
+  final bool onBackground;
+
+  @override
+  bool updateShouldNotify(_PinnedBar oldWidget) =>
+      onBackground != oldWidget.onBackground;
 }
 
 class _AdaptiveSafeAreaBarState extends State<AdaptiveSafeAreaBar> {
@@ -187,7 +204,10 @@ class _AdaptiveSafeAreaBarState extends State<AdaptiveSafeAreaBar> {
               removeTop: true,
               child: SizeReporter(
                 onSizeChanged: (size) => _height.value = size.height,
-                child: widget.bar,
+                child: _PinnedBar(
+                  onBackground: scope != null,
+                  child: widget.bar,
+                ),
               ),
             ),
             builder: (context, shown, bar) => shown >= 1

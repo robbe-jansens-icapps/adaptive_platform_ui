@@ -357,7 +357,8 @@ the bars and keeps clear of them through `MediaQuery.padding`, and
 - **`accessory`** on the tab bar: a mini player or the like, above the tabs
   along the bottom, in the iPhone Duo's vertical bar above the tabs, docked
   in the sidebar; one widget all along, so its state survives folding and
-  rotating.
+  rotating. In the vertical bar the page's controls come first:
+  `AdaptiveAccessorySpec.room` says what they leave for it.
 - **Scroll edge**: as the system's scroll edge effect, the bar's background
   along the top is part of each scroll view whose content runs under it, and
   fades in as soon as content scrolls under it: the content blurred and

@@ -912,7 +912,26 @@ class _PopoverMenu extends StatelessWidget {
         : textStyle.color;
     final icon = switch (item.icon) {
       final IconData data => Icon(data, size: 20, color: color),
-      final Widget widget => widget,
+      // An app's own control (an action's icon widget) as a picture of
+      // itself, in the size of an icon and the colour of the row, as the
+      // system draws a menu's icons: the row is the button, the control may
+      // be drawn for the bar's colours, and the menu measures its rows,
+      // which a control that lays itself out as it goes (a LayoutBuilder)
+      // cannot be asked for.
+      final Widget widget => SizedBox.square(
+        dimension: 24,
+        child: IgnorePointer(
+          child: ExcludeSemantics(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                color ?? const Color(0xFF000000),
+                BlendMode.srcIn,
+              ),
+              child: FittedBox(child: widget),
+            ),
+          ),
+        ),
+      ),
       _ => null,
     };
     return Semantics(

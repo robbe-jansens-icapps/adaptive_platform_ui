@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:foldable/foldable.dart';
 
@@ -170,6 +172,11 @@ class HostedDuoBar extends StatelessWidget {
                         context,
                         tabs,
                         reports: tabs.id == upperTabs?.id,
+                        room: _accessoryRoom(
+                          context,
+                          upperOwns ? upper : lower,
+                          tabCount: tabs.tabBar?.items?.length ?? 0,
+                        ),
                       ),
                       regions: regions,
                       chrome: chrome,
@@ -190,6 +197,7 @@ class HostedDuoBar extends StatelessWidget {
     BuildContext context,
     ToolbarEntry tabs, {
     required bool reports,
+    required double room,
   }) {
     final accessory = tabs.tabBar?.accessory;
     final frame = chrome?.accessoryBuilder;
@@ -201,9 +209,10 @@ class HostedDuoBar extends StatelessWidget {
           ? accessory
           : frame(
               context,
-              const AdaptiveAccessorySpec(
+              AdaptiveAccessorySpec(
                 placement: AdaptiveChromePlacement.vertical,
                 compact: true,
+                room: room,
               ),
               accessory,
             ),
@@ -212,6 +221,40 @@ class HostedDuoBar extends StatelessWidget {
     return SizeReporter(
       onSizeChanged: (size) => registry.barAccessoryHeight.value = size.height,
       child: framed,
+    );
+  }
+
+  /// What the controls of the page in front, [content], and [tabCount] tabs
+  /// leave of the bar for the accessory between them: the page's controls
+  /// come first.
+  double _accessoryRoom(
+    BuildContext context,
+    _BarContent content, {
+    required int tabCount,
+  }) {
+    final pose = DuoPoseScope.of(context);
+    if (pose == null) return double.infinity;
+    final size = MediaQuery.sizeOf(context);
+    final insets = DuoLayout.barInsets(
+      size: size,
+      pose: pose,
+      regions: regions,
+    );
+    final controls = DuoVerticalBar.controlsExtent(
+      leading: content.customLeading != null || content.impliesBack,
+      actions: content.actions,
+    );
+    final tabs = tabCount == 0
+        ? 0.0
+        : IOS26GlassCapsule.tabsHeight(tabCount) + kDuoBarGroupSpacing;
+    return math.max(
+      0,
+      size.height -
+          insets.top -
+          insets.bottom -
+          tabs -
+          controls -
+          (controls > 0 ? kDuoBarGroupSpacing : 0),
     );
   }
 

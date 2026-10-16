@@ -418,6 +418,39 @@ void main() {
   );
 
   testWidgets(
+    'what is pinned below the bar knows it has the bar\'s background behind it, and the page below does not',
+    (tester) async {
+      phone(tester);
+      bool? inBar;
+      bool? inPage;
+      await pumpApp(
+        tester,
+        AdaptiveScaffold(
+          backgroundColor: pageColor,
+          appBar: const AdaptiveAppBar(title: 'Search'),
+          body: AdaptiveSafeAreaBar(
+            bar: Builder(
+              builder: (context) {
+                inBar = AdaptiveSafeAreaBar.isIn(context);
+                return const SizedBox(height: 56);
+              },
+            ),
+            child: Builder(
+              builder: (context) {
+                inPage = AdaptiveSafeAreaBar.isIn(context);
+                return ListView(children: const [SizedBox(height: 2000)]);
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(inBar, isTrue);
+      expect(inPage, isFalse);
+    },
+  );
+
+  testWidgets(
     'a page without scroll views, such as a map, has no background under the bar',
     (tester) async {
       phone(tester);
