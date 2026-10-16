@@ -133,6 +133,13 @@ enum AdaptiveTabAccessoryLayout {
   /// [AdaptiveAccessorySpec.room] is that width. An accessory with nothing
   /// to show takes no tray.
   tray,
+
+  /// Where [tray] puts them, the same height the pages keep clear of, but
+  /// without the tray's glass: for a page whose own sheet holds the tabs at
+  /// its smallest (a map's), on whose glass they then sit, so the accessory
+  /// and the tabs keep their place, and the pages their room, as one tab
+  /// with a tray gives way to one with such a sheet. It opens into nothing.
+  onSheet,
 }
 
 /// Where a tab accessory goes, for the frame the app draws around it, and

@@ -69,6 +69,45 @@ void main() {
     expect(glass().fill, fill);
   });
 
+  testWidgets('at its collapsed detent only its header is in sight: the '
+      'content fades in as it is pulled up', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            const Positioned.fill(child: ColoredBox(color: Colors.green)),
+            Positioned.fill(
+              child: AdaptiveSheet(
+                detents: const [
+                  AdaptiveSheetDetent.collapsed,
+                  AdaptiveSheetDetent.fitContent,
+                ],
+                initialDetent: AdaptiveSheetDetent.collapsed,
+                header: const SizedBox(height: 40, child: Text('header')),
+                child: const SizedBox(height: 200, child: Text('content')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    double shown() => tester
+        .widget<Opacity>(
+          find.ancestor(
+            of: find.text('content'),
+            matching: find.byType(Opacity),
+          ),
+        )
+        .opacity;
+    expect(shown(), 0);
+
+    await tester.drag(find.text('header'), const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(shown(), 1);
+  });
+
   testWidgets('without a grabber its content starts at the top', (
     tester,
   ) async {

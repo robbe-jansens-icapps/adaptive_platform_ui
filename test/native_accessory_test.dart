@@ -862,6 +862,41 @@ void main() {
     unmockPlatformViews();
   });
 
+  testWidgets('on a page\'s sheet the accessory and the tabs keep the place '
+      'and the room of the tray, with no glass of their own', (tester) async {
+    mockPlatformViews();
+    IOS26NativeTabBar.debugHasUIKitOverride = true;
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    barHeight = 84;
+    final tabs = NativeTabs(
+      accessory: const RentalAccessory(),
+      layout: AdaptiveTabAccessoryLayout.onSheet,
+    );
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+    await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+    await tester.pumpAndSettle();
+
+    expect(lastSpec!.layout, AdaptiveTabAccessoryLayout.onSheet);
+    // As on the tray: over the capsule, as wide, the gap above it.
+    final bar = tester.getRect(nativeBar);
+    final rect = tester.getRect(accessory);
+    expect(rect.left, 21);
+    expect(rect.width, 360);
+    expect(rect.bottom, bar.top - kNativeAccessoryGap);
+    // The room of the tray: the tabs, the accessory, the gap, and the tray's
+    // padding above it (what it keeps below the capsule, less its inset).
+    const padding = 22 - kAccessoryTrayInset;
+    expect(tabs.insetOf('Tab 0'), 84 + padding + 48 + kNativeAccessoryGap);
+    expect(trayGlass, findsNothing);
+    unmockPlatformViews();
+  });
+
   group('a tray that opens into a sheet', () {
     const opened = 200.0;
     final expanded = find.byKey(

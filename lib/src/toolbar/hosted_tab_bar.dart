@@ -440,11 +440,12 @@ class _HostedTabBarState extends State<HostedTabBar>
     final chrome = widget.chrome;
     // With a tray, one barrier dims the tray, the accessory and the tabs on
     // it together, over all of them, rather than each part on its own.
-    final onTray =
-        bar.accessory != null &&
-        bar.accessoryLayout == AdaptiveTabAccessoryLayout.tray;
+    final onTray = bar.accessory != null && _traysIt(bar.accessoryLayout);
+    // On a page's sheet, that sheet's glass is the tray's.
+    final ownGlass = bar.accessoryLayout == AdaptiveTabAccessoryLayout.tray;
     // A tray that opens into a sheet, which drags on it open and close.
-    final opens = onTray && bar.accessoryExpanded != null && chrome == null;
+    final opens =
+        onTray && ownGlass && bar.accessoryExpanded != null && chrome == null;
     // The native views of the accessory and its tray leave the screen while
     // they fade.
     final fade = AnimationMin<double>(
@@ -495,7 +496,9 @@ class _HostedTabBarState extends State<HostedTabBar>
                   expansion: opens ? _trayExpansion : null,
                 ),
                 expanded: opens ? _expanded(entry, bar, fade: fade) : null,
-                tray: onTray ? _tray(fade: fade, drags: opens) : null,
+                tray: onTray && ownGlass
+                    ? _tray(fade: fade, drags: opens)
+                    : null,
                 cover: onTray
                     ? _BarrierOverTabs(
                         route: dialog,
@@ -583,16 +586,14 @@ class _HostedTabBarState extends State<HostedTabBar>
         width: width,
         capsule: capsule,
       ),
-      AdaptiveTabAccessoryLayout.tray => trayAccessorySpec(
-        width: width,
-        capsule: capsule,
-      ),
+      AdaptiveTabAccessoryLayout.tray || AdaptiveTabAccessoryLayout.onSheet =>
+        trayAccessorySpec(width: width, capsule: capsule, layout: layout),
       AdaptiveTabAccessoryLayout.floating => const AdaptiveAccessorySpec(
         placement: AdaptiveChromePlacement.bottom,
         compact: false,
       ),
     };
-    final onTray = layout == AdaptiveTabAccessoryLayout.tray;
+    final onTray = _traysIt(layout);
     return NativeViewSettleScope(
       fade: fade,
       child: AdaptiveKeyboardFade(
@@ -1012,12 +1013,19 @@ double _trayAccessoryWidth(double width, Rect capsule) => math.max(
 AdaptiveAccessorySpec trayAccessorySpec({
   required double width,
   required Rect? capsule,
+  AdaptiveTabAccessoryLayout layout = AdaptiveTabAccessoryLayout.tray,
 }) => AdaptiveAccessorySpec(
   placement: AdaptiveChromePlacement.bottom,
   compact: false,
   room: _trayAccessoryWidth(width, _capsuleOr(capsule, width)),
-  layout: AdaptiveTabAccessoryLayout.tray,
+  layout: layout,
 );
+
+/// Whether [layout] puts the accessory where a tray does, on its glass or a
+/// page's sheet's.
+bool _traysIt(AdaptiveTabAccessoryLayout layout) =>
+    layout == AdaptiveTabAccessoryLayout.tray ||
+    layout == AdaptiveTabAccessoryLayout.onSheet;
 
 /// A tab layout's [accessory] with the native chrome: in [spec]'s
 /// [AdaptiveAccessoryScope], on its glass capsule ([NativeAccessoryGlass])
@@ -1300,7 +1308,8 @@ class _RenderAccessoryOverTabs extends RenderBox
               constraints,
               layoutChild,
             ),
-            AdaptiveTabAccessoryLayout.tray => _layOutTray(
+            AdaptiveTabAccessoryLayout.tray ||
+            AdaptiveTabAccessoryLayout.onSheet => _layOutTray(
               constraints,
               layoutChild,
             ),

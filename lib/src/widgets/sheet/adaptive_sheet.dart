@@ -802,6 +802,35 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     );
   }
 
+  /// How far past its collapsed detent the content is in sight at last.
+  static const _contentFade = 56.0;
+
+  /// [content], out of sight at the collapsed detent, where only the header
+  /// shows as with Find My, and fading in as the sheet is pulled up from it:
+  /// what floats over the bottom of the sheet (the tabs, what they carry)
+  /// then never sits on its content. It takes no touches while out of sight.
+  Widget _fadesAtCollapsed(_Metrics metrics, Widget content) {
+    if (metrics.sidePanel ||
+        !widget.detents.contains(AdaptiveSheetDetent.collapsed)) {
+      return content;
+    }
+    return AnimatedBuilder(
+      animation: _extent,
+      child: content,
+      builder: (context, content) {
+        final shown =
+            ((_extent.value - _collapsedExtent(metrics)) / _contentFade).clamp(
+              0.0,
+              1.0,
+            );
+        return IgnorePointer(
+          ignoring: shown < 0.05,
+          child: Opacity(opacity: shown, child: content),
+        );
+      },
+    );
+  }
+
   Widget _buildBody(BuildContext context, _Metrics metrics) {
     final material = metrics.material;
     final header = widget.header;
@@ -840,29 +869,32 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         ),
         LayoutId(
           id: _SheetSlot.content,
-          child: widget.scrollable
-              ? _ScrollEdgeFade(
-                  scrolled: _scrolled,
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: contentPadding,
-                    child: measuredChild,
-                  ),
-                )
-              // Laid out at its natural height, never scrolled: a drag on it
-              // moves the sheet.
-              : _dragsSheet(
-                  OverflowBox(
-                    alignment: Alignment.topCenter,
-                    minHeight: 0,
-                    maxHeight: double.infinity,
-                    child: Padding(
+          child: _fadesAtCollapsed(
+            metrics,
+            widget.scrollable
+                ? _ScrollEdgeFade(
+                    scrolled: _scrolled,
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: contentPadding,
                       child: measuredChild,
                     ),
+                  )
+                // Laid out at its natural height, never scrolled: a drag on it
+                // moves the sheet.
+                : _dragsSheet(
+                    OverflowBox(
+                      alignment: Alignment.topCenter,
+                      minHeight: 0,
+                      maxHeight: double.infinity,
+                      child: Padding(
+                        padding: contentPadding,
+                        child: measuredChild,
+                      ),
+                    ),
                   ),
-                ),
+          ),
         ),
       ],
     );
