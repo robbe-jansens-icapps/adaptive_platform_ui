@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -81,7 +83,7 @@ class HostedTabBar extends StatefulWidget {
 }
 
 class _HostedTabBarState extends State<HostedTabBar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// The tab layouts the last build drew a bar for.
   List<ToolbarEntry> _built = const <ToolbarEntry>[];
 
@@ -119,6 +121,91 @@ class _HostedTabBarState extends State<HostedTabBar>
     setState(() => _capsules[id] = capsule);
   }
 
+  // The tray opening into its sheet ------------------------------------------
+
+  /// How far the tray of the tabs in front is open into its sheet
+  /// ([AdaptiveBottomNavigationBar.accessoryExpanded]): 0 closed, 1 open.
+  late final AnimationController _trayOpen = AnimationController.unbounded(
+    vsync: this,
+  );
+
+  late final _TrayExpansion _trayExpansion = _TrayExpansion(this);
+
+  /// Whether the tray is open, or on its way to be.
+  bool _trayOpening = false;
+
+  /// How tall what the tray opens into is, as last laid out: a drag moves it
+  /// by as much as the finger.
+  double _openExtent = 0;
+
+  /// The tab layout in front and its tab, as the tray was last built: it
+  /// closes when either changes.
+  (Object?, int?)? _trayFor;
+
+  static final _traySpring = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 380,
+    ratio: 0.9,
+  );
+
+  /// Opens or closes the tray, from where it is at the speed it has
+  /// ([velocity] in openings a second).
+  void _settleTray({required bool open, double velocity = 0}) {
+    _trayOpening = open;
+    final target = open ? 1.0 : 0.0;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _trayOpen.value = target;
+      return;
+    }
+    _trayOpen.animateWith(
+      SpringSimulation(_traySpring, _trayOpen.value, target, velocity),
+    );
+  }
+
+  /// [child], with vertical drags on it opening and closing the tray under
+  /// the finger.
+  Widget _trayDrag(
+    Widget child, {
+    HitTestBehavior behavior = HitTestBehavior.deferToChild,
+  }) => RawGestureDetector(
+    behavior: behavior,
+    gestures: {
+      VerticalDragGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+            () => VerticalDragGestureRecognizer(debugOwner: this),
+            (recognizer) {
+              recognizer.onlyAcceptDragOnThreshold = true;
+              // From where the finger came down, so the tray stays under it.
+              recognizer.dragStartBehavior = DragStartBehavior.down;
+              recognizer.onStart = (_) => _trayOpen.stop();
+              recognizer.onUpdate = (details) {
+                if (_openExtent <= 0) return;
+                final next =
+                    _trayOpen.value - details.primaryDelta! / _openExtent;
+                // Past open, or past closed, with resistance.
+                _trayOpen.value = next > 1
+                    ? 1 + (next - 1) * 0.3
+                    : next < 0
+                    ? next * 0.3
+                    : next;
+              };
+              recognizer.onEnd = (details) {
+                if (_openExtent <= 0) return;
+                // Up is opening.
+                final velocity = -(details.primaryVelocity ?? 0) / _openExtent;
+                _settleTray(
+                  open: velocity.abs() > 1.5
+                      ? velocity > 0
+                      : _trayOpen.value > 0.5,
+                  velocity: velocity,
+                );
+              };
+            },
+          ),
+    },
+    child: child,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -142,6 +229,7 @@ class _HostedTabBarState extends State<HostedTabBar>
   @override
   void dispose() {
     _unlisten(widget.blend);
+    _trayOpen.dispose();
     _reveal.dispose();
     super.dispose();
   }
@@ -244,6 +332,18 @@ class _HostedTabBarState extends State<HostedTabBar>
       );
     }
     final ownerTabs = registry.tabBarOwnerFor(blend.owner);
+    // The tray closes as another tab is picked, or a page comes up over the
+    // tabs.
+    final trayFor = (ownerTabs?.id, ownerTabs?.tabBar?.selectedIndex);
+    if (trayFor != _trayFor) {
+      final first = _trayFor == null;
+      _trayFor = trayFor;
+      if (!first && (_trayOpening || _trayOpen.value != 0)) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _settleTray(open: false);
+        });
+      }
+    }
     // The bar that stays in view: the owner's, or while pages move, the one
     // of the tab layout on both sides of the transition. A bar that comes in
     // waits off stage until the pages hold still.
@@ -289,6 +389,12 @@ class _HostedTabBarState extends State<HostedTabBar>
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // Over the page while the tray is open: dimmed, and a tap on it
+            // closes the tray.
+            _TrayBarrier(
+              open: _trayOpen,
+              onTap: () => _settleTray(open: false),
+            ),
             for (final entry in _built)
               _layer(
                 entry,
@@ -337,6 +443,8 @@ class _HostedTabBarState extends State<HostedTabBar>
     final onTray =
         bar.accessory != null &&
         bar.accessoryLayout == AdaptiveTabAccessoryLayout.tray;
+    // A tray that opens into a sheet, which drags on it open and close.
+    final opens = onTray && bar.accessoryExpanded != null && chrome == null;
     // The native views of the accessory and its tray leave the screen while
     // they fade.
     final fade = AnimationMin<double>(
@@ -371,50 +479,54 @@ class _HostedTabBarState extends State<HostedTabBar>
               // Laid out off stage too, so the height holds while a page
               // covers the tabs, and the tabs are not laid out again for it.
               // The accessory is part of it, so the pages keep clear of both.
-              child: SizeReporter(
-                onSizeChanged: (size) => widget.height.value = size.height,
-                child: _AccessoryOverTabs(
-                  capsule: _capsules[entry.id],
-                  layout: bar.accessoryLayout,
-                  accessory: _nativeAccessory(
-                    entry,
-                    bar,
-                    fade: fade,
-                    dialog: dialog,
-                  ),
-                  tray: onTray ? _tray(fade: fade) : null,
-                  cover: onTray
-                      ? _BarrierOverTabs(
-                          route: dialog,
-                          fills: true,
-                          borderRadius: _trayCorners,
-                        )
-                      : null,
-                  tabs: _Minimizable(
-                    minimized: entry.tabBarMinimized,
-                    // The same children whether a dialog covers the tabs or
-                    // not, so the native bar stays put.
-                    child: Stack(
-                      children: [
-                        IOS26NativeTabBar(
-                          destinations: bar.items!,
-                          selectedIndex: bar.selectedIndex!,
-                          onTap: bar.onTap!,
-                          tint:
-                              bar.selectedItemColor ??
-                              CupertinoTheme.of(context).primaryColor,
-                          unselectedItemTint: bar.unselectedItemColor,
-                          onCapsuleChanged: (capsule) =>
-                              _onCapsuleChanged(entry.id, capsule),
+              // The tray open lies over the pages: they keep clear of it
+              // closed.
+              child: _AccessoryOverTabs(
+                capsule: _capsules[entry.id],
+                layout: bar.accessoryLayout,
+                expansion: opens ? _trayOpen : null,
+                onRestingHeight: (height) => widget.height.value = height,
+                onOpenExtent: (extent) => _openExtent = extent,
+                accessory: _nativeAccessory(
+                  entry,
+                  bar,
+                  fade: fade,
+                  dialog: dialog,
+                  expansion: opens ? _trayExpansion : null,
+                ),
+                expanded: opens ? _expanded(entry, bar, fade: fade) : null,
+                tray: onTray ? _tray(fade: fade, drags: opens) : null,
+                cover: onTray
+                    ? _BarrierOverTabs(
+                        route: dialog,
+                        fills: true,
+                        borderRadius: _trayCorners,
+                      )
+                    : null,
+                tabs: _Minimizable(
+                  minimized: entry.tabBarMinimized,
+                  // The same children whether a dialog covers the tabs or
+                  // not, so the native bar stays put.
+                  child: Stack(
+                    children: [
+                      IOS26NativeTabBar(
+                        destinations: bar.items!,
+                        selectedIndex: bar.selectedIndex!,
+                        onTap: bar.onTap!,
+                        tint:
+                            bar.selectedItemColor ??
+                            CupertinoTheme.of(context).primaryColor,
+                        unselectedItemTint: bar.unselectedItemColor,
+                        onCapsuleChanged: (capsule) =>
+                            _onCapsuleChanged(entry.id, capsule),
+                      ),
+                      Positioned.fill(
+                        child: _BarrierOverTabs(
+                          route: onTray ? null : dialog,
+                          capsule: _capsules[entry.id],
                         ),
-                        Positioned.fill(
-                          child: _BarrierOverTabs(
-                            route: onTray ? null : dialog,
-                            capsule: _capsules[entry.id],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -424,6 +536,30 @@ class _HostedTabBarState extends State<HostedTabBar>
       ),
     );
   }
+
+  /// What the tray opens into ([AdaptiveBottomNavigationBar.accessoryExpanded]),
+  /// in the accessory's scope, out of the keyboard's way with it, and moving
+  /// the tray when dragged.
+  Widget _expanded(
+    ToolbarEntry entry,
+    AdaptiveBottomNavigationBar bar, {
+    required Animation<double> fade,
+  }) => NativeViewSettleScope(
+    fade: fade,
+    child: AdaptiveKeyboardFade(
+      holdsNativeViews: true,
+      child: _trayDrag(
+        AdaptiveAccessoryScope(
+          spec: trayAccessorySpec(
+            width: MediaQuery.sizeOf(context).width,
+            capsule: _capsules[entry.id],
+          ),
+          expansion: _trayExpansion,
+          child: bar.accessoryExpanded!,
+        ),
+      ),
+    ),
+  );
 
   /// The tab layout's accessory with the native bar, or null when it has
   /// none: on its glass capsule, or on the tray's glass, out of the
@@ -435,6 +571,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     AdaptiveBottomNavigationBar bar, {
     required Animation<double> fade,
     required ModalRoute<Object?>? dialog,
+    AdaptiveTrayExpansion? expansion,
   }) {
     final accessory = bar.accessory;
     if (accessory == null) return null;
@@ -463,13 +600,25 @@ class _HostedTabBarState extends State<HostedTabBar>
         child: Stack(
           fit: StackFit.passthrough,
           children: [
-            nativeAccessory(
-              widget.blend.registry,
-              entry,
-              accessory,
-              spec,
-              glass: !onTray,
-            ),
+            if (expansion != null)
+              _trayDrag(
+                nativeAccessory(
+                  widget.blend.registry,
+                  entry,
+                  accessory,
+                  spec,
+                  glass: false,
+                  expansion: expansion,
+                ),
+              )
+            else
+              nativeAccessory(
+                widget.blend.registry,
+                entry,
+                accessory,
+                spec,
+                glass: !onTray,
+              ),
             // On the tray, the tray's barrier dims it.
             if (!onTray)
               Positioned.fill(
@@ -486,17 +635,19 @@ class _HostedTabBarState extends State<HostedTabBar>
   /// them, as a sheet would, rather than letting them through to the page.
   /// While [fade] is not fully in, its native glass leaves the screen and its
   /// stand-in fades.
-  Widget _tray({required Animation<double> fade}) {
+  Widget _tray({required Animation<double> fade, required bool drags}) {
+    const glass = IOS26GlassSurface(
+      corners: GlassSurfaceCorners.concentric,
+      cornerRadius: kAccessoryTrayCornerRadius,
+    );
     return NativeViewSettleScope(
       fade: fade,
-      child: const AdaptiveKeyboardFade(
+      child: AdaptiveKeyboardFade(
         holdsNativeViews: true,
-        child: AbsorbPointer(
-          child: IOS26GlassSurface(
-            corners: GlassSurfaceCorners.concentric,
-            cornerRadius: kAccessoryTrayCornerRadius,
-          ),
-        ),
+        // A drag on the tray around them opens and closes it too.
+        child: drags
+            ? _trayDrag(glass, behavior: HitTestBehavior.opaque)
+            : const AbsorbPointer(child: glass),
       ),
     );
   }
@@ -878,10 +1029,12 @@ Widget nativeAccessory(
   Widget accessory,
   AdaptiveAccessorySpec spec, {
   bool glass = true,
+  AdaptiveTrayExpansion? expansion,
 }) => KeyedSubtree(
   key: registry.accessoryKey(tabs.id),
   child: AdaptiveAccessoryScope(
     spec: spec,
+    expansion: expansion,
     // The same element either way, so the accessory keeps its state as it
     // moves on or off the tray.
     child: NativeAccessoryGlass(glass: glass, child: accessory),
@@ -937,11 +1090,21 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
   }
 }
 
-enum _TabsSlot { tray, accessory, tabs, cover }
+enum _TabsSlot { tray, accessory, expanded, tabs, cover }
 
 /// Where [_RenderAccessoryOverTabs] puts its children: its size, where the
-/// tabs and the accessory go, and the tray under both, if it shows.
-typedef _Placed = ({Size size, Offset tabs, Offset accessory, Rect? tray});
+/// tabs and the accessory go, the tray under both, if it shows, and what the
+/// tray opens into: where it goes, and how much of it is in sight. [resting]
+/// is the height with the tray closed, which the pages keep clear of.
+typedef _Placed = ({
+  Size size,
+  Offset tabs,
+  Offset accessory,
+  Rect? tray,
+  Offset expanded,
+  double reveal,
+  double resting,
+});
 
 /// The native tab bar ([tabs]) with the tab layout's [accessory], as
 /// [layout] sets them:
@@ -965,10 +1128,25 @@ class _AccessoryOverTabs
     required this.tabs,
     this.tray,
     this.cover,
+    this.expanded,
+    this.expansion,
+    this.onRestingHeight,
+    this.onOpenExtent,
     this.layout = AdaptiveTabAccessoryLayout.floating,
   });
 
   final AdaptiveTabAccessoryLayout layout;
+
+  /// What the tray opens into, between the accessory and the tabs, as far as
+  /// [expansion] has it open.
+  final Widget? expanded;
+  final Animation<double>? expansion;
+
+  /// Told the height with the tray closed, after the frame.
+  final ValueChanged<double>? onRestingHeight;
+
+  /// Told how tall [expanded] is, as it is laid out.
+  final ValueChanged<double>? onOpenExtent;
 
   /// Laid over all of it, as the tray is, or as the capsule of the tabs is
   /// while there is no tray to show: a dialog's barrier.
@@ -989,13 +1167,17 @@ class _AccessoryOverTabs
   Widget? childForSlot(_TabsSlot slot) => switch (slot) {
     _TabsSlot.tray => tray,
     _TabsSlot.accessory => accessory,
+    _TabsSlot.expanded => expanded,
     _TabsSlot.tabs => tabs,
     _TabsSlot.cover => cover,
   };
 
   @override
   _RenderAccessoryOverTabs createRenderObject(BuildContext context) =>
-      _RenderAccessoryOverTabs(capsule, layout: layout);
+      _RenderAccessoryOverTabs(capsule, layout: layout)
+        ..expansion = expansion
+        ..onRestingHeight = onRestingHeight
+        ..onOpenExtent = onOpenExtent;
 
   @override
   void updateRenderObject(
@@ -1004,7 +1186,10 @@ class _AccessoryOverTabs
   ) {
     renderObject
       ..capsule = capsule
-      ..accessoryLayout = layout;
+      ..accessoryLayout = layout
+      ..expansion = expansion
+      ..onRestingHeight = onRestingHeight
+      ..onOpenExtent = onOpenExtent;
   }
 }
 
@@ -1032,14 +1217,59 @@ class _RenderAccessoryOverTabs extends RenderBox
   /// Whether the tray shows, as last laid out.
   bool _trayShown = false;
 
+  Animation<double>? _expansion;
+  set expansion(Animation<double>? value) {
+    if (value == _expansion) return;
+    if (attached) _expansion?.removeListener(markNeedsLayout);
+    _expansion = value;
+    if (attached) _expansion?.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  ValueChanged<double>? onRestingHeight;
+  ValueChanged<double>? onOpenExtent;
+  double? _reportedResting;
+
+  /// How much of what the tray opens into is in sight, as last laid out.
+  double _reveal = 0;
+
+  final LayerHandle<ClipRectLayer> _revealClip = LayerHandle<ClipRectLayer>();
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _expansion?.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _expansion?.removeListener(markNeedsLayout);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _revealClip.layer = null;
+    super.dispose();
+  }
+
   RenderBox? get _tray => childForSlot(_TabsSlot.tray);
   RenderBox? get _accessory => childForSlot(_TabsSlot.accessory);
   RenderBox? get _tabs => childForSlot(_TabsSlot.tabs);
   RenderBox? get _cover => childForSlot(_TabsSlot.cover);
+  RenderBox? get _expanded => childForSlot(_TabsSlot.expanded);
 
-  // Hit in this order, reversed: the tray under the bar, the accessory over
-  // it. The cover over all of them takes no touches.
-  Iterable<RenderBox> get _hit => [if (_trayShown) ?_tray, ?_tabs, ?_accessory];
+  /// What the tray opens into, while any of it is in sight.
+  RenderBox? get _revealed => _reveal > 0.5 && _trayShown ? _expanded : null;
+
+  // Hit in this order, reversed: the tray under the bar, what it opens into
+  // and the accessory over it. The cover over all of them takes no touches.
+  Iterable<RenderBox> get _hit => [
+    if (_trayShown) ?_tray,
+    ?_tabs,
+    ?_revealed,
+    ?_accessory,
+  ];
 
   Iterable<RenderBox> get _painted => [..._hit, ?_cover];
 
@@ -1079,9 +1309,13 @@ class _RenderAccessoryOverTabs extends RenderBox
               layoutChild,
             ),
           };
-    // A tray that does not show is laid out all the same, to no size.
+    // A tray that does not show is laid out all the same, to no size, and so
+    // is what it opens into, outside a tray.
     if (placed.tray == null && _tray != null) {
       layoutChild(_tray!, BoxConstraints.tight(Size.zero));
+    }
+    if (_layout != AdaptiveTabAccessoryLayout.tray && _expanded != null) {
+      layoutChild(_expanded!, BoxConstraints.tight(Size.zero));
     }
     return placed;
   }
@@ -1115,11 +1349,15 @@ class _RenderAccessoryOverTabs extends RenderBox
       }
       at = Offset(left, above + capsuleTop - kNativeAccessoryGap - size.height);
     }
+    final size = constraints.constrain(Size(width, tabsSize.height + above));
     return (
-      size: constraints.constrain(Size(width, tabsSize.height + above)),
+      size: size,
       tabs: Offset(0, above),
       accessory: at,
       tray: null,
+      expanded: Offset.zero,
+      reveal: 0.0,
+      resting: size.height,
     );
   }
 
@@ -1156,18 +1394,25 @@ class _RenderAccessoryOverTabs extends RenderBox
         (capsule?.right ?? width - room - kNativeTabCapsuleInset) +
         kNativeAccessoryGap;
     final centre = capsule?.center.dy ?? tabsSize.height / 2;
+    final size = constraints.constrain(Size(width, tabsSize.height));
     return (
-      size: constraints.constrain(Size(width, tabsSize.height)),
+      size: size,
       tabs: Offset.zero,
       accessory: Offset(left, centre - accessory.height / 2),
       tray: null,
+      expanded: Offset.zero,
+      reveal: 0.0,
+      resting: size.height,
     );
   }
 
   /// The accessory and the tabs on the tray: the tabs at their whole width,
   /// the accessory [kNativeAccessoryGap] above their capsule and centred on
   /// it, and the tray around both, as far from them as it keeps the capsule
-  /// from its bottom ([_trayPadding]).
+  /// from its bottom ([_trayPadding]). As the tray opens, what it opens into
+  /// unfolds between the two at its own height, from its top, pushing the
+  /// accessory and the tray's top up; the height the pages keep clear of
+  /// stays that of the closed tray.
   _Placed _layOutTray(
     BoxConstraints constraints,
     Size Function(RenderBox child, BoxConstraints constraints) layoutChild,
@@ -1192,22 +1437,50 @@ class _RenderAccessoryOverTabs extends RenderBox
         ),
       ),
     );
+    // At its own height, below the window's top.
+    final expanded = _expanded;
+    final openExtent = expanded == null
+        ? 0.0
+        : layoutChild(
+            expanded,
+            BoxConstraints(
+              minWidth: accessoryWidth,
+              maxWidth: accessoryWidth,
+              maxHeight: math.max(
+                0.0,
+                constraints.maxHeight -
+                    tabsSize.height -
+                    accessory.height -
+                    kNativeAccessoryGap -
+                    2 * padding,
+              ),
+            ),
+          ).height;
     if (accessory.isEmpty) {
+      final size = constraints.constrain(Size(width, tabsSize.height));
       return (
-        size: constraints.constrain(Size(width, tabsSize.height)),
+        size: size,
         tabs: Offset.zero,
         accessory: Offset.zero,
         tray: null,
+        expanded: Offset.zero,
+        reveal: 0.0,
+        resting: size.height,
       );
     }
-    final above = math.max(
+    // A little past open as it is pulled further, never past closed.
+    final reveal =
+        openExtent * (_expansion?.value ?? 0).clamp(0.0, 1.15).toDouble();
+    double aboveTabs(double reveal) => math.max(
       0.0,
-      padding + accessory.height + kNativeAccessoryGap - capsule.top,
+      padding + accessory.height + reveal + kNativeAccessoryGap - capsule.top,
     );
+    final above = aboveTabs(reveal);
     final left = (capsule.center.dx - accessoryWidth / 2)
         .clamp(0.0, math.max(0.0, width - accessoryWidth))
         .toDouble();
-    final top = above + capsule.top - kNativeAccessoryGap - accessory.height;
+    final revealTop = above + capsule.top - kNativeAccessoryGap - reveal;
+    final top = revealTop - accessory.height;
     final tray = Rect.fromLTRB(
       math.min(left, capsule.left) - padding,
       top - padding,
@@ -1222,8 +1495,17 @@ class _RenderAccessoryOverTabs extends RenderBox
       tabs: Offset(0, above),
       accessory: Offset(left, top),
       tray: tray,
+      expanded: Offset(left, revealTop),
+      reveal: reveal,
+      resting: constraints
+          .constrain(Size(width, tabsSize.height + aboveTabs(0)))
+          .height,
     );
   }
+
+  /// How tall what the tray opens into is, laid out for [_layOutTray].
+  double get _openExtent =>
+      _expanded?.hasSize ?? false ? _expanded!.size.height : 0;
 
   @override
   Size computeDryLayout(BoxConstraints constraints) =>
@@ -1237,6 +1519,20 @@ class _RenderAccessoryOverTabs extends RenderBox
     });
     size = placed.size;
     _trayShown = placed.tray != null;
+    _reveal = placed.reveal;
+    if (_expanded case final expanded?) {
+      (expanded.parentData! as BoxParentData).offset = placed.expanded;
+      onOpenExtent?.call(
+        _layout == AdaptiveTabAccessoryLayout.tray ? _openExtent : 0,
+      );
+    }
+    final resting = placed.resting;
+    if (resting != _reportedResting) {
+      _reportedResting = resting;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (attached) onRestingHeight?.call(resting);
+      });
+    }
     if (_tabs case final tabs?) {
       (tabs.parentData! as BoxParentData).offset = placed.tabs;
     }
@@ -1260,17 +1556,37 @@ class _RenderAccessoryOverTabs extends RenderBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    final revealed = _revealed;
     for (final child in _painted) {
-      context.paintChild(
-        child,
-        offset + (child.parentData! as BoxParentData).offset,
+      final at = offset + (child.parentData! as BoxParentData).offset;
+      if (child != revealed) {
+        context.paintChild(child, at);
+        continue;
+      }
+      // Only as much of it as the tray has opened.
+      _revealClip.layer = context.pushClipRect(
+        needsCompositing,
+        offset,
+        _revealRect,
+        (context, _) => context.paintChild(child, at),
+        oldLayer: _revealClip.layer,
       );
     }
+    if (revealed == null) _revealClip.layer = null;
+  }
+
+  /// Where what the tray opens into is in sight.
+  Rect get _revealRect {
+    final expanded = _expanded!;
+    return (expanded.parentData! as BoxParentData).offset &
+        Size(expanded.size.width, _reveal);
   }
 
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
     for (final child in _hit.toList().reversed) {
+      // What the tray opens into takes touches only where it is in sight.
+      if (child == _revealed && !_revealRect.contains(position)) continue;
       final offset = (child.parentData! as BoxParentData).offset;
       final hit = result.addWithPaintOffset(
         offset: offset,
@@ -1442,4 +1758,54 @@ Animation<double>? tabsFollowingPages(
     return blend.lowerOpacity;
   }
   return null;
+}
+
+/// The way the accessory opens and closes its tray
+/// ([AdaptiveAccessoryScope.expansionOf]).
+class _TrayExpansion implements AdaptiveTrayExpansion {
+  _TrayExpansion(this._state);
+
+  final _HostedTabBarState _state;
+
+  @override
+  Animation<double> get value => _state._trayOpen;
+
+  @override
+  bool get isOpen => _state._trayOpening;
+
+  @override
+  void open() => _state._settleTray(open: true);
+
+  @override
+  void close() => _state._settleTray(open: false);
+
+  @override
+  void toggle() => _state._settleTray(open: !isOpen);
+}
+
+/// The page dimmed while the tray is open ([open] above 0), as under a
+/// sheet; a tap on it closes the tray. Nothing, and no touches, while it is
+/// closed.
+class _TrayBarrier extends StatelessWidget {
+  const _TrayBarrier({required this.open, required this.onTap});
+
+  final Animation<double> open;
+  final VoidCallback onTap;
+
+  /// The dim of a sheet's barrier.
+  static const _color = Color(0x33000000);
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: open,
+    builder: (context, _) {
+      final t = open.value.clamp(0.0, 1.0);
+      if (t <= 0) return const SizedBox.shrink();
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: ColoredBox(color: _color.withValues(alpha: _color.a * t)),
+      );
+    },
+  );
 }

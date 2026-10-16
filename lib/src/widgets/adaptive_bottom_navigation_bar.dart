@@ -31,6 +31,7 @@ class AdaptiveBottomNavigationBar {
     this.chromeData,
     this.accessory,
     this.accessoryLayout = AdaptiveTabAccessoryLayout.floating,
+    this.accessoryExpanded,
   });
 
   /// Navigation items for bottom navigation bar
@@ -141,6 +142,19 @@ class AdaptiveBottomNavigationBar {
   /// it.
   final AdaptiveTabAccessoryLayout accessoryLayout;
 
+  /// What the [accessory] opens into on its tray
+  /// ([AdaptiveTabAccessoryLayout.tray]), as a sheet at its smallest opens
+  /// into a taller one: dragged up, or opened through its scope
+  /// ([AdaptiveAccessoryScope.expansionOf]), the tray grows upward, this
+  /// unfolding below the accessory, above the tabs, at its own height. It
+  /// follows the finger, springs open or closed when let go, and closes when
+  /// dragged down, when the page around it is tapped (dimmed while it is
+  /// open), when another tab is picked and when a page comes up over the
+  /// tabs. The pages keep clear of the closed tray only: the open one lies
+  /// over them. It is in the accessory's scope too, and may follow the
+  /// expansion, say to fade in. Elsewhere it is not shown.
+  final Widget? accessoryExpanded;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -156,6 +170,7 @@ class AdaptiveBottomNavigationBar {
     Object? chromeData,
     Widget? accessory,
     AdaptiveTabAccessoryLayout? accessoryLayout,
+    Widget? accessoryExpanded,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -171,6 +186,7 @@ class AdaptiveBottomNavigationBar {
       chromeData: chromeData ?? this.chromeData,
       accessory: accessory ?? this.accessory,
       accessoryLayout: accessoryLayout ?? this.accessoryLayout,
+      accessoryExpanded: accessoryExpanded ?? this.accessoryExpanded,
     );
   }
 }

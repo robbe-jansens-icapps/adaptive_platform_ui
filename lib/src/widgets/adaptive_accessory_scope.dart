@@ -17,11 +17,23 @@ class AdaptiveAccessoryScope extends InheritedWidget {
   const AdaptiveAccessoryScope({
     super.key,
     required this.spec,
+    this.expansion,
     required super.child,
   });
 
   /// Where the accessory is shown, and how much room it has.
   final AdaptiveAccessorySpec spec;
+
+  /// How far the accessory's tray is open into its sheet, where it has one
+  /// ([AdaptiveBottomNavigationBar.accessoryExpanded]).
+  final AdaptiveTrayExpansion? expansion;
+
+  /// How far the tray of the accessory around [context] is open, and the way
+  /// to open and close it; null where it opens into nothing. Does not make
+  /// [context] depend on it: listen to [AdaptiveTrayExpansion.value].
+  static AdaptiveTrayExpansion? expansionOf(BuildContext context) => context
+      .getInheritedWidgetOfExactType<AdaptiveAccessoryScope>()
+      ?.expansion;
 
   /// Where the accessory around [context] is shown, or null outside one.
   static AdaptiveAccessorySpec? maybeOf(BuildContext context) => context
@@ -44,5 +56,22 @@ class AdaptiveAccessoryScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AdaptiveAccessoryScope oldWidget) =>
-      spec != oldWidget.spec;
+      spec != oldWidget.spec || expansion != oldWidget.expansion;
+}
+
+/// How far a tab accessory's tray is open into its sheet
+/// ([AdaptiveBottomNavigationBar.accessoryExpanded]), and the way to open
+/// and close it, as a press on the accessory might.
+abstract interface class AdaptiveTrayExpansion {
+  /// 0 closed, 1 open, in between while it moves, also under the finger.
+  Animation<double> get value;
+
+  /// Whether it is open, or on its way to be.
+  bool get isOpen;
+
+  void open();
+
+  void close();
+
+  void toggle();
 }

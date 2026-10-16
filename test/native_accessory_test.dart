@@ -142,10 +142,17 @@ class NativeTabs {
     this.actions = const <AdaptiveAppBarAction>[],
     this.layout = AdaptiveTabAccessoryLayout.floating,
     this.sheetNavigatorKey,
+    this.expanded,
     FoldableData? fold,
   }) : fold = fold ?? forcedChrome();
 
   final GlobalKey<NavigatorState>? sheetNavigatorKey;
+
+  /// What the accessory's tray opens into.
+  final Widget? expanded;
+
+  /// The tab picked.
+  final selected = ValueNotifier<int>(0);
 
   final Widget? accessory;
   final AdaptiveTabAccessoryLayout layout;
@@ -182,28 +189,32 @@ class NativeTabs {
       sheetNavigatorKey: sheetNavigatorKey,
       child: child!,
     ),
-    home: AdaptiveScaffold(
-      bottomNavigationBar: AdaptiveBottomNavigationBar(
-        items: const [
-          AdaptiveNavigationDestination(icon: 'map', label: 'Map'),
-          AdaptiveNavigationDestination(icon: 'person', label: 'Account'),
-        ],
-        selectedIndex: 0,
-        onTap: (_) {},
-        accessory: accessory,
-        accessoryLayout: layout,
-      ),
-      body: IndexedStack(
-        children: [
-          for (var i = 0; i < navigators.length; i++)
-            Navigator(
-              key: navigators[i],
-              onGenerateRoute: (settings) => MaterialPageRoute<void>(
-                settings: settings,
-                builder: (_) => page('Tab $i'),
+    home: ValueListenableBuilder<int>(
+      valueListenable: selected,
+      builder: (context, index, _) => AdaptiveScaffold(
+        bottomNavigationBar: AdaptiveBottomNavigationBar(
+          items: const [
+            AdaptiveNavigationDestination(icon: 'map', label: 'Map'),
+            AdaptiveNavigationDestination(icon: 'person', label: 'Account'),
+          ],
+          selectedIndex: index,
+          onTap: (tab) => selected.value = tab,
+          accessory: accessory,
+          accessoryLayout: layout,
+          accessoryExpanded: expanded,
+        ),
+        body: IndexedStack(
+          children: [
+            for (var i = 0; i < navigators.length; i++)
+              Navigator(
+                key: navigators[i],
+                onGenerateRoute: (settings) => MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => page('Tab $i'),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -849,6 +860,105 @@ void main() {
     await tester.pumpAndSettle();
     expect(hitsTabs(), isTrue);
     unmockPlatformViews();
+  });
+
+  group('a tray that opens into a sheet', () {
+    const opened = 200.0;
+    final expanded = find.byKey(
+      const ValueKey('expanded'),
+      skipOffstage: false,
+    );
+
+    Future<NativeTabs> pumpTray(WidgetTester tester) async {
+      mockPlatformViews();
+      IOS26NativeTabBar.debugHasUIKitOverride = true;
+      window(
+        tester,
+        const Size(402, 874),
+        const FakeViewPadding(top: 62, bottom: 34),
+      );
+      addTearDown(tester.view.reset);
+      barHeight = 84;
+      final tabs = NativeTabs(
+        accessory: const RentalAccessory(),
+        layout: AdaptiveTabAccessoryLayout.tray,
+        // Takes touches where it is in sight.
+        expanded: const ColoredBox(
+          key: ValueKey('expanded'),
+          color: Color(0x00000000),
+          child: SizedBox(width: double.infinity, height: opened),
+        ),
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+      await tester.pumpAndSettle();
+      return tabs;
+    }
+
+    bool hits(WidgetTester tester, Finder finder) {
+      final box = tester.renderObject(finder);
+      return tester
+          .hitTestOnBinding(tester.getCenter(finder))
+          .path
+          .any((entry) => entry.target == box);
+    }
+
+    testWidgets('it opens under the finger as it is dragged up and springs '
+        'open; the pages keep clear of it closed only; a tap on the page '
+        'closes it', (tester) async {
+      final tabs = await pumpTray(tester);
+      final closed = tester.getRect(trayGlass);
+      final inset = tabs.insetOf('Tab 0');
+      // Closed, what it opens into is out of sight and takes no touches.
+      expect(hits(tester, expanded), isFalse);
+
+      final gesture = await tester.startGesture(tester.getCenter(accessory));
+      await gesture.moveBy(const Offset(0, -20));
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // Under the finger: up by as much as it moved, past halfway.
+      expect(tester.getRect(trayGlass).top, closeTo(closed.top - 120, 1));
+      expect(tester.getRect(trayGlass).bottom, closed.bottom);
+      expect(tabs.insetOf('Tab 0'), inset);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.getRect(trayGlass).top, closeTo(closed.top - opened, 1));
+      expect(hits(tester, expanded), isTrue);
+      // Still kept clear of closed.
+      expect(tabs.insetOf('Tab 0'), inset);
+
+      await tester.tapAt(const Offset(200, 200));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(trayGlass).top, closeTo(closed.top, 0.5));
+      expect(hits(tester, expanded), isFalse);
+      unmockPlatformViews();
+    });
+
+    testWidgets('opened through the accessory\'s scope, it closes as '
+        'another tab is picked', (tester) async {
+      final tabs = await pumpTray(tester);
+      final closed = tester.getRect(trayGlass);
+      final expansion = AdaptiveAccessoryScope.expansionOf(
+        tester.element(accessory),
+      )!;
+      expect(expansion.isOpen, isFalse);
+
+      expansion.open();
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isTrue);
+      expect(expansion.value.value, closeTo(1, 0.001));
+      expect(tester.getRect(trayGlass).top, closeTo(closed.top - opened, 1));
+
+      tabs.selected.value = 1;
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isFalse);
+      expect(tester.getRect(trayGlass).top, closeTo(closed.top, 1));
+      unmockPlatformViews();
+    });
   });
 
   testWidgets('one with nothing to show draws no glass and takes no room', (
