@@ -295,10 +295,13 @@ class RentalAccessory extends StatelessWidget {
 
 - **Folds.** `FoldScope.foldOf(context)` gives the fold of a partly open
   foldable, the iPhone Duo's (which iOS does not put in the media query) or
-  an Android hinge or half-opened fold. `AdaptiveTwoPane` lays two panes of
-  a full screen page out around it: side by side on a book, above and below
-  on a table (a video above the fold, its chat below), and by a proportion
-  without a fold. The panes keep their state as the device folds:
+  an Android hinge or half-opened fold; `FoldScope.creaseOf(context)` gives
+  where it runs while the device lies flat too. `AdaptiveTwoPane` lays two
+  panes out around the fold where it runs through them, also in a column of
+  a split view: side by side on a book, above and below on a table (a video
+  above the fold, its chat below), and by a proportion without a fold, or
+  at the crease of a flat device with `followsCrease: true`. The panes keep
+  their state as the device folds:
 
 ```dart
 AdaptiveTwoPane(

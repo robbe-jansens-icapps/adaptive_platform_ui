@@ -221,6 +221,117 @@ void main() {
       );
     },
   );
+
+  group('in a window of its own', () {
+    const inner = Size(951, 669);
+
+    /// [child] laid out at [at] in a window of [size], [width] wide.
+    Widget placed({
+      required Widget child,
+      Rect? hinge,
+      Rect? crease,
+      List<DisplayFeature> features = const [],
+      Size size = inner,
+      double at = 0,
+      double? width,
+    }) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: MediaQuery(
+        data: MediaQueryData(size: size, displayFeatures: features),
+        child: FoldScope(
+          hinge: hinge,
+          crease: crease,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: EdgeInsets.only(left: at),
+              child: SizedBox(
+                width: width ?? size.width - at,
+                height: size.height,
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Widget panes({bool followsCrease = false}) => AdaptiveTwoPane(
+      followsCrease: followsCrease,
+      start: const _Probe(key: start),
+      end: const _Probe(key: end),
+    );
+
+    const flatDuo = Rect.fromLTWH(475, 0, 1, 669);
+
+    testWidgets('followsCrease meets where the fold runs while an iPhone Duo '
+        'lies flat; without it the panes share the window', (tester) async {
+      await tester.pumpWidget(
+        placed(child: panes(followsCrease: true), crease: flatDuo),
+      );
+      expect(
+        tester.getRect(find.byKey(start)),
+        const Rect.fromLTWH(0, 0, 475, 669),
+      );
+      expect(
+        tester.getRect(find.byKey(end)),
+        const Rect.fromLTWH(476, 0, 475, 669),
+      );
+
+      await tester.pumpWidget(placed(child: panes(), crease: flatDuo));
+      expect(tester.getRect(find.byKey(start)).width, 951 / 2);
+    });
+
+    testWidgets('followsCrease meets an Android fold lying flat', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        placed(
+          size: window,
+          child: panes(followsCrease: true),
+          features: [
+            fold(
+              const Rect.fromLTWH(0, 420, 669, 0),
+              DisplayFeatureState.postureFlat,
+            ),
+          ],
+        ),
+      );
+
+      expect(
+        tester.getRect(find.byKey(start)),
+        const Rect.fromLTWH(0, 0, 669, 420),
+      );
+      expect(tester.getRect(find.byKey(end)).top, 420);
+    });
+
+    testWidgets('beside a list it meets the fold where it runs through it, '
+        'from the window into its own coordinates', (tester) async {
+      await tester.pumpWidget(placed(child: panes(), hinge: flatDuo, at: 362));
+      // Where it is laid out is known once the frame is done.
+      await tester.pump();
+
+      expect(
+        tester.getRect(find.byKey(start)),
+        const Rect.fromLTWH(362, 0, 113, 669),
+      );
+      expect(
+        tester.getRect(find.byKey(end)),
+        const Rect.fromLTWH(476, 0, 475, 669),
+      );
+    });
+
+    testWidgets('a fold beside it, not through it, leaves the panes to the '
+        'proportion', (tester) async {
+      await tester.pumpWidget(
+        placed(child: panes(), hinge: flatDuo, width: 362),
+      );
+      await tester.pump();
+
+      expect(tester.getRect(find.byKey(start)).width, 181);
+      expect(tester.getRect(find.byKey(end)).width, 181);
+    });
+  });
 }
 
 EdgeInsets _paddingOf(WidgetTester tester, Key key) =>

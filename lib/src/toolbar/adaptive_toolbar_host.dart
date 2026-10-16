@@ -296,6 +296,9 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
 
     return FoldScope(
       hinge: FoldScope.hingeFrom(fold),
+      // Where the fold runs while the device lies flat too, for layouts that
+      // keep to the two halves of the inner display.
+      crease: FoldScope.creaseFrom(fold, MediaQuery.sizeOf(context)),
       child: _WindowTopMargin(
         enabled: noRoomAtTop,
         child: RouteTransitionScope(
