@@ -874,6 +874,15 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
             widget.scrollable
                 ? _ScrollEdgeFade(
                     scrolled: _scrolled,
+                    // Under the tabs and the home indicator, wherever the
+                    // sheet is: at its tallest it runs on past the bottom.
+                    bottomEdge: material || metrics.sidePanel
+                        ? null
+                        : () => math.max(
+                            0.0,
+                            _frame(_extent.value, metrics).bottom -
+                                (metrics.size.height - metrics.padding.bottom),
+                          ),
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -1045,10 +1054,23 @@ class _Grabber extends StatelessWidget {
 /// Fades content out under the header once it is scrolled, like the iOS 26
 /// scroll edge effect.
 class _ScrollEdgeFade extends StatelessWidget {
-  const _ScrollEdgeFade({required this.scrolled, required this.child});
+  const _ScrollEdgeFade({
+    required this.scrolled,
+    required this.child,
+    this.bottomEdge,
+  });
 
   final ValueListenable<bool> scrolled;
   final Widget child;
+
+  /// How much of the bottom of the content lies under what floats over the
+  /// sheet's bottom (the tabs, what they carry, the home indicator), as it
+  /// is painted: the content fades out above it, as iOS 26 softens the edge
+  /// of content under its bars, rather than running on under them.
+  final double Function()? bottomEdge;
+
+  /// How far the content fades over, at either edge.
+  static const _fade = 16.0;
 
   @override
   Widget build(BuildContext context) {
@@ -1056,15 +1078,33 @@ class _ScrollEdgeFade extends StatelessWidget {
       valueListenable: scrolled,
       child: child,
       builder: (context, scrolled, child) {
-        if (!scrolled) return child!;
+        if (!scrolled && bottomEdge == null) return child!;
         return ShaderMask(
           blendMode: BlendMode.dstIn,
-          shaderCallback: (bounds) => LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: const [Color(0x00000000), Color(0xFF000000)],
-            stops: [0, math.min(16 / math.max(bounds.height, 1), 1)],
-          ).createShader(bounds),
+          shaderCallback: (bounds) {
+            final bottomEdge = this.bottomEdge?.call() ?? 0;
+            final height = math.max(bounds.height, 1.0);
+            double at(double y) => (y / height).clamp(0.0, 1.0);
+            const clear = Color(0x00000000);
+            const shown = Color(0xFF000000);
+            final bottom = height - bottomEdge;
+            return LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                if (scrolled) clear,
+                shown,
+                shown,
+                if (bottomEdge > 0) clear,
+              ],
+              stops: [
+                if (scrolled) 0,
+                at(scrolled ? _fade : 0),
+                at(bottomEdge > 0 ? bottom - _fade - 8 : height),
+                if (bottomEdge > 0) at(bottom - 4),
+              ],
+            ).createShader(bounds);
+          },
           child: child,
         );
       },
