@@ -127,8 +127,9 @@ class AdaptiveDatePicker {
         initialDate: initialDate,
         firstDate: firstDate,
         lastDate: lastDate,
-        initialDatePickerMode:
-            isMonthYear ? DatePickerMode.year : initialDatePickerMode,
+        initialDatePickerMode: isMonthYear
+            ? DatePickerMode.year
+            : initialDatePickerMode,
       );
       if (picked == null) return null;
       date = isMonthYear ? DateTime(picked.year, picked.month, 1) : picked;
@@ -351,10 +352,14 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                   children: [
                     _SheetButton(
                       label: localizations.closeButtonTooltip,
-                      symbol: const SFSymbol(
+                      // In the label's colour throughout: without one the
+                      // button takes the window's tint, system blue, as the
+                      // sheet leaves.
+                      symbol: SFSymbol(
                         'xmark',
                         size: 17,
                         weight: FontWeight.w600,
+                        color: CupertinoColors.label.resolveFrom(context),
                       ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),

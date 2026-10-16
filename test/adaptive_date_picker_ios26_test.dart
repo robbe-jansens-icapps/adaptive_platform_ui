@@ -208,6 +208,19 @@ void main() {
       );
     });
 
+    testWidgets('the close button keeps one colour, also while the sheet '
+        'leaves', (tester) async {
+      await open(tester);
+
+      final close = tester.widget<AdaptiveButton>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is AdaptiveButton && widget.sfSymbol?.name == 'xmark',
+        ),
+      );
+      expect(close.sfSymbol?.color, isNotNull);
+    });
+
     testWidgets('the close button picks nothing', (tester) async {
       final result = await open(tester);
 

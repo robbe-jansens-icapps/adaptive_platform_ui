@@ -180,6 +180,7 @@ class AdaptiveScaffold extends StatefulWidget {
     this.bottomNavigationBar,
     this.body,
     this.resizeToAvoidBottomInset,
+    this.extendBodyUnderDuoBar = false,
     this.floatingActionButton,
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
     this.enableBlur = true,
@@ -218,6 +219,14 @@ class AdaptiveScaffold extends StatefulWidget {
   /// Set to `false` to keep bottom navigation pinned while the keyboard
   /// overlays content, such as on iOS tab-based layouts.
   final bool? resizeToAvoidBottomInset;
+
+  /// Whether the body runs under the iPhone Duo's vertical bar, as a page's
+  /// background does with custom chrome, rather than ending where the bar's
+  /// strip begins. The strip then stays in the media query's padding, for the
+  /// content to keep clear of; [DuoPose.controlsEdge] says where the bar's
+  /// controls begin. Off by default: the body keeps out of the strip, for
+  /// pages that leave the padding to a SafeArea or ignore it.
+  final bool extendBodyUnderDuoBar;
 
   /// Floating action button (Material only)
   final Widget? floatingActionButton;
@@ -896,6 +905,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         tabBarHidden: widget.tabBarHidden,
         tabsHosted: tabsHosted,
         resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+        extendBodyUnderDuoBar: widget.extendBodyUnderDuoBar,
         children: childrenList,
       );
       if (tabsHosted &&

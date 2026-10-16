@@ -326,105 +326,109 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                     floatingAccessoryHeight: _accessoryHeight,
                     child: AdaptiveGlassTheme(
                       style: chrome?.glass ?? const AdaptiveGlassStyle(),
-                  // Toasts show above the bars.
-                  child: AdaptiveToastLayer(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Always the first child at a stable position, so
-                        // toggling the chrome never rebuilds the navigator from
-                        // scratch. The MediaQuery in it is always here too, even
-                        // when it changes nothing: adding it only in some poses
-                        // would move the navigator in the element tree whenever
-                        // the pose changes (moving between Split View panes),
-                        // and rebuild every route.
-                        _BarInset(pose: pose, child: widget.child),
-                        if (hostsToolbar)
-                          BackdropGroup(
-                            backdropKey: _chromeBackdrop,
-                            child: _ChromeMaterial(
-                              custom: chrome != null,
-                              child: HostedTopToolbar(
-                                blend: _blend,
-                                titleOnly: pose != null,
-                                chrome: chrome,
-                                placement: placement,
-                                sidebarInset: _sidebarInset,
-                              ),
-                            ),
-                          ),
-                        // A sidebar expanded over the content closes with a
-                        // tap outside it.
-                        if (sidebar)
-                          Positioned.fill(
-                            key: const ValueKey<String>('adaptive_sidebar_scrim'),
-                            child: IgnorePointer(
-                              ignoring: !_sidebarOverlaid,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: _collapseOverlaidSidebar,
-                                child: FadeTransition(
-                                  opacity: _sidebarOverlaid
-                                      ? _sidebar
-                                      : kAlwaysDismissedAnimation,
-                                  child: const ColoredBox(
-                                    color: Color(0x33000000),
+                      // Toasts show above the bars.
+                      child: AdaptiveToastLayer(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // Always the first child at a stable position, so
+                            // toggling the chrome never rebuilds the navigator from
+                            // scratch. The MediaQuery in it is always here too, even
+                            // when it changes nothing: adding it only in some poses
+                            // would move the navigator in the element tree whenever
+                            // the pose changes (moving between Split View panes),
+                            // and rebuild every route.
+                            _BarInset(pose: pose, child: widget.child),
+                            if (hostsToolbar)
+                              BackdropGroup(
+                                backdropKey: _chromeBackdrop,
+                                child: _ChromeMaterial(
+                                  custom: chrome != null,
+                                  child: HostedTopToolbar(
+                                    blend: _blend,
+                                    titleOnly: pose != null,
+                                    chrome: chrome,
+                                    placement: placement,
+                                    sidebarInset: _sidebarInset,
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                        if (hostsTabBar)
-                          BackdropGroup(
-                            key: const ValueKey<String>('adaptive_tab_bar'),
-                            backdropKey: _chromeBackdrop,
-                            child: _ChromeMaterial(
-                              custom: chrome != null,
-                              child: HostedTabBar(
-                                blend: _blend,
-                                height: _tabBarHeight,
-                                chrome: chrome,
-                                placement: placement,
-                                accessoryHeight: _accessoryHeight,
-                                sidebar: sidebar
-                                    ? HostedSidebar(
-                                        progress: _sidebar,
-                                        expanded: _sidebarExpanded,
-                                        overlaid: _sidebarOverlaid,
-                                        onToggle: _toggleSidebar,
-                                        onTabTapped: _collapseOverlaidSidebar,
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        if (pose != null)
-                          // The bar sits on whichever edge the pose names: the
-                          // right in most poses, the left in the leading Split
-                          // View pane.
-                          Positioned(
-                            key: const ValueKey<String>('adaptive_duo_bar'),
-                            top: 0,
-                            bottom: 0,
-                            left: pose.onLeft ? 0 : null,
-                            right: pose.onLeft ? null : 0,
-                            width: pose.bandWidth,
-                            child: BackdropGroup(
-                              backdropKey: _chromeBackdrop,
-                              child: _ChromeMaterial(
-                                custom: chrome != null,
-                                child: HostedDuoBar(
-                                  blend: _blend,
-                                  chrome: chrome,
-                                  regions:
-                                      fold?.regions ?? const <ReservedRegion>[],
+                            // A sidebar expanded over the content closes with a
+                            // tap outside it.
+                            if (sidebar)
+                              Positioned.fill(
+                                key: const ValueKey<String>(
+                                  'adaptive_sidebar_scrim',
+                                ),
+                                child: IgnorePointer(
+                                  ignoring: !_sidebarOverlaid,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _collapseOverlaidSidebar,
+                                    child: FadeTransition(
+                                      opacity: _sidebarOverlaid
+                                          ? _sidebar
+                                          : kAlwaysDismissedAnimation,
+                                      child: const ColoredBox(
+                                        color: Color(0x33000000),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                            if (hostsTabBar)
+                              BackdropGroup(
+                                key: const ValueKey<String>('adaptive_tab_bar'),
+                                backdropKey: _chromeBackdrop,
+                                child: _ChromeMaterial(
+                                  custom: chrome != null,
+                                  child: HostedTabBar(
+                                    blend: _blend,
+                                    height: _tabBarHeight,
+                                    chrome: chrome,
+                                    placement: placement,
+                                    accessoryHeight: _accessoryHeight,
+                                    sidebar: sidebar
+                                        ? HostedSidebar(
+                                            progress: _sidebar,
+                                            expanded: _sidebarExpanded,
+                                            overlaid: _sidebarOverlaid,
+                                            onToggle: _toggleSidebar,
+                                            onTabTapped:
+                                                _collapseOverlaidSidebar,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            if (pose != null)
+                              // The bar sits on whichever edge the pose names: the
+                              // right in most poses, the left in the leading Split
+                              // View pane.
+                              Positioned(
+                                key: const ValueKey<String>('adaptive_duo_bar'),
+                                top: 0,
+                                bottom: 0,
+                                left: pose.onLeft ? 0 : null,
+                                right: pose.onLeft ? null : 0,
+                                width: pose.bandWidth,
+                                child: BackdropGroup(
+                                  backdropKey: _chromeBackdrop,
+                                  child: _ChromeMaterial(
+                                    custom: chrome != null,
+                                    child: HostedDuoBar(
+                                      blend: _blend,
+                                      chrome: chrome,
+                                      regions:
+                                          fold?.regions ??
+                                          const <ReservedRegion>[],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

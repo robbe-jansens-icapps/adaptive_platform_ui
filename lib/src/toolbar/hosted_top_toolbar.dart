@@ -788,6 +788,15 @@ class _BackButtonState extends State<_BackButton>
       ? _close
       : _back;
 
+  static SFSymbol _tinted(SFSymbol symbol, Color? tint) => tint == null
+      ? symbol
+      : SFSymbol(
+          symbol.name,
+          size: symbol.size,
+          weight: symbol.weight,
+          color: tint,
+        );
+
   /// The stand-in's opacity: 1 while it stands in, fading out over the native
   /// button once that is back.
   late final AnimationController _standIn;
@@ -901,14 +910,19 @@ class _BackButtonState extends State<_BackButton>
               size: AdaptiveButtonSize.large,
               useSmoothRectangleBorder: false,
               onPressed: onBack,
-              sfSymbol: _symbol,
+              // In the bar's tint, as its actions are.
+              sfSymbol: _tinted(_symbol, content.tint),
             ),
           ),
           if (glyph != null && (_standingIn || _standIn.value > 0))
             FadeTransition(
               key: const ValueKey<String>('adaptive_toolbar_back_stand_in'),
               opacity: _standIn,
-              child: _BackStandIn(glyph: glyph, onPressed: onBack),
+              child: _BackStandIn(
+                glyph: glyph,
+                color: content.tint,
+                onPressed: onBack,
+              ),
             ),
         ],
       ),
@@ -919,10 +933,17 @@ class _BackButtonState extends State<_BackButton>
 /// The back button without glass, for while pages move: a light, translucent
 /// circle, as the glass surfaces stand in for theirs, with the button's glyph.
 class _BackStandIn extends StatelessWidget {
-  const _BackStandIn({required this.glyph, required this.onPressed});
+  const _BackStandIn({
+    required this.glyph,
+    required this.onPressed,
+    this.color,
+  });
 
   final GlassButtonGlyph glyph;
   final VoidCallback onPressed;
+
+  /// The bar's tint, for the glyph; the system's colour for it if null.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -953,7 +974,7 @@ class _BackStandIn extends StatelessWidget {
             offset: glyph.offset,
             child: Image(
               image: glyph.image,
-              color: glyph.color,
+              color: color ?? glyph.color,
               colorBlendMode: BlendMode.srcIn,
               gaplessPlayback: true,
             ),

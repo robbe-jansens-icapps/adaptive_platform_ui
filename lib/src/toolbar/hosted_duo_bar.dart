@@ -151,6 +151,7 @@ class HostedDuoBar extends StatelessWidget {
                       leading: chrome == null
                           ? DuoBarBackButton(
                               onPressed: content.back,
+                              tint: content.tint,
                               close:
                                   content.backStyle ==
                                   AdaptiveBackButtonStyle.close,

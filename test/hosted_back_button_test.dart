@@ -275,4 +275,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('body:Detail'), findsNothing);
   }, variant: ios);
+
+  testWidgets('the chevron is in the bar\'s tint, as its actions are', (
+    tester,
+  ) async {
+    final navigator = await start(tester);
+    const green = Color(0xFF007C30);
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const AdaptiveScaffold(
+          appBar: AdaptiveAppBar(
+            useNativeToolbar: true,
+            tintColor: green,
+            titleWidget: Text('Tinted'),
+          ),
+          body: SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final back = tester.widget<AdaptiveButton>(nativeBack.last);
+    expect(back.sfSymbol?.name, 'chevron.left');
+    expect(back.sfSymbol?.color, green);
+  });
 }

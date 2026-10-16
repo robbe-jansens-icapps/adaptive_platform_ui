@@ -44,6 +44,7 @@ class IOS26Scaffold extends StatefulWidget {
     this.tabBarHidden = false,
     this.tabsHosted = false,
     this.resizeToAvoidBottomInset,
+    this.extendBodyUnderDuoBar = false,
     this.backgroundColor,
     this.backdropColor,
     this.showsBackdrop = true,
@@ -103,6 +104,9 @@ class IOS26Scaffold extends StatefulWidget {
   /// minimizing it on scroll to the scaffold around it.
   final bool tabsHosted;
   final bool? resizeToAvoidBottomInset;
+
+  /// See [AdaptiveScaffold.extendBodyUnderDuoBar].
+  final bool extendBodyUnderDuoBar;
   final List<Widget> children;
 
   /// Replaces the system's vertical bar edge in widget tests, where the
@@ -468,11 +472,17 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                     ? kHostedToolbarBottomPadding
                     : 0);
       final page = bodyContent;
+      // A page that keeps its content clear of the strip itself lets its
+      // background run under the bar: the strip stays in its padding.
+      final extend = widget.extendBodyUnderDuoBar;
+      final kept = extend ? trailingInset : 0.0;
       bodyContent = Padding(
-        padding: EdgeInsets.only(
-          left: barOnLeft ? trailingInset : 0,
-          right: barOnLeft ? 0 : trailingInset,
-        ),
+        padding: extend
+            ? EdgeInsets.zero
+            : EdgeInsets.only(
+                left: barOnLeft ? trailingInset : 0,
+                right: barOnLeft ? 0 : trailingInset,
+              ),
         // Built on the MediaQuery that the CupertinoPageScaffold below hands
         // its content, not on this one: with the keyboard up, that one no
         // longer has the keyboard's inset, which the scaffold has made room
@@ -485,8 +495,9 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
               data: inner.copyWith(
                 padding: inner.padding.copyWith(
                   top: inner.padding.top + topInset,
-                  left: inner.padding.left - (barOnLeft ? consumed : 0),
-                  right: inner.padding.right - (barOnLeft ? 0 : consumed),
+                  left: inner.padding.left - (barOnLeft ? consumed - kept : 0),
+                  right:
+                      inner.padding.right - (barOnLeft ? 0 : consumed - kept),
                 ),
                 // With a strip added here, as the system would have
                 // reserved it: a scaffold nested in this one finds it in
@@ -567,6 +578,7 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                       ? null
                       : DuoBarBackButton(
                           onPressed: () => Navigator.of(context).maybePop(),
+                          tint: widget.tintColor,
                         )),
               actions: widget.actions ?? const <AdaptiveAppBarAction>[],
               tabBar: tabs,
