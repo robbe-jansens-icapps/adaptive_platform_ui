@@ -124,7 +124,11 @@ void main() {
       await tester.pump();
 
       expect(tester.widget<AdaptiveBarBackdrop>(frost).color, _grey);
-      expect(tester.getRect(frost).bottom, 62 + kHostedToolbarHeight);
+      // Some room below the controls, clear of the back button.
+      expect(
+        tester.getRect(frost).bottom,
+        62 + kHostedToolbarHeight + kHostedToolbarBottomPadding,
+      );
       expect(frostShown(tester), 0);
 
       controller.jumpTo(200);
@@ -195,10 +199,13 @@ void main() {
               find.descendant(of: bar, matching: find.byType(Stack)).first,
             )
             .height,
-        kHostedToolbarHeight + kWindowTopMargin,
+        kHostedToolbarHeight + kHostedToolbarBottomPadding + kWindowTopMargin,
       );
       // The page starts below the bar, margin and all.
-      expect(pagePadding.top, kWindowTopMargin + kHostedToolbarHeight);
+      expect(
+        pagePadding.top,
+        kWindowTopMargin + kHostedToolbarHeight + kHostedToolbarBottomPadding,
+      );
     },
   );
 

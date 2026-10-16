@@ -21,6 +21,11 @@ import 'toolbar_registry.dart';
 /// Height of the toolbar's content area, excluding the status bar.
 const double kHostedToolbarHeight = 44.0;
 
+/// Room the toolbar's backdrop keeps below its controls, so the 44 point
+/// glass buttons do not sit right on its bottom edge. Custom chrome sets the
+/// height of its bar itself ([AdaptiveChromeMetrics.toolbarHeight]).
+const double kHostedToolbarBottomPadding = 8.0;
+
 /// What one page contributes to the top toolbar.
 @immutable
 class TopToolbarContent {
@@ -172,6 +177,13 @@ class HostedTopToolbar extends StatelessWidget {
 
   double get _toolbarHeight =>
       chrome?.metrics.toolbarHeight ?? kHostedToolbarHeight;
+
+  /// Room below the controls, down to the bottom edge of the backdrop: on the
+  /// native bar below the status bar, not in the iPhone Duo's top strip.
+  double _bottomPadding(BuildContext context) =>
+      chrome == null && !titleOnly && DuoTopStripScope.of(context) == null
+      ? kHostedToolbarBottomPadding
+      : 0;
 
   @override
   Widget build(BuildContext context) {
@@ -329,7 +341,9 @@ class HostedTopToolbar extends StatelessWidget {
       child: SizedBox(
         height: titleOnly
             ? kDuoTitleBandHeight
-            : _toolbarHeight + math.max(upperTop, lowerTop),
+            : _toolbarHeight +
+                  _bottomPadding(context) +
+                  math.max(upperTop, lowerTop),
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
           child: FadeTransition(
@@ -499,7 +513,7 @@ class HostedTopToolbar extends StatelessWidget {
         : Align(
             alignment: Alignment.topCenter,
             child: SizedBox(
-              height: topInset + _toolbarHeight,
+              height: topInset + _toolbarHeight + _bottomPadding(context),
               child: IgnorePointer(child: AdaptiveBarBackdrop(color: color)),
             ),
           );
@@ -584,31 +598,38 @@ class HostedTopToolbar extends StatelessWidget {
                       ),
                     ),
                   )
-                : defaultTargetPlatform == TargetPlatform.iOS
-                ? IOS26NativeToolbar(
-                    title: content.title,
-                    titleWidget: content.titleOverlay,
-                    leading: content.customLeading,
-                    // The shared back button is drawn over the bar: the title
-                    // keeps clear of it all the same.
-                    reservesLeading:
-                        content.impliesBack || content.customLeading != null,
-                    leadingInset: _hasWindowControls(context) ? 62 : 0,
-                    actions: content.actions,
-                    tintColor: content.tint,
-                    showsGradient: false,
-                    // A native bar only for what only it can show: its own
-                    // title or bar buttons. Most pages have a Flutter title and
-                    // no buttons, and a platform view per page and transition
-                    // costs frames.
-                    showNativeView: content.hasNativeItems,
-                    onActionTap: (index) {
-                      if (index >= 0 && index < content.actions.length) {
-                        content.actions[index].onPressed();
-                      }
-                    },
-                  )
-                : _FallbackBar(content: content),
+                // The controls keep to the top of the bar, level with the
+                // shared back button, clear of the room below them.
+                : Padding(
+                    padding: EdgeInsets.only(bottom: _bottomPadding(context)),
+                    child: defaultTargetPlatform == TargetPlatform.iOS
+                        ? IOS26NativeToolbar(
+                            title: content.title,
+                            titleWidget: content.titleOverlay,
+                            leading: content.customLeading,
+                            // The shared back button is drawn over the bar:
+                            // the title keeps clear of it all the same.
+                            reservesLeading:
+                                content.impliesBack ||
+                                content.customLeading != null,
+                            leadingInset: _hasWindowControls(context) ? 62 : 0,
+                            actions: content.actions,
+                            tintColor: content.tint,
+                            showsGradient: false,
+                            // A native bar only for what only it can show: its
+                            // own title or bar buttons. Most pages have a
+                            // Flutter title and no buttons, and a platform view
+                            // per page and transition costs frames.
+                            showNativeView: content.hasNativeItems,
+                            onActionTap: (index) {
+                              if (index >= 0 &&
+                                  index < content.actions.length) {
+                                content.actions[index].onPressed();
+                              }
+                            },
+                          )
+                        : _FallbackBar(content: content),
+                  ),
           ),
         ),
       ),

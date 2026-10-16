@@ -220,7 +220,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.getCenter(inBar(find.text('Home'))).dy, 62 + 22);
-      expect(padding!.top, 62 + 44);
+      expect(padding!.top, 62 + 44 + kHostedToolbarBottomPadding);
     });
 
     testWidgets('a page\'s own bar keeps clear of the cluster and stays '

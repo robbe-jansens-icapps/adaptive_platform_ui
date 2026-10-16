@@ -8,6 +8,7 @@ import '../../platform/system_vertical_bar.dart';
 import '../../style/sf_symbol.dart';
 import '../../toolbar/duo_top_strip.dart';
 import '../../toolbar/duo_vertical_bar.dart';
+import '../../toolbar/hosted_top_toolbar.dart' show kHostedToolbarBottomPadding;
 import '../../toolbar/toolbar_chrome_scope.dart';
 import '../adaptive_app_bar.dart';
 import '../adaptive_app_bar_action.dart';
@@ -425,7 +426,11 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
           ? kDuoTitleBandHeight
           : strip != null
           ? strip.overhang
-          : kToolbarContentHeight;
+          // The host's bar keeps some room below its controls.
+          : kToolbarContentHeight +
+                ((chrome?.hostsToolbar ?? false)
+                    ? kHostedToolbarBottomPadding
+                    : 0);
       final page = bodyContent;
       bodyContent = Padding(
         padding: EdgeInsets.only(

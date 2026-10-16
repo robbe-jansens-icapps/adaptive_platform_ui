@@ -122,7 +122,10 @@ void main() {
         find.descendant(of: bar, matching: find.byType(SizedBox)).first,
       );
       expect(rect.top, 0);
-      expect(rect.height, kHostedToolbarHeight + 62);
+      expect(
+        rect.height,
+        kHostedToolbarHeight + kHostedToolbarBottomPadding + 62,
+      );
 
       await tester.tap(inBar(find.byIcon(Icons.add)));
       expect(added, 1);
