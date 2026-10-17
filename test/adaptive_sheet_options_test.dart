@@ -69,43 +69,46 @@ void main() {
     expect(glass().fill, fill);
   });
 
-  testWidgets('at its collapsed detent only its header is in sight: the '
-      'content fades in as it is pulled up', (tester) async {
+  testWidgets('at its collapsed detent only its header is in sight where it '
+      'keeps its content clear of the bars: the content fades in as it is '
+      'pulled up; as it always was otherwise', (tester) async {
     usePhone(tester);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Stack(
-          children: [
-            const Positioned.fill(child: ColoredBox(color: Colors.green)),
-            Positioned.fill(
-              child: AdaptiveSheet(
-                detents: const [
-                  AdaptiveSheetDetent.collapsed,
-                  AdaptiveSheetDetent.fitContent,
-                ],
-                initialDetent: AdaptiveSheetDetent.collapsed,
-                header: const SizedBox(height: 40, child: Text('header')),
-                child: const SizedBox(height: 200, child: Text('content')),
-              ),
+    Widget sheet({required bool keepsClear}) => MaterialApp(
+      home: Stack(
+        children: [
+          const Positioned.fill(child: ColoredBox(color: Colors.green)),
+          Positioned.fill(
+            child: AdaptiveSheet(
+              detents: const [
+                AdaptiveSheetDetent.collapsed,
+                AdaptiveSheetDetent.fitContent,
+              ],
+              initialDetent: AdaptiveSheetDetent.collapsed,
+              keepsContentClearOfBars: keepsClear,
+              header: const SizedBox(height: 40, child: Text('header')),
+              child: const SizedBox(height: 200, child: Text('content')),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+    final fade = find.ancestor(
+      of: find.text('content'),
+      matching: find.byType(Opacity),
+    );
+
+    await tester.pumpWidget(sheet(keepsClear: false));
     await tester.pumpAndSettle();
-    double shown() => tester
-        .widget<Opacity>(
-          find.ancestor(
-            of: find.text('content'),
-            matching: find.byType(Opacity),
-          ),
-        )
-        .opacity;
-    expect(shown(), 0);
+    expect(fade, findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(sheet(keepsClear: true));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(fade).opacity, 0);
 
     await tester.drag(find.text('header'), const Offset(0, -150));
     await tester.pumpAndSettle();
-    expect(shown(), 1);
+    expect(tester.widget<Opacity>(fade).opacity, 1);
   });
 
   testWidgets('without a grabber its content starts at the top', (

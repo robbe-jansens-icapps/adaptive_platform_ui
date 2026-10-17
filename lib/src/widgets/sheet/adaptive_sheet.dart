@@ -90,6 +90,9 @@ class AdaptiveSheet extends StatefulWidget {
     this.scrollable = true,
     this.onDismissed,
     this.glassFill,
+    this.contentDragsSheet = false,
+    this.modal = false,
+    this.keepsContentClearOfBars = false,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -154,6 +157,27 @@ class AdaptiveSheet extends StatefulWidget {
   /// such as a map, while the glass keeps its edge and its blur. The Material
   /// sheet is opaque already and has none.
   final Color? glassFill;
+
+  /// Whether content with nothing to scroll leaves every drag to the sheet,
+  /// which then follows the finger at once rather than the content bouncing;
+  /// and whether a sheet that can be dismissed follows a drag down on its
+  /// content from its lowest detent all the way out, rather than moving one
+  /// step and handing the rest of the drag to its content.
+  final bool contentDragsSheet;
+
+  /// Whether the sheet is the page of a popup route of its own: it then
+  /// slides down out of view with the route as it goes, however it is popped
+  /// (the barrier tapped, a button, back), and at its tallest stops below the
+  /// toolbar the toolbar host draws over the page under it, which stays in
+  /// sight above it.
+  final bool modal;
+
+  /// Whether, with a collapsed detent, only the header shows there, the
+  /// content fading in as the sheet is pulled up, as with Find My; and
+  /// whether, with tabs floating over its bottom, its content ends where they
+  /// begin rather than running on under what they carry (a tab accessory on
+  /// the sheet). For a sheet that holds the tabs at its smallest.
+  final bool keepsContentClearOfBars;
 
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
@@ -228,6 +252,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   static const _floatingGap = 8.0;
   static const _overhang = 48.0;
 
+  /// The most room the home indicator alone takes at the bottom: more is the
+  /// tabs floating over the sheet, under which its content ends.
+  static const _homeIndicatorRoom = 40.0;
+
   late final AnimationController _extent = AnimationController.unbounded(
     vsync: this,
   );
@@ -289,7 +317,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     // view as the route goes, however it is popped: the barrier tapped, a
     // button, back. A page's own sheet stays with its page.
     final route = ModalRoute.of(context);
-    final popup = route is PopupRoute<Object?> ? route : null;
+    final popup = widget.modal && route is PopupRoute<Object?> ? route : null;
     if (popup == _route) return;
     _route?.animation?.removeStatusListener(_onRouteStatus);
     _route?.animation?.removeListener(_followRouteOut);
@@ -627,7 +655,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   }) {
     final m = _metrics;
     if (m == null || m.sidePanel) return false;
-    if (contentFits) return true;
+    if (contentFits && widget.contentDragsSheet) return true;
     if (!contentAtTop) return false;
     final extent = _extent.value;
     final atMin = extent <= _minExtent + 0.5;
@@ -635,7 +663,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     if (!atMin && !atMax) return true;
     // One that can be dismissed follows the finger down from its lowest
     // detent too, all the way out.
-    if (atMin && !expanding && widget.onDismissed != null) return true;
+    if (widget.contentDragsSheet &&
+        atMin &&
+        !expanding &&
+        widget.onDismissed != null) {
+      return true;
+    }
     return (atMin && expanding) || (atMax && !expanding);
   }
 
@@ -810,7 +843,8 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// what floats over the bottom of the sheet (the tabs, what they carry)
   /// then never sits on its content. It takes no touches while out of sight.
   Widget _fadesAtCollapsed(_Metrics metrics, Widget content) {
-    if (metrics.sidePanel ||
+    if (!widget.keepsContentClearOfBars ||
+        metrics.sidePanel ||
         !widget.detents.contains(AdaptiveSheetDetent.collapsed)) {
       return content;
     }
@@ -874,9 +908,14 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
             widget.scrollable
                 ? _ScrollEdgeFade(
                     scrolled: _scrolled,
-                    // Under the tabs and the home indicator, wherever the
-                    // sheet is: at its tallest it runs on past the bottom.
-                    bottomEdge: material || metrics.sidePanel
+                    // Under the tabs and what they carry, wherever the sheet
+                    // is: at its tallest it runs on past the bottom. Not
+                    // under the home indicator alone.
+                    bottomEdge:
+                        !widget.keepsContentClearOfBars ||
+                            material ||
+                            metrics.sidePanel ||
+                            metrics.padding.bottom <= _homeIndicatorRoom
                         ? null
                         : () => math.max(
                             0.0,
@@ -1063,13 +1102,13 @@ class _ScrollEdgeFade extends StatelessWidget {
   final ValueListenable<bool> scrolled;
   final Widget child;
 
-  /// How much of the bottom of the content lies under what floats over the
-  /// sheet's bottom (the tabs, what they carry, the home indicator), as it
-  /// is painted: the content fades out above it, as iOS 26 softens the edge
-  /// of content under its bars, rather than running on under them.
+  /// How much of the bottom of the content lies under the tabs floating
+  /// over the sheet's bottom, and what they carry, as it is painted: the
+  /// content ends where they begin, rather than running on under what they
+  /// carry with no glass of its own (a tab accessory on the sheet).
   final double Function()? bottomEdge;
 
-  /// How far the content fades over, at either edge.
+  /// How far the content fades over at its top, once scrolled.
   static const _fade = 16.0;
 
   @override
@@ -1097,11 +1136,12 @@ class _ScrollEdgeFade extends StatelessWidget {
                 shown,
                 if (bottomEdge > 0) clear,
               ],
+              // A clean edge at the bottom, no fade.
               stops: [
                 if (scrolled) 0,
                 at(scrolled ? _fade : 0),
-                at(bottomEdge > 0 ? bottom - _fade - 8 : height),
-                if (bottomEdge > 0) at(bottom - 4),
+                at(bottomEdge > 0 ? bottom : height),
+                if (bottomEdge > 0) at(bottom),
               ],
             ).createShader(bounds);
           },

@@ -36,6 +36,7 @@ class TopToolbarContent {
     this.impliesBack = false,
     this.actions = const <AdaptiveAppBarAction>[],
     this.tint,
+    this.backTint,
     this.navigator,
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
@@ -68,6 +69,7 @@ class TopToolbarContent {
           ? const <AdaptiveAppBarAction>[]
           : appBar.actions ?? const <AdaptiveAppBarAction>[],
       tint: appBar.tintColor,
+      backTint: appBar.tintsBackButton ? appBar.tintColor : null,
       navigator: entry.navigator,
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
@@ -92,6 +94,10 @@ class TopToolbarContent {
   final bool impliesBack;
   final List<AdaptiveAppBarAction> actions;
   final Color? tint;
+
+  /// The back button's colour: the bar's tint where it takes it
+  /// ([AdaptiveAppBar.tintsBackButton]), the system's otherwise.
+  final Color? backTint;
   final NavigatorState? navigator;
 
   /// Performed by the back button instead of popping [navigator].
@@ -910,8 +916,8 @@ class _BackButtonState extends State<_BackButton>
               size: AdaptiveButtonSize.large,
               useSmoothRectangleBorder: false,
               onPressed: onBack,
-              // In the bar's tint, as its actions are.
-              sfSymbol: _tinted(_symbol, content.tint),
+              // In the bar's tint where it takes it, as its actions are.
+              sfSymbol: _tinted(_symbol, content.backTint),
             ),
           ),
           if (glyph != null && (_standingIn || _standIn.value > 0))
@@ -920,7 +926,7 @@ class _BackButtonState extends State<_BackButton>
               opacity: _standIn,
               child: _BackStandIn(
                 glyph: glyph,
-                color: content.tint,
+                color: content.backTint,
                 onPressed: onBack,
               ),
             ),

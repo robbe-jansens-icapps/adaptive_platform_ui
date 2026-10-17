@@ -32,6 +32,7 @@ class AdaptiveAppBar {
     this.leading,
     this.useNativeToolbar = true,
     this.tintColor,
+    this.tintsBackButton = false,
     this.titleWidget,
     this.cupertinoNavigationBar,
     this.appBar,
@@ -85,6 +86,11 @@ class AdaptiveAppBar {
   /// which colors all bar button items (action buttons and back button).
   /// If null, the system default tint color is used.
   final Color? tintColor;
+
+  /// Whether the back button of the toolbar host's native toolbar and of the
+  /// iPhone Duo's bar takes [tintColor] too, as the actions do. By default it
+  /// keeps the system's colour.
+  final bool tintsBackButton;
 
   /// Custom CupertinoNavigationBar for iOS
   ///
@@ -152,6 +158,7 @@ class AdaptiveAppBar {
     Widget? leading,
     bool? useNativeToolbar,
     Color? tintColor,
+    bool? tintsBackButton,
     Widget? titleWidget,
     PreferredSizeWidget? cupertinoNavigationBar,
     PreferredSizeWidget? appBar,
@@ -171,6 +178,7 @@ class AdaptiveAppBar {
       leading: leading ?? this.leading,
       useNativeToolbar: useNativeToolbar ?? this.useNativeToolbar,
       tintColor: tintColor ?? this.tintColor,
+      tintsBackButton: tintsBackButton ?? this.tintsBackButton,
       titleWidget: titleWidget ?? this.titleWidget,
       cupertinoNavigationBar:
           cupertinoNavigationBar ?? this.cupertinoNavigationBar,

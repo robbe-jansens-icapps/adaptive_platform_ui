@@ -9,10 +9,16 @@ class SheetRoute<T> extends PopupRoute<T> {
   SheetRoute({
     this.detent = AdaptiveSheetDetent.fitContent,
     this.contentHeight = 200,
+    this.optsIn = true,
   });
 
   final AdaptiveSheetDetent detent;
   final double contentHeight;
+
+  /// Whether the sheet asks for what a modal sheet does
+  /// ([AdaptiveSheet.modal], [AdaptiveSheet.contentDragsSheet]); without,
+  /// it is as it always was.
+  final bool optsIn;
 
   @override
   Color? get barrierColor => const Color(0x33000000);
@@ -38,6 +44,8 @@ class SheetRoute<T> extends PopupRoute<T> {
     detents: [detent],
     initialDetent: detent,
     sidePanel: false,
+    modal: optsIn,
+    contentDragsSheet: optsIn,
     onDismissed: () {
       if (isCurrent) navigator?.pop();
     },
@@ -150,5 +158,39 @@ void main() {
         0.01,
       ),
     );
+  });
+
+  testWidgets('a sheet that does not ask for it is as it always was: '
+      'at its tallest under the toolbar, still as its route goes, and its '
+      'content taking a drag that the sheet cannot follow', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(app(hostsToolbar: true));
+    navigatorKey.currentState!.push(
+      SheetRoute<void>(detent: AdaptiveSheetDetent.large, optsIn: false),
+    );
+    await tester.pumpAndSettle();
+    final rest = sheetRect(tester).top;
+    expect(rest, closeTo(60 + 8, 0.01));
+
+    // Its single detent is its largest: a drag down on content that fits
+    // moves it a step at most.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('content')),
+    );
+    await gesture.moveBy(const Offset(0, 20));
+    for (var i = 0; i < 6; i++) {
+      await gesture.moveBy(const Offset(0, 10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(sheetRect(tester).top, lessThan(rest + 80));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(sheetRect(tester).top, closeTo(rest, 0.5));
+
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sheetRect(tester).top, closeTo(rest, 0.5));
+    await tester.pumpAndSettle();
   });
 }

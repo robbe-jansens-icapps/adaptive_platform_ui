@@ -30,6 +30,7 @@ void main() {
     WidgetTester tester, {
     required bool extend,
     Color? tint,
+    bool tintsBack = false,
   }) async {
     tester.view.physicalSize = const Size(951, 669);
     tester.view.devicePixelRatio = 1;
@@ -52,6 +53,7 @@ void main() {
             title: 'Page',
             useNativeToolbar: true,
             tintColor: tint,
+            tintsBackButton: tintsBack,
           ),
           extendBodyUnderDuoBar: extend,
           body: Builder(
@@ -86,12 +88,11 @@ void main() {
     },
   );
 
-  testWidgets('the back button in the bar takes the tint of the bar', (
+  testWidgets('the back button in the bar keeps the system\'s colour, or '
+      'takes the tint of the bar where the app bar asks for it', (
     tester,
   ) async {
-    await pumpPage(tester, extend: true, tint: const Color(0xFF007C30));
-
-    final back = tester.widget<IOS26GlassCapsule>(
+    IOS26GlassCapsule back() => tester.widget<IOS26GlassCapsule>(
       find
           .descendant(
             of: find.byType(HostedDuoBar),
@@ -99,8 +100,17 @@ void main() {
           )
           .first,
     );
-    expect(back.items.single.symbol, 'chevron.left');
-    expect(back.items.single.tint, const Color(0xFF007C30));
+    await pumpPage(tester, extend: true, tint: const Color(0xFF007C30));
+    expect(back().items.single.symbol, 'chevron.left');
+    expect(back().items.single.tint, isNull);
+
+    await pumpPage(
+      tester,
+      extend: true,
+      tint: const Color(0xFF007C30),
+      tintsBack: true,
+    );
+    expect(back().items.single.tint, const Color(0xFF007C30));
   });
 
   test('controls begin half a control from the middle of the band', () {

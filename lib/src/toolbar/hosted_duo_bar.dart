@@ -151,7 +151,7 @@ class HostedDuoBar extends StatelessWidget {
                       leading: chrome == null
                           ? DuoBarBackButton(
                               onPressed: content.back,
-                              tint: content.tint,
+                              tint: content.backTint,
                               close:
                                   content.backStyle ==
                                   AdaptiveBackButtonStyle.close,
@@ -348,6 +348,7 @@ class _BarContent {
     this.navigator,
     this.actions = const <AdaptiveAppBarAction>[],
     this.tint,
+    this.backTint,
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
     this.data,
@@ -368,6 +369,7 @@ class _BarContent {
       navigator: entry.navigator,
       actions: appBar.actions ?? const <AdaptiveAppBarAction>[],
       tint: appBar.tintColor,
+      backTint: appBar.tintsBackButton ? appBar.tintColor : null,
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
       data: appBar.chromeData,
@@ -379,6 +381,9 @@ class _BarContent {
   final NavigatorState? navigator;
   final List<AdaptiveAppBarAction> actions;
   final Color? tint;
+
+  /// The back button's colour ([AdaptiveAppBar.tintsBackButton]).
+  final Color? backTint;
   final VoidCallback? onBack;
   final AdaptiveBackButtonStyle backStyle;
 

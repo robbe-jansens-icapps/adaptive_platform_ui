@@ -276,27 +276,29 @@ void main() {
     expect(find.text('body:Detail'), findsNothing);
   }, variant: ios);
 
-  testWidgets('the chevron is in the bar\'s tint, as its actions are', (
-    tester,
-  ) async {
+  testWidgets('the chevron keeps the system\'s colour, or takes the bar\'s '
+      'tint where the app bar asks for it, as its actions do', (tester) async {
     final navigator = await start(tester);
     const green = Color(0xFF007C30);
-    navigator.currentState!.push(
-      MaterialPageRoute<void>(
-        builder: (_) => const AdaptiveScaffold(
-          appBar: AdaptiveAppBar(
-            useNativeToolbar: true,
-            tintColor: green,
-            titleWidget: Text('Tinted'),
+    for (final tints in [false, true]) {
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdaptiveScaffold(
+            appBar: AdaptiveAppBar(
+              useNativeToolbar: true,
+              tintColor: green,
+              tintsBackButton: tints,
+              titleWidget: const Text('Tinted'),
+            ),
+            body: const SizedBox.expand(),
           ),
-          body: SizedBox.expand(),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final back = tester.widget<AdaptiveButton>(nativeBack.last);
-    expect(back.sfSymbol?.name, 'chevron.left');
-    expect(back.sfSymbol?.color, green);
+      final back = tester.widget<AdaptiveButton>(nativeBack.last);
+      expect(back.sfSymbol?.name, 'chevron.left');
+      expect(back.sfSymbol?.color, tints ? green : null);
+    }
   });
 }

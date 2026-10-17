@@ -36,6 +36,7 @@ class IOS26Scaffold extends StatefulWidget {
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
     this.automaticallyImplyLeading = true,
     this.tintColor,
+    this.backTint,
     this.titleWidget,
     this.minimizeBehavior = TabBarMinimizeBehavior.automatic,
     this.enableBlur = true,
@@ -68,6 +69,11 @@ class IOS26Scaffold extends StatefulWidget {
   /// Whether a page that can go back gets a back button without an [onBack].
   final bool automaticallyImplyLeading;
   final Color? tintColor;
+
+  /// The back button's colour in the iPhone Duo's bar: [tintColor] where the
+  /// app bar asks for it ([AdaptiveAppBar.tintsBackButton]), the system's
+  /// otherwise.
+  final Color? backTint;
 
   /// Custom widget overlaid at the toolbar's title position.
   /// When set, the native title is hidden and this widget is centered instead.
@@ -578,7 +584,7 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                       ? null
                       : DuoBarBackButton(
                           onPressed: () => Navigator.of(context).maybePop(),
-                          tint: widget.tintColor,
+                          tint: widget.backTint,
                         )),
               actions: widget.actions ?? const <AdaptiveAppBarAction>[],
               tabBar: tabs,
