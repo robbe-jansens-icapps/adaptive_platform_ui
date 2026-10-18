@@ -1,5 +1,6 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _phone = Size(400, 800);
@@ -320,4 +321,117 @@ void main() {
     expect(dismissed, 0);
     expect(sheetTop(tester), closeTo(top, 0.5));
   });
+
+  group('with a header backdrop', () {
+    const fill = Color(0xB3F2F8F3);
+
+    Widget sheet({required bool backdrop}) => MaterialApp(
+      home: Stack(
+        children: [
+          const Positioned.fill(child: ColoredBox(color: Colors.green)),
+          Positioned.fill(
+            child: AdaptiveSheet(
+              detents: const [AdaptiveSheetDetent.large],
+              initialDetent: AdaptiveSheetDetent.large,
+              showsHeaderBackdrop: backdrop,
+              glassFill: fill,
+              header: const SizedBox(height: 40, child: Text('header')),
+              child: Column(
+                children: [
+                  for (var i = 0; i < 30; i++)
+                    SizedBox(height: 60, child: Text('row $i')),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Finder background() => find.descendant(
+      of: find.byType(AdaptiveSheet),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is AdaptiveBarBackdrop ||
+            (widget is ColoredBox && widget.color == _surfaceContainer),
+      ),
+    );
+    double opacity(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find.ancestor(
+            of: background(),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        )
+        .opacity;
+    Clip clip(WidgetTester tester) => tester
+        .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .clipBehavior;
+
+    testWidgets('the content scrolls on under the header, which is frosted '
+        'in the fill\'s colour once it does; as it always was otherwise', (
+      tester,
+    ) async {
+      usePhone(tester);
+      await tester.pumpWidget(sheet(backdrop: false));
+      await tester.pumpAndSettle();
+      expect(background(), findsNothing);
+      expect(clip(tester), Clip.hardEdge);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(sheet(backdrop: true));
+      await tester.pumpAndSettle();
+      expect(clip(tester), Clip.none);
+      expect(opacity(tester), 0);
+      expect(tester.widget<AdaptiveBarBackdrop>(background()).color, fill);
+
+      final headerBottom = tester.getBottomLeft(find.text('header')).dy;
+      await tester.drag(find.text('row 4'), const Offset(0, -150));
+      await tester.pumpAndSettle();
+
+      expect(opacity(tester), 1);
+      // Scrolled under the header, and painted under it: a tap there is the
+      // header's.
+      final point = Offset(_phone.width / 2, headerBottom - 10);
+      final under = [
+        for (var i = 0; i < 6; i++)
+          if (tester.getRect(find.text('row $i')).top < point.dy &&
+              tester.getRect(find.text('row $i')).bottom > point.dy)
+            tester.renderObject(find.text('row $i')),
+      ];
+      expect(under, isNotEmpty);
+      final hit = tester.hitTestOnBinding(point).path.map((e) => e.target);
+      expect(hit, isNot(contains(under.single)));
+      // Fading out under it, which a blur over native views would not do.
+      bool fadesUnderHeader() => tester.layers.whereType<ShaderMaskLayer>().any(
+        (layer) =>
+            layer.maskRect!.top <= tester.getTopLeft(find.text('header')).dy &&
+            layer.maskRect!.bottom > headerBottom,
+      );
+      expect(fadesUnderHeader(), isTrue);
+
+      await tester.drag(find.text('row 6'), const Offset(0, 400));
+      await tester.pumpAndSettle();
+      expect(opacity(tester), 0);
+      expect(fadesUnderHeader(), isFalse);
+    });
+
+    testWidgets('on Android the header takes the colour of an app bar '
+        'scrolled under', (tester) async {
+      usePhone(tester);
+      PlatformInfo.debugPlatformOverride = TargetPlatform.android;
+      addTearDown(() => PlatformInfo.debugPlatformOverride = null);
+      await tester.pumpWidget(sheet(backdrop: true));
+      await tester.pumpAndSettle();
+      expect(background(), findsOneWidget);
+      expect(find.byType(AdaptiveBarBackdrop), findsNothing);
+
+      await tester.drag(find.text('row 4'), const Offset(0, -150));
+      await tester.pumpAndSettle();
+      expect(opacity(tester), 1);
+    });
+  });
 }
+
+/// The default Material 3 theme's colour of an app bar scrolled under.
+final _surfaceContainer = ThemeData().colorScheme.surfaceContainer;

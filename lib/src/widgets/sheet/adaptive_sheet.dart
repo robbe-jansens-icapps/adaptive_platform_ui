@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../chrome/adaptive_chrome.dart';
+import '../../chrome/scroll_edge_effect.dart' show AdaptiveBarBackdrop;
 import '../../platform/platform_info.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/hosted_tab_bar.dart' show NativeAccessoryGlass;
@@ -110,6 +111,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.opensFromAccessory = false,
     this.liftsAccessory = false,
     this.accessory,
+    this.showsHeaderBackdrop = false,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -238,6 +240,16 @@ class AdaptiveSheet extends StatefulWidget {
   /// native chrome only: not on a side panel, on Android or with custom
   /// chrome. One with nothing to show takes no room.
   final Widget? accessory;
+
+  /// Whether the content scrolls on under the grabber and the [header], as a
+  /// page's content does under its bar, and they then get the bar's
+  /// background as soon as it does: on iOS a frost in the colour of
+  /// [glassFill] (white without one) with a hairline below
+  /// ([AdaptiveBarBackdrop]), on Android the colour of a Material 3 app bar
+  /// scrolled under. The content fades out within a few points of going
+  /// under them. Off by default: the content ends below the header, fading
+  /// out along its top edge once scrolled. Only for a [scrollable] sheet.
+  final bool showsHeaderBackdrop;
 
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
@@ -1307,9 +1319,34 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     );
   }
 
+  /// How far into the bottom of the grabber and the header content scrolled
+  /// under them is in sight, fading out toward their top.
+  static const _underTopFade = 14.0;
+
+  /// [content], scrolled on under the grabber and the header, fading out as
+  /// it goes under them ([AdaptiveSheet.showsHeaderBackdrop]): their
+  /// background frosts it where a blur reaches it, but a blur reaches no
+  /// further than the native views below it (the sheet's glass, a map), so
+  /// the content would show sharp through it otherwise.
+  Widget _fadesUnderTop(bool underTop, Widget content) {
+    if (!underTop) return content;
+    return ValueListenableBuilder<bool>(
+      valueListenable: _scrolled,
+      child: content,
+      builder: (context, scrolled, content) => _UnderTopFade(
+        extent: scrolled ? _grabberHeight + (_headerHeight ?? 0) : 0,
+        fade: _underTopFade,
+        child: content,
+      ),
+    );
+  }
+
   Widget _buildBody(BuildContext context, _Metrics metrics) {
     final material = metrics.material;
     final header = widget.header;
+    // The content runs on under the grabber and the header, which are laid
+    // over it, behind their background once it scrolls under them.
+    final underTop = widget.showsHeaderBackdrop && widget.scrollable;
     final contentPadding = EdgeInsets.only(
       left: widget.padding.left,
       top: widget.padding.top,
@@ -1320,57 +1357,79 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       onSizeChanged: _onContentMeasured,
       child: widget.child,
     );
-    final content = CustomMultiChildLayout(
+    final top = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showsGrabber)
+          _Grabber(
+            material: material,
+            label: widget.grabberSemanticsLabel,
+            onIncrease: () => _step(1),
+            onDecrease: () => _step(-1),
+          ),
+        if (header != null)
+          SizeReporter(onSizeChanged: _onHeaderMeasured, child: header),
+      ],
+    );
+    final topSlot = LayoutId(
+      id: _SheetSlot.top,
+      child: _dragsSheet(
+        underTop
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                    child: _HeaderBackdrop(
+                      scrolled: _scrolled,
+                      material: material,
+                      color: widget.glassFill,
+                    ),
+                  ),
+                  top,
+                ],
+              )
+            : top,
+      ),
+    );
+    Widget content = CustomMultiChildLayout(
       delegate: _SheetBodyLayout(),
       children: [
-        LayoutId(
-          id: _SheetSlot.top,
-          child: _dragsSheet(
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (widget.showsGrabber)
-                  _Grabber(
-                    material: material,
-                    label: widget.grabberSemanticsLabel,
-                    onIncrease: () => _step(1),
-                    onDecrease: () => _step(-1),
-                  ),
-                if (header != null)
-                  SizeReporter(onSizeChanged: _onHeaderMeasured, child: header),
-              ],
-            ),
-          ),
-        ),
+        // Painted in this order: the top over the content running under it.
+        if (!underTop) topSlot,
         LayoutId(
           id: _SheetSlot.content,
           child: _fadesAtCollapsed(
             metrics,
             widget.scrollable
-                ? _ScrollEdgeFade(
-                    scrolled: _scrolled,
-                    // Under the tabs and what they carry, wherever the sheet
-                    // is: at its tallest it runs on past the bottom. Not
-                    // under the home indicator alone.
-                    bottomEdge:
-                        !widget.keepsContentClearOfBars ||
-                            material ||
-                            metrics.sidePanel ||
-                            metrics.padding.bottom <= _homeIndicatorRoom
-                        ? null
-                        : () => math.max(
-                            0.0,
-                            _frame(_extent.value, metrics).bottom -
-                                (metrics.size.height -
-                                    metrics.padding.bottom +
-                                    metrics.accessoryBand),
-                          ),
-                    child: SingleChildScrollView(
-                      controller: _scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: contentPadding,
-                      child: measuredChild,
+                ? _fadesUnderTop(
+                    underTop,
+                    _ScrollEdgeFade(
+                      scrolled: _scrolled,
+                      fadesTop: !underTop,
+                      // Under the tabs and what they carry, wherever the sheet
+                      // is: at its tallest it runs on past the bottom. Not
+                      // under the home indicator alone.
+                      bottomEdge:
+                          !widget.keepsContentClearOfBars ||
+                              material ||
+                              metrics.sidePanel ||
+                              metrics.padding.bottom <= _homeIndicatorRoom
+                          ? null
+                          : () => math.max(
+                              0.0,
+                              _frame(_extent.value, metrics).bottom -
+                                  (metrics.size.height -
+                                      metrics.padding.bottom +
+                                      metrics.accessoryBand),
+                            ),
+                      child: SingleChildScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: contentPadding,
+                        // Scrolled, on under the top; the sheet clips it.
+                        clipBehavior: underTop ? Clip.none : Clip.hardEdge,
+                        child: measuredChild,
+                      ),
                     ),
                   )
                 // Laid out at its natural height, never scrolled: a drag on it
@@ -1390,8 +1449,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                   ),
           ),
         ),
+        if (underTop) topSlot,
       ],
     );
+    // Content scrolled on under the top goes no further than the sheet's
+    // edge, whatever the sheet's own shape clips.
+    if (underTop) content = ClipRect(child: content);
 
     if (material) {
       final scheme = Theme.of(context).colorScheme;
@@ -1720,10 +1783,15 @@ class _ScrollEdgeFade extends StatelessWidget {
     required this.scrolled,
     required this.child,
     this.bottomEdge,
+    this.fadesTop = true,
   });
 
   final ValueListenable<bool> scrolled;
   final Widget child;
+
+  /// Whether the content fades out along its top edge once scrolled: not
+  /// where it runs on under a header with a background of its own.
+  final bool fadesTop;
 
   /// How much of the bottom of the content lies under the tabs floating
   /// over the sheet's bottom, and what they carry, as it is painted: the
@@ -1740,6 +1808,7 @@ class _ScrollEdgeFade extends StatelessWidget {
       valueListenable: scrolled,
       child: child,
       builder: (context, scrolled, child) {
+        scrolled = scrolled && fadesTop;
         if (!scrolled && bottomEdge == null) return child!;
         return ShaderMask(
           blendMode: BlendMode.dstIn,
@@ -1771,6 +1840,128 @@ class _ScrollEdgeFade extends StatelessWidget {
           child: child,
         );
       },
+    );
+  }
+}
+
+/// Fades out what its child paints above itself, over the [extent] above it,
+/// from in sight at its own top edge to out of sight [fade] above it: content
+/// scrolled on under a sheet's header.
+class _UnderTopFade extends SingleChildRenderObjectWidget {
+  const _UnderTopFade({
+    required this.extent,
+    required this.fade,
+    required super.child,
+  });
+
+  final double extent;
+  final double fade;
+
+  @override
+  _RenderUnderTopFade createRenderObject(BuildContext context) =>
+      _RenderUnderTopFade(extent: extent, fade: fade);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderUnderTopFade renderObject,
+  ) {
+    renderObject
+      ..extent = extent
+      ..fade = fade;
+  }
+}
+
+class _RenderUnderTopFade extends RenderProxyBox {
+  _RenderUnderTopFade({required double extent, required double fade})
+    : _extent = extent,
+      _fade = fade;
+
+  double _extent;
+
+  set extent(double value) {
+    if (value == _extent) return;
+    _extent = value;
+    markNeedsPaint();
+    markNeedsCompositingBitsUpdate();
+  }
+
+  double _fade;
+
+  set fade(double value) {
+    if (value == _fade) return;
+    _fade = value;
+    markNeedsPaint();
+  }
+
+  @override
+  ShaderMaskLayer? get layer => super.layer as ShaderMaskLayer?;
+
+  @override
+  bool get alwaysNeedsCompositing => child != null && _extent > 0;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null || _extent <= 0) {
+      layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    final rect = Rect.fromLTRB(
+      offset.dx,
+      offset.dy - _extent,
+      offset.dx + size.width,
+      offset.dy + size.height,
+    );
+    final height = math.max(rect.height, 1.0);
+    final fade = math.min(_fade, _extent);
+    layer ??= ShaderMaskLayer();
+    layer!
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: const [Color(0x00000000), Color(0x00000000), Color(0xFF000000)],
+        stops: [0, (_extent - fade) / height, _extent / height],
+      ).createShader(Offset.zero & rect.size)
+      ..maskRect = rect
+      ..blendMode = BlendMode.dstIn;
+    context.pushLayer(layer!, super.paint, offset);
+  }
+}
+
+/// The background of a sheet's grabber and header over content scrolled
+/// under them, as a page's bar has it ([AdaptiveSheet.showsHeaderBackdrop]),
+/// coming in as soon as the content scrolls.
+class _HeaderBackdrop extends StatelessWidget {
+  const _HeaderBackdrop({
+    required this.scrolled,
+    required this.material,
+    required this.color,
+  });
+
+  final ValueListenable<bool> scrolled;
+  final bool material;
+
+  /// The sheet's fill over its glass, which the frost takes on iOS.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing in the way (no blur, no paint) while out of sight.
+    final background = IgnorePointer(
+      child: material
+          ? ColoredBox(color: Theme.of(context).colorScheme.surfaceContainer)
+          : AdaptiveBarBackdrop(color: color),
+    );
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolled,
+      child: background,
+      builder: (context, scrolled, background) => AnimatedOpacity(
+        opacity: scrolled ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        child: background,
+      ),
     );
   }
 }
