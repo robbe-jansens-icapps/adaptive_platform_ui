@@ -99,7 +99,9 @@ void main() {
 
     await tester.pumpWidget(sheet(keepsClear: false));
     await tester.pumpAndSettle();
-    expect(fade, findsNothing);
+    // Wrapped all the same, so the content keeps its state as the sheet
+    // starts or stops fading it, but in sight.
+    expect(tester.widget<Opacity>(fade).opacity, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(sheet(keepsClear: true));

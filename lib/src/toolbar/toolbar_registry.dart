@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../widgets/adaptive_accessory_scope.dart';
 import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 
@@ -327,6 +328,23 @@ class ToolbarRegistry extends ChangeNotifier {
   /// page's controls above it keep clear of it.
   final ValueNotifier<double> barAccessoryHeight = ValueNotifier<double>(0);
 
+  /// The page's sheet that the tab accessory on it opens into
+  /// (`AdaptiveSheet.opensFromAccessory`), for the host to make way for its
+  /// content as it comes up: the one attached last, while there is one.
+  AccessorySheet? get accessorySheet =>
+      _accessorySheets.isEmpty ? null : _accessorySheets.last;
+  final List<AccessorySheet> _accessorySheets = <AccessorySheet>[];
+
+  void attachAccessorySheet(AccessorySheet sheet) {
+    if (_accessorySheets.contains(sheet)) return;
+    _accessorySheets.add(sheet);
+    _notifySafely();
+  }
+
+  void detachAccessorySheet(AccessorySheet sheet) {
+    if (_accessorySheets.remove(sheet)) _notifySafely();
+  }
+
   /// Removes the entry registered under [id], if any.
   void remove(Object id) {
     final before = _entries.length;
@@ -383,4 +401,20 @@ class ToolbarRegistryScope extends InheritedNotifier<ToolbarRegistry> {
     required ToolbarRegistry registry,
     required super.child,
   }) : super(notifier: registry);
+}
+
+/// A page's sheet that the tab accessory on it opens into
+/// (`AdaptiveSheet.opensFromAccessory`), as the toolbar host sees it: how far
+/// its content has come up over the accessory ([value], 0 while the sheet
+/// rests at its collapsed detent with only the accessory on its glass, 1 once
+/// the content is all in sight), the way to open and close it, and the way
+/// to move it as the accessory is dragged.
+abstract interface class AccessorySheet implements AdaptiveTrayExpansion {
+  void dragStart();
+
+  /// Moves the sheet up by [delta], down while negative.
+  void dragUpdate(double delta);
+
+  /// Lets the sheet go at [velocity], up while positive.
+  void dragEnd(double velocity);
 }

@@ -14,6 +14,7 @@ class ToolbarChromeScope extends InheritedWidget {
     required this.hostsDuoControls,
     this.hostsBottomTabBar = false,
     this.tabBarHeight,
+    this.tabAccessoryHeight,
     required super.child,
   });
 
@@ -38,6 +39,12 @@ class ToolbarChromeScope extends InheritedWidget {
   /// measured, for the tab layout to keep its content clear of it.
   final ValueListenable<double>? tabBarHeight;
 
+  /// How much of [tabBarHeight] the tab accessory takes on a tray with the
+  /// tabs, or where a tray would put it on a page's own sheet
+  /// ([AdaptiveTabAccessoryLayout.tray], [AdaptiveTabAccessoryLayout.onSheet]):
+  /// the band above the tabs it and the room around it keep. 0 elsewhere.
+  final ValueListenable<double>? tabAccessoryHeight;
+
   /// The nearest scope, or null when no host is installed and the page must
   /// draw its whole toolbar itself.
   static ToolbarChromeScope? maybeOf(BuildContext context) =>
@@ -48,5 +55,6 @@ class ToolbarChromeScope extends InheritedWidget {
       hostsToolbar != oldWidget.hostsToolbar ||
       hostsDuoControls != oldWidget.hostsDuoControls ||
       hostsBottomTabBar != oldWidget.hostsBottomTabBar ||
-      tabBarHeight != oldWidget.tabBarHeight;
+      tabBarHeight != oldWidget.tabBarHeight ||
+      tabAccessoryHeight != oldWidget.tabAccessoryHeight;
 }

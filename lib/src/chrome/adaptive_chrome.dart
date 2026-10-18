@@ -138,7 +138,10 @@ enum AdaptiveTabAccessoryLayout {
   /// without the tray's glass: for a page whose own sheet holds the tabs at
   /// its smallest (a map's), on whose glass they then sit, so the accessory
   /// and the tabs keep their place, and the pages their room, as one tab
-  /// with a tray gives way to one with such a sheet. It opens into nothing.
+  /// with a tray gives way to one with such a sheet. It opens into that
+  /// sheet where the sheet opens from it (`AdaptiveSheet.opensFromAccessory`),
+  /// making way as the sheet's content comes up into its place; into
+  /// nothing otherwise.
   onSheet,
 }
 

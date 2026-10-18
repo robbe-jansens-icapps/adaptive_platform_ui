@@ -156,10 +156,17 @@ class AdaptiveBottomBarInset extends InheritedWidget {
   const AdaptiveBottomBarInset({
     super.key,
     required this.height,
+    this.accessory = 0,
     required super.child,
   });
 
   final double height;
+
+  /// How much of [height] is the tab accessory's, where the bar holds it on a
+  /// tray with the tabs, or where a tray would on a page's own sheet
+  /// ([AdaptiveTabAccessoryLayout.tray], [AdaptiveTabAccessoryLayout.onSheet]):
+  /// the band above the tabs that it and the room around it take.
+  final double accessory;
 
   static double of(BuildContext context) =>
       context
@@ -167,9 +174,16 @@ class AdaptiveBottomBarInset extends InheritedWidget {
           ?.height ??
       0;
 
+  /// [accessory] of the nearest inset; 0 without one.
+  static double accessoryOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<AdaptiveBottomBarInset>()
+          ?.accessory ??
+      0;
+
   @override
   bool updateShouldNotify(AdaptiveBottomBarInset oldWidget) =>
-      height != oldWidget.height;
+      height != oldWidget.height || accessory != oldWidget.accessory;
 }
 
 /// An adaptive scaffold that renders platform-specific navigation
@@ -502,6 +516,9 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
     ModalRoute<Object?>? ownerRoute,
   }) {
     final ValueListenable<double> height;
+    // The tab accessory's share of it, where the host draws it on a tray or
+    // a page's sheet along the bottom with the native chrome.
+    ValueListenable<double>? accessory;
     final custom = _customChrome != null;
     final placement = AdaptiveChromeScope.placementOf(context);
     if (custom && _usesFixedToolbar(context)) {
@@ -521,13 +538,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
     } else if (_tabsInTrailingBar(context)) {
       height = const AlwaysStoppedAnimation<double>(0);
     } else if (_tabsHostedAtBottom(context)) {
-      height =
-          ToolbarChromeScope.maybeOf(context)?.tabBarHeight ?? _ownTabBarHeight;
+      final chrome = ToolbarChromeScope.maybeOf(context);
+      height = chrome?.tabBarHeight ?? _ownTabBarHeight;
+      accessory = chrome?.tabAccessoryHeight;
     } else {
       height = _ownTabBarHeight;
     }
     return _BottomBarInset(
       height: height,
+      accessory: accessory ?? const AlwaysStoppedAnimation<double>(0),
       hidden: widget.tabBarHidden,
       ownerRoute: ownerRoute,
       hidesWhenPushed: widget.bottomNavigationBar?.hidesWhenPushed ?? false,
@@ -1964,6 +1983,7 @@ bool? _tabBarMinimizedAfter(
 class _BottomBarInset extends StatelessWidget {
   const _BottomBarInset({
     required this.height,
+    required this.accessory,
     required this.hidden,
     required this.child,
     this.ownerRoute,
@@ -1972,6 +1992,10 @@ class _BottomBarInset extends StatelessWidget {
   });
 
   final ValueListenable<double> height;
+
+  /// How much of [height] the tab accessory takes
+  /// ([AdaptiveBottomBarInset.accessory]).
+  final ValueListenable<double> accessory;
 
   /// The bar is hidden for now ([AdaptiveScaffold.tabBarHidden]): no inset.
   final bool hidden;
@@ -1991,18 +2015,23 @@ class _BottomBarInset extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: height,
       child: child,
-      builder: (context, height, child) {
-        final inset = hidden ? 0.0 : height;
-        return AdaptiveBottomBarInset(
-          height: inset,
-          child: _BottomBarPadding(
+      builder: (context, height, child) => ValueListenableBuilder<double>(
+        valueListenable: accessory,
+        child: child,
+        builder: (context, band, child) {
+          final inset = hidden ? 0.0 : height;
+          return AdaptiveBottomBarInset(
             height: inset,
-            ownerRoute: hidesWhenPushed ? ownerRoute : null,
-            hidesFor: hidesFor,
-            child: child!,
-          ),
-        );
-      },
+            accessory: math.min(band, inset),
+            child: _BottomBarPadding(
+              height: inset,
+              ownerRoute: hidesWhenPushed ? ownerRoute : null,
+              hidesFor: hidesFor,
+              child: child!,
+            ),
+          );
+        },
+      ),
     );
   }
 }

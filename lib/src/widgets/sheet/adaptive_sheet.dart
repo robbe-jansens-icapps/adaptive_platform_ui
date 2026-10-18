@@ -6,15 +6,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../chrome/adaptive_chrome.dart';
 import '../../platform/platform_info.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/hosted_top_toolbar.dart'
     show kHostedToolbarBottomPadding, kHostedToolbarHeight;
+import '../../toolbar/toolbar_blend.dart' show kToolbarItemSwapDuration;
 import '../../toolbar/toolbar_chrome_scope.dart';
+import '../../toolbar/toolbar_registry.dart';
 import '../../utils/size_reporter.dart';
 import '../adaptive_glass.dart';
+import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
 import 'adaptive_sheet_detent.dart';
 
@@ -93,6 +97,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.contentDragsSheet = false,
     this.modal = false,
     this.keepsContentClearOfBars = false,
+    this.opensFromAccessory = false,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -179,6 +184,21 @@ class AdaptiveSheet extends StatefulWidget {
   /// the sheet). For a sheet that holds the tabs at its smallest.
   final bool keepsContentClearOfBars;
 
+  /// Whether the sheet is what the tab accessory on it opens into, where the
+  /// tabs hold their accessory on the sheet
+  /// (`AdaptiveTabAccessoryLayout.onSheet`), as a ride's controls open from
+  /// its row above the tabs. At its collapsed detent only the accessory
+  /// shows on its glass, above the tabs. Pulled up, or opened through the
+  /// accessory's scope (`AdaptiveAccessoryScope.expansionOf`), the
+  /// accessory makes way as the content fades in, and stops taking touches;
+  /// a drag up on the accessory pulls the sheet up with it. Its content then
+  /// runs on into the room the accessory takes, and ends where the tabs
+  /// begin, as it would with no accessory, while the pages keep their
+  /// padding. With the native iOS chrome, along the bottom: no effect on a
+  /// side panel or on Android. Turned off or on, the accessory eases in or
+  /// out rather than jumping, as the sheet changes what it shows.
+  final bool opensFromAccessory;
+
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
 
@@ -197,6 +217,7 @@ class _Metrics {
     required this.rtl,
     this.sides = EdgeInsets.zero,
     this.toolbar = 0,
+    this.accessoryBand = 0,
   });
 
   final Size size;
@@ -214,6 +235,11 @@ class _Metrics {
   /// vertical bar, which carries the tab bar and toolbar along that edge.
   final EdgeInsets sides;
 
+  /// The part of the bottom padding that the tab accessory on the sheet
+  /// takes, where the sheet opens from it
+  /// ([AdaptiveSheet.opensFromAccessory]): its content runs on into it.
+  final double accessoryBand;
+
   @override
   bool operator ==(Object other) =>
       other is _Metrics &&
@@ -223,15 +249,24 @@ class _Metrics {
       other.material == material &&
       other.rtl == rtl &&
       other.sides == sides &&
-      other.toolbar == toolbar;
+      other.toolbar == toolbar &&
+      other.accessoryBand == accessoryBand;
 
   @override
-  int get hashCode =>
-      Object.hash(size, padding, sidePanel, material, rtl, sides, toolbar);
+  int get hashCode => Object.hash(
+    size,
+    padding,
+    sidePanel,
+    material,
+    rtl,
+    sides,
+    toolbar,
+    accessoryBand,
+  );
 }
 
 class _AdaptiveSheetState extends State<AdaptiveSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // iOS sheets settle without overshoot; Material 3 Expressive springs
   // (the default spatial spring) bounce a little.
   static final _cupertinoSpring = SpringDescription.withDampingRatio(
@@ -279,6 +314,28 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   bool _panelInView = false;
   static const _panelResizeDuration = Duration(milliseconds: 300);
 
+  // Opening from the tab accessory --------------------------------------------
+
+  /// How much the sheet opens from the tab accessory on it
+  /// ([AdaptiveSheet.opensFromAccessory]): 1 while it does, easing to 0 and
+  /// back as it stops and starts, so the accessory eases in and out with it.
+  late final AnimationController _opensFromAccessory = AnimationController(
+    vsync: this,
+    duration: kToolbarItemSwapDuration,
+  )..addListener(_updateCovered);
+
+  /// How far the content has come up over the accessory, for the host to
+  /// make way: 0 at the collapsed detent, 1 once the content is all in sight.
+  late final AnimationController _covered = AnimationController(vsync: this);
+
+  late final _AccessorySheetLink _link = _AccessorySheetLink(this);
+
+  /// The registry the sheet is attached to as what the accessory opens into.
+  ToolbarRegistry? _attachedTo;
+
+  /// Whether it opens from the accessory, as last built.
+  bool? _opensFromAccessoryAsBuilt;
+
   double get _grabberHeight => !widget.showsGrabber
       ? 0
       : (_metrics?.material ?? false)
@@ -291,6 +348,8 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     widget.controller?._attach(this);
     if (widget.header == null) _headerHeight = 0;
     _scrollController.addListener(_onScroll);
+    _extent.addListener(_updateCovered);
+    _opensFromAccessory.addStatusListener((_) => _syncLink());
   }
 
   @override
@@ -330,10 +389,101 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _route?.animation?.removeStatusListener(_onRouteStatus);
     _route?.animation?.removeListener(_followRouteOut);
     widget.controller?._detach(this);
+    _attachedTo?.detachAccessorySheet(_link);
+    _attachedTo = null;
     _scrollController.dispose();
     _scrolled.dispose();
     _extent.dispose();
+    _opensFromAccessory.dispose();
+    _covered.dispose();
     super.dispose();
+  }
+
+  /// Whether the sheet opens from the accessory on it as it is now laid out:
+  /// floating along the bottom, with the native chrome.
+  bool _opensFrom(_Metrics m) =>
+      widget.opensFromAccessory &&
+      !m.material &&
+      !m.sidePanel &&
+      AdaptiveChromeScope.chromeOf(context) == null;
+
+  /// Starts or stops opening from the accessory, easing, after the frame
+  /// that changed it.
+  void _followOpensFromAccessory(bool opens) {
+    if (_opensFromAccessoryAsBuilt == opens) return;
+    final first = _opensFromAccessoryAsBuilt == null;
+    _opensFromAccessoryAsBuilt = opens;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _opensFromAccessoryAsBuilt != opens) return;
+      if (first || (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+        _opensFromAccessory.value = opens ? 1 : 0;
+        _syncLink();
+      } else if (opens) {
+        _opensFromAccessory.forward();
+      } else {
+        _opensFromAccessory.reverse();
+      }
+    });
+  }
+
+  /// Attaches the sheet to the host as what the accessory opens into while
+  /// it does, or eases out of it; detaches it otherwise.
+  void _syncLink() {
+    if (!mounted) return;
+    final attach =
+        _opensFromAccessory.value > 0 || _opensFromAccessory.isAnimating
+        ? ToolbarRegistry.maybeOf(context)
+        : null;
+    if (attach == _attachedTo) return;
+    _attachedTo?.detachAccessorySheet(_link);
+    _attachedTo = attach?..attachAccessorySheet(_link);
+  }
+
+  /// Follows the extent with how far the content has come up over the
+  /// accessory. Never while widgets build: the host, which follows it, may
+  /// have been built already in this frame.
+  void _updateCovered() {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _updateCovered();
+      });
+      return;
+    }
+    final m = _metrics;
+    final live = m == null
+        ? 0.0
+        : ((_extent.value - _collapsedExtent(m)) / _contentFade).clamp(
+            0.0,
+            1.0,
+          );
+    final covered = live * _opensFromAccessory.value;
+    if (covered != _covered.value) _covered.value = covered;
+  }
+
+  /// Opens the sheet from the accessory: to its tallest detent.
+  void _openFromAccessory() {
+    final m = _metrics;
+    if (m == null) return;
+    final points = _restingPoints(m);
+    if (points.isNotEmpty) _settleTo(points.last.$1);
+  }
+
+  /// Closes the sheet onto the accessory: to its lowest detent.
+  void _closeOnAccessory() {
+    final m = _metrics;
+    if (m == null) return;
+    final points = _restingPoints(m);
+    if (points.isNotEmpty) _settleTo(points.first.$1);
+  }
+
+  /// Whether the sheet is open above its lowest detent, or on its way there.
+  bool get _isOpenFromAccessory {
+    final m = _metrics;
+    final target = _target;
+    if (m == null || target == null) return false;
+    final points = _restingPoints(m);
+    return points.isNotEmpty && _extentOf(target, m) > points.first.$2 + 0.5;
   }
 
   void _onScroll() {
@@ -358,11 +508,17 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       ? 0
       : math.max(m.padding.bottom - _bottomGap(m), 0);
 
+  /// Room the content keeps at the bottom for what floats there: all of
+  /// [_safeBottom], or for a sheet that opens from the tab accessory on it,
+  /// what the tabs take without it, the content running on into its room.
+  double _contentBottom(_Metrics m) =>
+      math.max(_safeBottom(m) - m.accessoryBand, 0);
+
   /// Visible height of the content area that the bottom padding takes, inside
   /// the sheet's frame.
   double _bottomSpace(_Metrics m) {
     if (m.sidePanel) return widget.padding.bottom;
-    return _safeBottom(m) + widget.padding.bottom;
+    return _contentBottom(m) + widget.padding.bottom;
   }
 
   double _collapsedExtent(_Metrics m) =>
@@ -766,6 +922,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           rtl: rtl,
           sides: _sidesOf(context, material: material),
           toolbar: _route == null || material ? 0 : _hostedToolbarHeight(),
+          // What the accessory on the sheet takes of the bottom padding, for
+          // the content to run on into, where it opens from it.
+          accessoryBand: widget.opensFromAccessory && !material && !sidePanel
+              ? AdaptiveBottomBarInset.accessoryOf(context)
+              : 0,
         );
         if (metrics != _metrics) {
           _metrics = metrics;
@@ -773,8 +934,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _reportedObstruction = null;
             _onExtentsChanged();
+            _updateCovered();
           });
         }
+        _followOpensFromAccessory(_opensFrom(metrics));
         final body = _buildBody(context, metrics);
         if (sidePanel) {
           final hidden = _target?.isHidden ?? !_measured;
@@ -842,24 +1005,32 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// shows as with Find My, and fading in as the sheet is pulled up from it:
   /// what floats over the bottom of the sheet (the tabs, what they carry)
   /// then never sits on its content. It takes no touches while out of sight.
+  ///
+  /// The same for a sheet that opens from the tab accessory on it
+  /// ([AdaptiveSheet.opensFromAccessory]): only the accessory shows there.
+  /// Out of sight, the content's tickers stop (a clock on it).
+  ///
+  /// Built the same either way, so the content keeps its state as the sheet
+  /// starts or stops fading it.
   Widget _fadesAtCollapsed(_Metrics metrics, Widget content) {
-    if (!widget.keepsContentClearOfBars ||
-        metrics.sidePanel ||
-        !widget.detents.contains(AdaptiveSheetDetent.collapsed)) {
-      return content;
-    }
+    final fades =
+        (widget.keepsContentClearOfBars || widget.opensFromAccessory) &&
+        !metrics.sidePanel &&
+        widget.detents.contains(AdaptiveSheetDetent.collapsed);
     return AnimatedBuilder(
       animation: _extent,
       child: content,
       builder: (context, content) {
-        final shown =
-            ((_extent.value - _collapsedExtent(metrics)) / _contentFade).clamp(
-              0.0,
-              1.0,
-            );
-        return IgnorePointer(
-          ignoring: shown < 0.05,
-          child: Opacity(opacity: shown, child: content),
+        final shown = !fades
+            ? 1.0
+            : ((_extent.value - _collapsedExtent(metrics)) / _contentFade)
+                  .clamp(0.0, 1.0);
+        return TickerMode(
+          enabled: shown > 0,
+          child: IgnorePointer(
+            ignoring: shown < 0.05,
+            child: Opacity(opacity: shown, child: content),
+          ),
         );
       },
     );
@@ -920,7 +1091,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                         : () => math.max(
                             0.0,
                             _frame(_extent.value, metrics).bottom -
-                                (metrics.size.height - metrics.padding.bottom),
+                                (metrics.size.height -
+                                    metrics.padding.bottom +
+                                    metrics.accessoryBand),
                           ),
                     child: SingleChildScrollView(
                       controller: _scrollController,
@@ -1216,4 +1389,36 @@ class _SheetScrollPosition extends ScrollPositionWithSingleContext {
     sheet._onDragEnd(contentFlies ? 0 : velocity);
     super.goBallistic(contentFlies ? velocity : 0);
   }
+}
+
+/// The sheet as the toolbar host sees it, where it opens from the tab
+/// accessory on it ([AdaptiveSheet.opensFromAccessory]).
+class _AccessorySheetLink implements AccessorySheet {
+  _AccessorySheetLink(this._sheet);
+
+  final _AdaptiveSheetState _sheet;
+
+  @override
+  Animation<double> get value => _sheet._covered;
+
+  @override
+  bool get isOpen => _sheet._isOpenFromAccessory;
+
+  @override
+  void open() => _sheet._openFromAccessory();
+
+  @override
+  void close() => _sheet._closeOnAccessory();
+
+  @override
+  void toggle() => isOpen ? close() : open();
+
+  @override
+  void dragStart() => _sheet._onDragStart();
+
+  @override
+  void dragUpdate(double delta) => _sheet._dragBy(delta);
+
+  @override
+  void dragEnd(double velocity) => _sheet._onDragEnd(velocity);
 }

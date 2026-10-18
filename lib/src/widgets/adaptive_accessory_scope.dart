@@ -25,12 +25,15 @@ class AdaptiveAccessoryScope extends InheritedWidget {
   final AdaptiveAccessorySpec spec;
 
   /// How far the accessory's tray is open into its sheet, where it has one
-  /// ([AdaptiveBottomNavigationBar.accessoryExpanded]).
+  /// ([AdaptiveBottomNavigationBar.accessoryExpanded]), or how far the
+  /// page's sheet it sits on has opened from it
+  /// (`AdaptiveSheet.opensFromAccessory`).
   final AdaptiveTrayExpansion? expansion;
 
-  /// How far the tray of the accessory around [context] is open, and the way
-  /// to open and close it; null where it opens into nothing. Does not make
-  /// [context] depend on it: listen to [AdaptiveTrayExpansion.value].
+  /// How far the tray of the accessory around [context] is open, or the
+  /// page's sheet it sits on (`AdaptiveSheet.opensFromAccessory`), and the
+  /// way to open and close it; null where it opens into nothing. Does not
+  /// make [context] depend on it: listen to [AdaptiveTrayExpansion.value].
   static AdaptiveTrayExpansion? expansionOf(BuildContext context) => context
       .getInheritedWidgetOfExactType<AdaptiveAccessoryScope>()
       ?.expansion;

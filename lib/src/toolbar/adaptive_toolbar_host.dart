@@ -99,6 +99,10 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
   /// The height of the hosted tab bar, once measured.
   final ValueNotifier<double> _tabBarHeight = ValueNotifier<double>(0);
 
+  /// How much of it the tab accessory takes on a tray, or where a tray puts
+  /// it on a page's sheet.
+  final ValueNotifier<double> _tabAccessoryHeight = ValueNotifier<double>(0);
+
   /// The room a tab accessory floating at the bottom of the content takes.
   final ValueNotifier<double> _accessoryHeight = ValueNotifier<double>(0);
 
@@ -226,6 +230,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     _blend.dispose();
     _registry.dispose();
     _tabBarHeight.dispose();
+    _tabAccessoryHeight.dispose();
     _accessoryHeight.dispose();
     _sidebar.dispose();
     _sidebarInset.dispose();
@@ -326,6 +331,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                   (chrome == null ||
                       placement == AdaptiveChromePlacement.bottom),
               tabBarHeight: _tabBarHeight,
+              tabAccessoryHeight: _tabAccessoryHeight,
               child: DuoPoseScope(
                 pose: pose,
                 child: DuoTopStripScope(
@@ -396,6 +402,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                                   child: HostedTabBar(
                                     blend: _blend,
                                     height: _tabBarHeight,
+                                    accessoryBand: _tabAccessoryHeight,
                                     chrome: chrome,
                                     placement: placement,
                                     accessoryHeight: _accessoryHeight,

@@ -293,6 +293,32 @@ class RentalAccessory extends StatelessWidget {
 }
 ```
 
+  `accessoryLayout` sets it with the tabs: `floating` (the default), `beside`
+  them, or on one glass `tray` with them, as a sheet at its smallest. On a
+  tab whose page has a sheet of its own (a map's), `onSheet` puts the
+  accessory and the tabs where the tray would, on that sheet's glass, so
+  nothing moves between tabs. A sheet with `opensFromAccessory` then opens
+  out of the accessory: collapsed, only the accessory shows on it; pulled up
+  (or through `AdaptiveAccessoryScope.expansionOf`), the accessory makes way
+  and the sheet's content comes up into its place:
+
+```dart
+AdaptiveBottomNavigationBar(
+  accessory: const RideAccessory(),
+  accessoryLayout: onMap ? AdaptiveTabAccessoryLayout.onSheet
+                         : AdaptiveTabAccessoryLayout.tray,
+  // ...
+);
+
+// On the map:
+AdaptiveSheet(
+  opensFromAccessory: true,
+  detents: const [AdaptiveSheetDetent.collapsed, AdaptiveSheetDetent.fitContent],
+  showsGrabber: false,
+  child: rideCard,
+);
+```
+
 - **Folds.** `FoldScope.foldOf(context)` gives the fold of a partly open
   foldable, the iPhone Duo's (which iOS does not put in the media query) or
   an Android hinge or half-opened fold; `FoldScope.creaseOf(context)` gives

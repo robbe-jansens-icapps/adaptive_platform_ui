@@ -3,6 +3,7 @@ import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
     show DuoVerticalBar;
 import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_tab_bar.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -143,8 +144,16 @@ class NativeTabs {
     this.layout = AdaptiveTabAccessoryLayout.floating,
     this.sheetNavigatorKey,
     this.expanded,
+    this.sheet,
+    this.layoutOf,
     FoldableData? fold,
   }) : fold = fold ?? forcedChrome();
+
+  /// A sheet over the first tab's page, as a map has.
+  final Widget? sheet;
+
+  /// The accessory's layout on each tab, where it is not [layout] on all.
+  final AdaptiveTabAccessoryLayout Function(int tab)? layoutOf;
 
   final GlobalKey<NavigatorState>? sheetNavigatorKey;
 
@@ -163,9 +172,11 @@ class NativeTabs {
   final navigators = [GlobalKey<NavigatorState>(), GlobalKey<NavigatorState>()];
   final _paddings = <String, EdgeInsets>{};
   final _insets = <String, double>{};
+  final _bands = <String, double>{};
 
   EdgeInsets paddingOf(String title) => _paddings[title]!;
   double insetOf(String title) => _insets[title]!;
+  double bandOf(String title) => _bands[title]!;
 
   Widget page(String title) => AdaptiveScaffold(
     appBar: AdaptiveAppBar(
@@ -177,7 +188,16 @@ class NativeTabs {
       builder: (context) {
         _paddings[title] = MediaQuery.paddingOf(context);
         _insets[title] = AdaptiveBottomBarInset.of(context);
-        return SizedBox.expand(key: ValueKey('body $title'));
+        _bands[title] = AdaptiveBottomBarInset.accessoryOf(context);
+        final body = SizedBox.expand(key: ValueKey('body $title'));
+        final sheet = this.sheet;
+        if (sheet == null || title != 'Tab 0') return body;
+        return Stack(
+          children: [
+            body,
+            Positioned.fill(child: sheet),
+          ],
+        );
       },
     ),
   );
@@ -200,7 +220,7 @@ class NativeTabs {
           selectedIndex: index,
           onTap: (tab) => selected.value = tab,
           accessory: accessory,
-          accessoryLayout: layout,
+          accessoryLayout: layoutOf?.call(index) ?? layout,
           accessoryExpanded: expanded,
         ),
         body: IndexedStack(
@@ -1032,6 +1052,282 @@ void main() {
       await tester.pumpAndSettle();
       expect(expansion.isOpen, isFalse);
       expect(tester.getRect(trayGlass).top, closeTo(closed.top, 1));
+      unmockPlatformViews();
+    });
+  });
+
+  group('a page\'s sheet that opens from the accessory on it', () {
+    final card = find.byKey(const ValueKey('card'), skipOffstage: false);
+
+    /// The glass of the page's sheet: the one with the sheet's corners.
+    final sheetGlass = find.byWidgetPredicate(
+      (widget) =>
+          widget is IOS26GlassSurface &&
+          widget.corners == GlassSurfaceCorners.concentric &&
+          widget.cornerRadius == 30,
+      skipOffstage: false,
+    );
+
+    /// The opacity the card is drawn at: every fade around it.
+    double shownOf(WidgetTester tester) {
+      var opacity = 1.0;
+      for (final fade in tester.widgetList<Opacity>(
+        find.ancestor(
+          of: card,
+          matching: find.byType(Opacity, skipOffstage: false),
+        ),
+      )) {
+        opacity *= fade.opacity;
+      }
+      return opacity * opacityOf(tester, card);
+    }
+
+    bool hits(WidgetTester tester, Finder finder, Offset at) {
+      final box = tester.renderObject(finder);
+      return tester
+          .hitTestOnBinding(at)
+          .path
+          .any((entry) => entry.target == box);
+    }
+
+    Future<(NativeTabs, AdaptiveSheetController)> pumpSheet(
+      WidgetTester tester, {
+      ValueListenable<bool>? opens,
+      AdaptiveTabAccessoryLayout Function(int tab)? layoutOf,
+      Widget accessory = const RentalAccessory(),
+    }) async {
+      mockPlatformViews();
+      IOS26NativeTabBar.debugHasUIKitOverride = true;
+      window(
+        tester,
+        const Size(402, 874),
+        const FakeViewPadding(top: 62, bottom: 34),
+      );
+      addTearDown(tester.view.reset);
+      barHeight = 84;
+      final controller = AdaptiveSheetController();
+      addTearDown(controller.dispose);
+      final tabs = NativeTabs(
+        accessory: accessory,
+        layout: AdaptiveTabAccessoryLayout.onSheet,
+        layoutOf: layoutOf,
+        sheet: ValueListenableBuilder<bool>(
+          valueListenable: opens ?? ValueNotifier<bool>(true),
+          builder: (context, opens, _) => AdaptiveSheet(
+            controller: controller,
+            opensFromAccessory: opens,
+            detents: opens
+                ? const [
+                    AdaptiveSheetDetent.collapsed,
+                    AdaptiveSheetDetent.fitContent,
+                  ]
+                : const [AdaptiveSheetDetent.fitContent],
+            initialDetent: opens
+                ? AdaptiveSheetDetent.collapsed
+                : AdaptiveSheetDetent.fitContent,
+            showsGrabber: false,
+            scrollable: false,
+            padding: EdgeInsets.zero,
+            child: const ColoredBox(
+              key: ValueKey('card'),
+              color: Color(0x00000000),
+              child: SizedBox(width: double.infinity, height: 300),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+      await reportCapsule(tester, const Rect.fromLTWH(21, 0, 360, 62));
+      await tester.pumpAndSettle();
+      return (tabs, controller);
+    }
+
+    // The tray's padding above the accessory (what the bar keeps below the
+    // capsule, less the tray's inset), the accessory and the gap below it.
+    const band = 22 - kAccessoryTrayInset + 48 + kNativeAccessoryGap;
+
+    testWidgets('at its collapsed detent only the accessory shows on its '
+        'glass, where a tray would be; the page learns how much of the '
+        'room is the accessory\'s', (tester) async {
+      final (tabs, _) = await pumpSheet(tester);
+
+      expect(tabs.insetOf('Tab 0'), 84 + band);
+      expect(tabs.bandOf('Tab 0'), band);
+      expect(tester.getRect(sheetGlass).top, closeTo(874 - 84 - band, 0.5));
+      expect(opacityOf(tester, accessory), 1);
+      expect(shownOf(tester), 0);
+      expect(hits(tester, accessory, tester.getCenter(accessory)), isTrue);
+      unmockPlatformViews();
+    });
+
+    testWidgets('opened, its content runs on into the accessory\'s room and '
+        'ends where the tabs begin, as with no accessory; the accessory '
+        'makes way and its touches go to the content, while the pages keep '
+        'their room', (tester) async {
+      final (tabs, controller) = await pumpSheet(tester);
+      final at = tester.getCenter(accessory);
+
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(card).bottom, closeTo(874 - 84, 0.5));
+      expect(tester.getRect(sheetGlass).top, closeTo(874 - 84 - 300, 0.5));
+      expect(shownOf(tester), 1);
+      expect(opacityOf(tester, accessory), 0);
+      expect(hits(tester, card, at), isTrue);
+      expect(tabs.insetOf('Tab 0'), 84 + band);
+      unmockPlatformViews();
+    });
+
+    testWidgets('dragged up on the accessory, the sheet follows the finger, '
+        'the accessory fading out as the content fades in; a fling opens it', (
+      tester,
+    ) async {
+      await pumpSheet(tester);
+      final collapsed = tester.getRect(sheetGlass).top;
+
+      final gesture = await tester.startGesture(tester.getCenter(accessory));
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+      // A quarter of the way in: the accessory half gone.
+      await gesture.moveBy(const Offset(0, 6));
+      await tester.pump();
+      expect(shownOf(tester), closeTo(14 / 56, 0.01));
+      expect(opacityOf(tester, accessory), closeTo(0.5, 0.01));
+      await gesture.moveBy(const Offset(0, -14));
+      await tester.pump();
+      expect(tester.getRect(sheetGlass).top, closeTo(collapsed - 28, 0.5));
+      // The content halfway in; the accessory out of sight by then, so the
+      // two hardly show at once where they lie over each other.
+      expect(shownOf(tester), closeTo(28 / 56, 0.01));
+      expect(opacityOf(tester, accessory), closeTo(0, 0.01));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      await tester.fling(accessory, const Offset(0, -80), 1500);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(card).bottom, closeTo(874 - 84, 0.5));
+      expect(opacityOf(tester, accessory), 0);
+      unmockPlatformViews();
+    });
+
+    testWidgets('the accessory\'s scope opens and closes the sheet', (
+      tester,
+    ) async {
+      await pumpSheet(tester);
+      final expansion = AdaptiveAccessoryScope.expansionOf(
+        tester.element(accessory),
+      )!;
+      expect(expansion.isOpen, isFalse);
+      expect(expansion.value.value, 0);
+
+      expansion.open();
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isTrue);
+      expect(expansion.value.value, 1);
+      expect(tester.getRect(card).bottom, closeTo(874 - 84, 0.5));
+
+      expansion.close();
+      await tester.pumpAndSettle();
+      expect(expansion.isOpen, isFalse);
+      expect(shownOf(tester), closeTo(0, 0.001));
+      expect(opacityOf(tester, accessory), closeTo(1, 0.001));
+      unmockPlatformViews();
+    });
+
+    testWidgets('one that does not open from it ends above the accessory, '
+        'which stays in sight and takes its touches; switched over, the '
+        'accessory eases in and out', (tester) async {
+      final opens = ValueNotifier<bool>(false);
+      addTearDown(opens.dispose);
+      await pumpSheet(tester, opens: opens);
+      expect(tester.getRect(card).bottom, closeTo(874 - 84 - band, 0.5));
+      expect(opacityOf(tester, accessory), 1);
+      await tester.tap(accessory);
+      await tester.pump();
+      expect(find.text('rental 1'), findsOneWidget);
+
+      // Opening from it at its tallest: the accessory eases out.
+      opens.value = true;
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      final between = opacityOf(tester, accessory);
+      expect(between, greaterThan(0));
+      expect(between, lessThan(1));
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, accessory), 0);
+
+      opens.value = false;
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 170));
+      expect(opacityOf(tester, accessory), greaterThan(0));
+      expect(opacityOf(tester, accessory), lessThan(1));
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, accessory), 1);
+      unmockPlatformViews();
+    });
+
+    testWidgets('on another tab, on a tray, the accessory shows in full '
+        'while the sheet is open', (tester) async {
+      final (tabs, controller) = await pumpSheet(
+        tester,
+        layoutOf: (tab) => tab == 0
+            ? AdaptiveTabAccessoryLayout.onSheet
+            : AdaptiveTabAccessoryLayout.tray,
+      );
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, accessory), 0);
+
+      tabs.selected.value = 1;
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, accessory), 1);
+      expect(trayGlass, findsWidgets);
+      // The tray keeps the same band, so the sheet stays where it is.
+      expect(tabs.bandOf('Tab 1'), band);
+      unmockPlatformViews();
+    });
+
+    testWidgets('one with nothing to show leaves no band', (tester) async {
+      final (tabs, _) = await pumpSheet(
+        tester,
+        accessory: const SizedBox.shrink(key: ValueKey('accessory')),
+      );
+      expect(tabs.insetOf('Tab 0'), 84);
+      expect(tabs.bandOf('Tab 0'), 0);
+      unmockPlatformViews();
+    });
+
+    testWidgets('under a dialog the sheet\'s glass is dimmed once, by the '
+        'page\'s barrier: no barrier over the tray\'s place, the tabs\' '
+        'capsule and the accessory dimmed on their own', (tester) async {
+      final (tabs, _) = await pumpSheet(tester);
+      Finder barriers(Type shape) => find.descendant(
+        of: find.byType(HostedTabBar),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is DecoratedBox &&
+              widget.decoration is ShapeDecoration &&
+              (widget.decoration as ShapeDecoration).shape.runtimeType == shape,
+        ),
+      );
+      final dimmed = find.ancestor(
+        of: accessory,
+        matching: find.byType(ColorFiltered),
+      );
+      expect(dimmed, findsNothing);
+
+      showDialog<void>(
+        context: tabs.root.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(barriers(RoundedSuperellipseBorder), findsNothing);
+      expect(barriers(StadiumBorder), findsOneWidget);
+      expect(dimmed, findsOneWidget);
       unmockPlatformViews();
     });
   });

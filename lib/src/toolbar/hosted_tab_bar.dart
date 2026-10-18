@@ -58,6 +58,7 @@ class HostedTabBar extends StatefulWidget {
     this.placement = AdaptiveChromePlacement.bottom,
     this.sidebar,
     this.accessoryHeight,
+    this.accessoryBand,
   });
 
   /// The sidebar's state, while the tabs are in one.
@@ -78,6 +79,11 @@ class HostedTabBar extends StatefulWidget {
   /// tab layout to keep its content clear of it.
   final ValueNotifier<double> height;
 
+  /// Set to how much of [height] the accessory takes on a tray, or where a
+  /// tray puts it on a page's sheet: for a sheet that opens from it
+  /// ([AdaptiveSheet.opensFromAccessory]) to run its content on into.
+  final ValueNotifier<double>? accessoryBand;
+
   @override
   State<HostedTabBar> createState() => _HostedTabBarState();
 }
@@ -86,6 +92,10 @@ class _HostedTabBarState extends State<HostedTabBar>
     with TickerProviderStateMixin {
   /// The tab layouts the last build drew a bar for.
   List<ToolbarEntry> _built = const <ToolbarEntry>[];
+
+  /// The page's sheet the accessory on it opens into, as the last build saw
+  /// it ([ToolbarRegistry.accessorySheet]).
+  AccessorySheet? _builtSheet;
 
   /// The opacity of the bar in front: it fades in once the pages hold still
   /// after a transition that brought the tabs in.
@@ -314,7 +324,10 @@ class _HostedTabBarState extends State<HostedTabBar>
   /// The blend only tells of the pages in front. A tab layout that is
   /// covered or comes and goes is only seen here.
   void _onRegistryChanged() {
-    if (listEquals(_hosted(), _built)) return;
+    if (listEquals(_hosted(), _built) &&
+        widget.blend.registry.accessorySheet == _builtSheet) {
+      return;
+    }
     setState(() {});
   }
 
@@ -329,6 +342,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     final blend = widget.blend;
     final registry = blend.registry;
     _built = _hosted();
+    _builtSheet = registry.accessorySheet;
     registry.keepAccessoriesOf(_built.map((entry) => entry.id));
     // No accessory floats at the bottom of the content: none of its room is
     // kept there any more. The bottom placement measures its own.
@@ -457,6 +471,12 @@ class _HostedTabBarState extends State<HostedTabBar>
     // A tray that opens into a sheet, which drags on it open and close.
     final opens =
         onTray && ownGlass && bar.accessoryExpanded != null && chrome == null;
+    // On a page's sheet that opens from it, the accessory makes way as the
+    // sheet comes up: only the sheet of the tabs in front.
+    final sheet =
+        bar.accessoryLayout == AdaptiveTabAccessoryLayout.onSheet && interactive
+        ? widget.blend.registry.accessorySheet
+        : null;
     // The native views of the accessory and its tray leave the screen while
     // they fade.
     final fade = AnimationMin<double>(
@@ -497,7 +517,10 @@ class _HostedTabBarState extends State<HostedTabBar>
                 capsule: _capsules[entry.id],
                 layout: bar.accessoryLayout,
                 expansion: opens ? _trayOpen : null,
-                onRestingHeight: (height) => widget.height.value = height,
+                onRestingHeight: (height, band) {
+                  widget.height.value = height;
+                  widget.accessoryBand?.value = band;
+                },
                 onOpenExtent: _onOpenExtent,
                 accessory: _nativeAccessory(
                   entry,
@@ -505,12 +528,17 @@ class _HostedTabBarState extends State<HostedTabBar>
                   fade: fade,
                   dialog: dialog,
                   expansion: opens ? _trayExpansion : null,
+                  sheet: sheet,
                 ),
                 expanded: opens ? _expanded(entry, bar, fade: fade) : null,
                 tray: onTray && ownGlass
                     ? _tray(fade: fade, drags: opens)
                     : null,
-                cover: onTray
+                // On a page's sheet, the page's barrier dims the sheet's
+                // glass already: a barrier over the tray's place would dim
+                // it twice. The tabs and the accessory are dimmed on their
+                // own there.
+                cover: onTray && ownGlass
                     ? _BarrierOverTabs(
                         route: dialog,
                         fills: true,
@@ -536,7 +564,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                       ),
                       Positioned.fill(
                         child: _BarrierOverTabs(
-                          route: onTray ? null : dialog,
+                          route: onTray && ownGlass ? null : dialog,
                           capsule: _capsules[entry.id],
                         ),
                       ),
@@ -580,12 +608,16 @@ class _HostedTabBarState extends State<HostedTabBar>
   /// keyboard's way rather than under it, and under a dialog's barrier with
   /// the tabs. While [fade] is not fully in, its native views leave the
   /// screen and their stand-ins fade.
+  ///
+  /// On a page's [sheet] that opens from it, it makes way as the sheet's
+  /// content comes up over it, and a drag on it moves the sheet.
   Widget? _nativeAccessory(
     ToolbarEntry entry,
     AdaptiveBottomNavigationBar bar, {
     required Animation<double> fade,
     required ModalRoute<Object?>? dialog,
     AdaptiveTrayExpansion? expansion,
+    AccessorySheet? sheet,
   }) {
     final accessory = bar.accessory;
     if (accessory == null) return null;
@@ -605,8 +637,13 @@ class _HostedTabBarState extends State<HostedTabBar>
       ),
     };
     final onTray = _traysIt(layout);
+    final onSheet = layout == AdaptiveTabAccessoryLayout.onSheet;
+    final covered = sheet?.value ?? kAlwaysDismissedAnimation;
     return NativeViewSettleScope(
-      fade: fade,
+      // Its native views leave the screen too as it makes way for a sheet.
+      fade: onSheet
+          ? AnimationMin<double>(fade, ReverseAnimation(covered))
+          : fade,
       child: AdaptiveKeyboardFade(
         holdsNativeViews: true,
         child: Stack(
@@ -621,6 +658,26 @@ class _HostedTabBarState extends State<HostedTabBar>
                   spec,
                   glass: false,
                   expansion: expansion,
+                ),
+              )
+            else if (onSheet)
+              // The page's barrier dims the sheet's glass under it; only its
+              // own pixels are dimmed here.
+              _DimmedUnderDialog(
+                route: dialog,
+                child: _MakesWayForSheet(
+                  covered: covered,
+                  child: _sheetDrag(
+                    sheet,
+                    nativeAccessory(
+                      widget.blend.registry,
+                      entry,
+                      accessory,
+                      spec,
+                      glass: false,
+                      expansion: sheet,
+                    ),
+                  ),
                 ),
               )
             else
@@ -641,6 +698,36 @@ class _HostedTabBarState extends State<HostedTabBar>
       ),
     );
   }
+
+  /// [child], with vertical drags on it moving the page's [sheet] it opens
+  /// into, under the finger. Takes no drags without one.
+  Widget _sheetDrag(AccessorySheet? sheet, Widget child) => RawGestureDetector(
+    gestures: {
+      VerticalDragGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+            () => VerticalDragGestureRecognizer(debugOwner: this),
+            (recognizer) {
+              recognizer.onlyAcceptDragOnThreshold = true;
+              // From where the finger came down, so the sheet stays under it.
+              recognizer.dragStartBehavior = DragStartBehavior.down;
+              if (sheet == null) {
+                recognizer
+                  ..onStart = null
+                  ..onUpdate = null
+                  ..onEnd = null;
+                return;
+              }
+              recognizer
+                ..onStart = ((_) => sheet.dragStart())
+                ..onUpdate = ((details) =>
+                    sheet.dragUpdate(-details.primaryDelta!))
+                ..onEnd = ((details) =>
+                    sheet.dragEnd(-(details.primaryVelocity ?? 0)));
+            },
+          ),
+    },
+    child: child,
+  );
 
   /// The glass tray the accessory and the tabs share
   /// ([AdaptiveTabAccessoryLayout.tray]). It takes the touches that miss
@@ -1123,6 +1210,7 @@ typedef _Placed = ({
   Offset expanded,
   double reveal,
   double resting,
+  double band,
 });
 
 /// The native tab bar ([tabs]) with the tab layout's [accessory], as
@@ -1161,8 +1249,9 @@ class _AccessoryOverTabs
   final Widget? expanded;
   final Animation<double>? expansion;
 
-  /// Told the height with the tray closed, after the frame.
-  final ValueChanged<double>? onRestingHeight;
+  /// Told the height with the tray closed, and how much of it the accessory
+  /// takes above the tabs, after the frame.
+  final void Function(double resting, double band)? onRestingHeight;
 
   /// Told how tall [expanded] is, as it is laid out.
   final ValueChanged<double>? onOpenExtent;
@@ -1245,9 +1334,9 @@ class _RenderAccessoryOverTabs extends RenderBox
     markNeedsLayout();
   }
 
-  ValueChanged<double>? onRestingHeight;
+  void Function(double resting, double band)? onRestingHeight;
   ValueChanged<double>? onOpenExtent;
-  double? _reportedResting;
+  (double, double)? _reportedResting;
 
   /// How much of what the tray opens into is in sight, as last laid out.
   double _reveal = 0;
@@ -1378,6 +1467,7 @@ class _RenderAccessoryOverTabs extends RenderBox
       expanded: Offset.zero,
       reveal: 0.0,
       resting: size.height,
+      band: 0.0,
     );
   }
 
@@ -1423,6 +1513,7 @@ class _RenderAccessoryOverTabs extends RenderBox
       expanded: Offset.zero,
       reveal: 0.0,
       resting: size.height,
+      band: 0.0,
     );
   }
 
@@ -1486,6 +1577,7 @@ class _RenderAccessoryOverTabs extends RenderBox
         expanded: Offset.zero,
         reveal: 0.0,
         resting: size.height,
+        band: 0.0,
       );
     }
     // A little past open as it is pulled further, never past closed.
@@ -1520,6 +1612,9 @@ class _RenderAccessoryOverTabs extends RenderBox
       resting: constraints
           .constrain(Size(width, tabsSize.height + aboveTabs(0)))
           .height,
+      // The room the accessory and the tray's padding above it take over
+      // the tabs, closed.
+      band: aboveTabs(0),
     );
   }
 
@@ -1546,11 +1641,11 @@ class _RenderAccessoryOverTabs extends RenderBox
         _layout == AdaptiveTabAccessoryLayout.tray ? _openExtent : 0,
       );
     }
-    final resting = placed.resting;
+    final resting = (placed.resting, placed.band);
     if (resting != _reportedResting) {
       _reportedResting = resting;
       SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (attached) onRestingHeight?.call(resting);
+        if (attached) onRestingHeight?.call(resting.$1, resting.$2);
       });
     }
     if (_tabs case final tabs?) {
@@ -1720,6 +1815,95 @@ class _BarrierOverTabs extends StatelessWidget {
           else
             Positioned.fromRect(rect: capsule!, child: dim),
         ],
+      ),
+    );
+  }
+}
+
+/// The accessory on a page's sheet that opens from it, making way as the
+/// sheet's content comes up over it ([covered] from 0 to 1): it is out of
+/// sight by the time the content is halfway in, so the two never show at
+/// once for long where they lie over each other; it takes no touches once
+/// the content starts to show, which then has them, and leaves the
+/// semantics tree halfway.
+class _MakesWayForSheet extends StatefulWidget {
+  const _MakesWayForSheet({required this.covered, required this.child});
+
+  final Animation<double> covered;
+  final Widget child;
+
+  @override
+  State<_MakesWayForSheet> createState() => _MakesWayForSheetState();
+}
+
+class _MakesWayForSheetState extends State<_MakesWayForSheet> {
+  late CurvedAnimation _gone = _goneFor(widget.covered);
+
+  static CurvedAnimation _goneFor(Animation<double> covered) =>
+      CurvedAnimation(parent: covered, curve: const Interval(0, 0.5));
+
+  @override
+  void didUpdateWidget(_MakesWayForSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.covered == widget.covered) return;
+    _gone.dispose();
+    _gone = _goneFor(widget.covered);
+  }
+
+  @override
+  void dispose() {
+    _gone.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final covered = widget.covered;
+    return FadeTransition(
+      opacity: ReverseAnimation(_gone),
+      child: AnimatedBuilder(
+        animation: covered,
+        child: widget.child,
+        builder: (context, child) => IgnorePointer(
+          ignoring: covered.value > 0.05,
+          child: ExcludeSemantics(excluding: covered.value > 0.5, child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// [child] dimmed as a dialog's barrier ([route]) would dim it, where it
+/// sits above the navigator, out of the barrier's reach, on glass the
+/// barrier dims already: only its own pixels, in the barrier's colour, so
+/// the glass under it is not dimmed twice. It comes and goes with the
+/// dialog.
+class _DimmedUnderDialog extends StatelessWidget {
+  const _DimmedUnderDialog({required this.route, required this.child});
+
+  final ModalRoute<Object?>? route;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final route = this.route;
+    final color = route?.barrierColor;
+    final animation = route?.animation;
+    if (route == null || color == null || color.a == 0 || animation == null) {
+      return child;
+    }
+    final barrier = animation.drive(
+      ColorTween(
+        begin: color.withValues(alpha: 0),
+        end: color,
+      ).chain(CurveTween(curve: route.barrierCurve)),
+    );
+    return AnimatedBuilder(
+      animation: barrier,
+      child: child,
+      builder: (context, child) => ColorFiltered(
+        colorFilter: ColorFilter.mode(barrier.value!, BlendMode.srcATop),
+        child: child,
       ),
     );
   }
