@@ -752,8 +752,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     final to = _extentOf(detent, m);
     _report(detent);
     if (changed) {
-      widget.onDetentChanged?.call(detent);
-      widget.controller?._onDetentChanged();
+      _afterBuild(() {
+        widget.onDetentChanged?.call(detent);
+        widget.controller?._onDetentChanged();
+      });
     }
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
       _extent.value = to;
@@ -838,7 +840,26 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     }
     if (obstruction == _reportedObstruction) return;
     _reportedObstruction = obstruction;
-    widget.onSettled?.call(obstruction);
+    _afterBuild(() {
+      if (_reportedObstruction == obstruction) {
+        widget.onSettled?.call(obstruction);
+      }
+    });
+  }
+
+  /// Tells the page [tell]: at once, or after the frame where the sheet
+  /// settles as the page builds, its detents or its place changing with it
+  /// (a sheet that becomes a side panel as a foldable opens): the page may
+  /// not be built again in that frame.
+  void _afterBuild(VoidCallback tell) {
+    if (SchedulerBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
+      tell();
+      return;
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) tell();
+    });
   }
 
   // Going with its route ------------------------------------------------------
