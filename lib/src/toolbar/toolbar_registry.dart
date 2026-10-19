@@ -328,9 +328,10 @@ class ToolbarRegistry extends ChangeNotifier {
   /// page's controls above it keep clear of it.
   final ValueNotifier<double> barAccessoryHeight = ValueNotifier<double>(0);
 
-  /// The page's sheet that the tab accessory on it opens into
-  /// (`AdaptiveSheet.opensFromAccessory`), for the host to make way for its
-  /// content as it comes up: the one attached last, while there is one.
+  /// The page's sheet that holds the tab accessory and opens from it
+  /// (`AdaptiveSheet.opensFromAccessory`) or lifts it apart from its content
+  /// (`AdaptiveSheet.liftsAccessory`), for the host to set the accessory as
+  /// the content comes up: the one attached last, while there is one.
   AccessorySheet? get accessorySheet =>
       _accessorySheets.isEmpty ? null : _accessorySheets.last;
   final List<AccessorySheet> _accessorySheets = <AccessorySheet>[];
@@ -410,6 +411,12 @@ class ToolbarRegistryScope extends InheritedNotifier<ToolbarRegistry> {
 /// the content is all in sight), the way to open and close it, and the way
 /// to move it as the accessory is dragged.
 abstract interface class AccessorySheet implements AdaptiveTrayExpansion {
+  /// How far the sheet's content lies above the accessory, where the sheet
+  /// lifts the accessory apart from it (`AdaptiveSheet.liftsAccessory`): 0
+  /// with nothing above it, or where the content comes up into the
+  /// accessory's place, 1 once the content is all in sight above it.
+  Animation<double> get lifted;
+
   void dragStart();
 
   /// Moves the sheet up by [delta], down while negative.

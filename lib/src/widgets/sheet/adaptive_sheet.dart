@@ -98,6 +98,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.modal = false,
     this.keepsContentClearOfBars = false,
     this.opensFromAccessory = false,
+    this.liftsAccessory = false,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -198,6 +199,17 @@ class AdaptiveSheet extends StatefulWidget {
   /// side panel or on Android. Turned off or on, the accessory eases in or
   /// out rather than jumping, as the sheet changes what it shows.
   final bool opensFromAccessory;
+
+  /// Whether the tab accessory on the sheet
+  /// (`AdaptiveTabAccessoryLayout.onSheet`) stands apart from the sheet's
+  /// content while that lies above it, on a Liquid Glass capsule of its own,
+  /// as an accessory floats above the tabs elsewhere: a station's details,
+  /// say, above a ride's row. The capsule comes in as the content comes up
+  /// above the accessory and goes as it goes down, and stays away where the
+  /// content comes up into the accessory's place instead
+  /// ([opensFromAccessory]). With the native iOS chrome, along the bottom.
+  /// Off by default.
+  final bool liftsAccessory;
 
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
@@ -328,13 +340,23 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// make way: 0 at the collapsed detent, 1 once the content is all in sight.
   late final AnimationController _covered = AnimationController(vsync: this);
 
+  /// How far the content lies above the accessory where the sheet lifts it
+  /// apart ([AdaptiveSheet.liftsAccessory]): 0 with nothing above it, or
+  /// where the content comes up into its place, 1 once the content is all in
+  /// sight above it.
+  late final AnimationController _lifted = AnimationController(vsync: this);
+
   late final _AccessorySheetLink _link = _AccessorySheetLink(this);
 
-  /// The registry the sheet is attached to as what the accessory opens into.
+  /// The registry the sheet is attached to, for the host to set the
+  /// accessory on it.
   ToolbarRegistry? _attachedTo;
 
   /// Whether it opens from the accessory, as last built.
   bool? _opensFromAccessoryAsBuilt;
+
+  /// Whether it lifts the accessory apart from its content, as last built.
+  var _liftsAsBuilt = false;
 
   double get _grabberHeight => !widget.showsGrabber
       ? 0
@@ -396,16 +418,28 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _extent.dispose();
     _opensFromAccessory.dispose();
     _covered.dispose();
+    _lifted.dispose();
     super.dispose();
   }
 
-  /// Whether the sheet opens from the accessory on it as it is now laid out:
+  /// Whether the sheet may hold the tab accessory as it is now laid out:
   /// floating along the bottom, with the native chrome.
-  bool _opensFrom(_Metrics m) =>
-      widget.opensFromAccessory &&
+  bool _holdsAccessory(_Metrics m) =>
       !m.material &&
       !m.sidePanel &&
       AdaptiveChromeScope.chromeOf(context) == null;
+
+  /// Starts or stops lifting the accessory apart, after the frame that
+  /// changed it.
+  void _followLiftsAccessory(bool lifts) {
+    if (_liftsAsBuilt == lifts) return;
+    _liftsAsBuilt = lifts;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncLink();
+      _updateCovered();
+    });
+  }
 
   /// Starts or stops opening from the accessory, easing, after the frame
   /// that changed it.
@@ -426,12 +460,15 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     });
   }
 
-  /// Attaches the sheet to the host as what the accessory opens into while
-  /// it does, or eases out of it; detaches it otherwise.
+  /// Attaches the sheet to the host while the accessory opens into it or
+  /// eases out of it, and while it lifts the accessory apart; detaches it
+  /// otherwise.
   void _syncLink() {
     if (!mounted) return;
     final attach =
-        _opensFromAccessory.value > 0 || _opensFromAccessory.isAnimating
+        _liftsAsBuilt ||
+            _opensFromAccessory.value > 0 ||
+            _opensFromAccessory.isAnimating
         ? ToolbarRegistry.maybeOf(context)
         : null;
     if (attach == _attachedTo) return;
@@ -457,8 +494,26 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
             0.0,
             1.0,
           );
-    final covered = live * _opensFromAccessory.value;
+    var covered = live * _opensFromAccessory.value;
+    // On its way down onto the accessory, as other content gives way to what
+    // opens from it, the accessory only comes back into sight: it would fade
+    // out under content that is going, then in again.
+    if (m != null && _isFoldingOntoAccessory(m)) {
+      covered = math.min(covered, _covered.value);
+    }
     if (covered != _covered.value) _covered.value = covered;
+    // Above it, where the content does not come up into its place.
+    final lifted = _liftsAsBuilt ? live * (1 - _opensFromAccessory.value) : 0.0;
+    if (lifted != _lifted.value) _lifted.value = lifted;
+  }
+
+  /// Whether the sheet rests at its lowest detent, where only the accessory
+  /// shows, or is on its way there.
+  bool _isFoldingOntoAccessory(_Metrics m) {
+    final target = _target;
+    if (target == null || _dragging) return false;
+    final points = _restingPoints(m);
+    return points.length > 1 && target == points.first.$1;
   }
 
   /// Opens the sheet from the accessory: to its tallest detent.
@@ -937,7 +992,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
             _updateCovered();
           });
         }
-        _followOpensFromAccessory(_opensFrom(metrics));
+        final holds = _holdsAccessory(metrics);
+        _followOpensFromAccessory(holds && widget.opensFromAccessory);
+        _followLiftsAccessory(holds && widget.liftsAccessory);
         final body = _buildBody(context, metrics);
         if (sidePanel) {
           final hidden = _target?.isHidden ?? !_measured;
@@ -1400,6 +1457,9 @@ class _AccessorySheetLink implements AccessorySheet {
 
   @override
   Animation<double> get value => _sheet._covered;
+
+  @override
+  Animation<double> get lifted => _sheet._lifted;
 
   @override
   bool get isOpen => _sheet._isOpenFromAccessory;

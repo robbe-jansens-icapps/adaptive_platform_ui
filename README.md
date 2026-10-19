@@ -300,7 +300,9 @@ class RentalAccessory extends StatelessWidget {
   nothing moves between tabs. A sheet with `opensFromAccessory` then opens
   out of the accessory: collapsed, only the accessory shows on it; pulled up
   (or through `AdaptiveAccessoryScope.expansionOf`), the accessory makes way
-  and the sheet's content comes up into its place:
+  and the sheet's content comes up into its place. With `liftsAccessory`,
+  other content on the sheet (a station's details) lies above the accessory
+  with the accessory apart on a glass capsule of its own:
 
 ```dart
 AdaptiveBottomNavigationBar(
@@ -313,6 +315,7 @@ AdaptiveBottomNavigationBar(
 // On the map:
 AdaptiveSheet(
   opensFromAccessory: true,
+  liftsAccessory: true,
   detents: const [AdaptiveSheetDetent.collapsed, AdaptiveSheetDetent.fitContent],
   showsGrabber: false,
   child: rideCard,

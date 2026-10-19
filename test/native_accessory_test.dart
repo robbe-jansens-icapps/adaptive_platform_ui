@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
     show DuoVerticalBar;
@@ -1093,11 +1095,13 @@ void main() {
     Future<(NativeTabs, AdaptiveSheetController)> pumpSheet(
       WidgetTester tester, {
       ValueListenable<bool>? opens,
+      bool lifts = false,
       AdaptiveTabAccessoryLayout Function(int tab)? layoutOf,
       Widget accessory = const RentalAccessory(),
     }) async {
       mockPlatformViews();
       IOS26NativeTabBar.debugHasUIKitOverride = true;
+      IOS26GlassSurface.debugHasUIKitOverride = true;
       window(
         tester,
         const Size(402, 874),
@@ -1116,6 +1120,7 @@ void main() {
           builder: (context, opens, _) => AdaptiveSheet(
             controller: controller,
             opensFromAccessory: opens,
+            liftsAccessory: lifts,
             detents: opens
                 ? const [
                     AdaptiveSheetDetent.collapsed,
@@ -1244,6 +1249,8 @@ void main() {
       await pumpSheet(tester, opens: opens);
       expect(tester.getRect(card).bottom, closeTo(874 - 84 - band, 0.5));
       expect(opacityOf(tester, accessory), 1);
+      // Not asked to lift it apart: on the sheet's glass as it is.
+      expect(glassOf(accessory), findsNothing);
       await tester.tap(accessory);
       await tester.pump();
       expect(find.text('rental 1'), findsOneWidget);
@@ -1267,6 +1274,76 @@ void main() {
       expect(opacityOf(tester, accessory), lessThan(1));
       await tester.pumpAndSettle();
       expect(opacityOf(tester, accessory), 1);
+      unmockPlatformViews();
+    });
+
+    testWidgets('one that lifts the accessory sets it apart on native glass '
+        'of its own while its content lies above it, and lets it go as the '
+        'content comes up into its place instead', (tester) async {
+      final opens = ValueNotifier<bool>(false);
+      addTearDown(opens.dispose);
+      await pumpSheet(tester, opens: opens, lifts: true);
+      // A station above it: its own capsule, the native glass once all in.
+      expect(glassOf(accessory), findsOneWidget);
+      expect(opacityOf(tester, glassOf(accessory)), closeTo(1, 0.001));
+      expect(showsNativeGlass(tester), isTrue);
+      expect(tester.getRect(glassOf(accessory)), tester.getRect(accessory));
+
+      // The ride the accessory opens into, at its tallest: no capsule.
+      opens.value = true;
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(showsNativeGlass(tester), isFalse);
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, glassOf(accessory)), closeTo(0, 0.001));
+      unmockPlatformViews();
+    });
+
+    testWidgets('shrinking onto the accessory from other content, as a '
+        'station gives way to a folded ride, the sheet keeps the accessory in '
+        'sight all the way', (tester) async {
+      final opens = ValueNotifier<bool>(false);
+      addTearDown(opens.dispose);
+      final (_, controller) = await pumpSheet(tester, opens: opens);
+      expect(opacityOf(tester, accessory), 1);
+
+      opens.value = true;
+      await tester.pump();
+      controller.animateTo(AdaptiveSheetDetent.collapsed);
+      var least = 1.0;
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        least = math.min(least, opacityOf(tester, accessory));
+      }
+      await tester.pumpAndSettle();
+      expect(least, greaterThan(0.99));
+      expect(tester.getRect(sheetGlass).top, closeTo(874 - 84 - band, 0.5));
+      unmockPlatformViews();
+    });
+
+    testWidgets('under a dialog, the glass it is lifted onto is a stand-in, '
+        'which the dialog dims with it', (tester) async {
+      final (tabs, _) = await pumpSheet(
+        tester,
+        opens: ValueNotifier<bool>(false),
+        lifts: true,
+      );
+      expect(showsNativeGlass(tester), isTrue);
+
+      showDialog<void>(
+        context: tabs.root.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(showsNativeGlass(tester), isFalse);
+      expect(
+        find.ancestor(
+          of: glassOf(accessory),
+          matching: find.byType(ColorFiltered),
+        ),
+        findsOneWidget,
+      );
       unmockPlatformViews();
     });
 
@@ -1305,8 +1382,11 @@ void main() {
         'page\'s barrier: no barrier over the tray\'s place, the tabs\' '
         'capsule and the accessory dimmed on their own', (tester) async {
       final (tabs, _) = await pumpSheet(tester);
+      // The barriers laid over the bars, not the stand-ins of their glass.
       Finder barriers(Type shape) => find.descendant(
-        of: find.byType(HostedTabBar),
+        of: find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_BarrierOverTabs',
+        ),
         matching: find.byWidgetPredicate(
           (widget) =>
               widget is DecoratedBox &&

@@ -640,10 +640,13 @@ class _HostedTabBarState extends State<HostedTabBar>
     final onSheet = layout == AdaptiveTabAccessoryLayout.onSheet;
     final covered = sheet?.value ?? kAlwaysDismissedAnimation;
     return NativeViewSettleScope(
-      // Its native views leave the screen too as it makes way for a sheet.
-      fade: onSheet
-          ? AnimationMin<double>(fade, ReverseAnimation(covered))
-          : fade,
+      // Its native views leave the screen too as it makes way for a sheet,
+      // and under a dialog, whose barrier dims only what Flutter draws there.
+      fade: !onSheet
+          ? fade
+          : dialog != null
+          ? kAlwaysDismissedAnimation
+          : AnimationMin<double>(fade, ReverseAnimation(covered)),
       child: AdaptiveKeyboardFade(
         holdsNativeViews: true,
         child: Stack(
@@ -674,7 +677,10 @@ class _HostedTabBarState extends State<HostedTabBar>
                       entry,
                       accessory,
                       spec,
+                      // Apart from the sheet's content above it, on glass of
+                      // its own, where the sheet lifts it.
                       glass: false,
+                      glassOpacity: sheet?.lifted,
                       expansion: sheet,
                     ),
                   ),
@@ -1135,6 +1141,7 @@ Widget nativeAccessory(
   Widget accessory,
   AdaptiveAccessorySpec spec, {
   bool glass = true,
+  Animation<double>? glassOpacity,
   AdaptiveTrayExpansion? expansion,
 }) => KeyedSubtree(
   key: registry.accessoryKey(tabs.id),
@@ -1143,7 +1150,11 @@ Widget nativeAccessory(
     expansion: expansion,
     // The same element either way, so the accessory keeps its state as it
     // moves on or off the tray.
-    child: NativeAccessoryGlass(glass: glass, child: accessory),
+    child: NativeAccessoryGlass(
+      glass: glass,
+      glassOpacity: glassOpacity,
+      child: accessory,
+    ),
   ),
 );
 
@@ -1155,11 +1166,18 @@ class NativeAccessoryGlass extends StatefulWidget {
   const NativeAccessoryGlass({
     super.key,
     this.glass = true,
+    this.glassOpacity,
     required this.child,
   });
 
   /// Whether it shows its glass: not where it sits on other glass.
   final bool glass;
+
+  /// Where the glass comes and goes with what lies around the accessory (a
+  /// page's sheet whose content lies above it), how much of it shows, in
+  /// place of [glass]: its native view is on screen only while it is all in,
+  /// a stand-in fading in its place on the way.
+  final Animation<double>? glassOpacity;
 
   final Widget child;
 
@@ -1170,6 +1188,23 @@ class NativeAccessoryGlass extends StatefulWidget {
 class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
   /// Whether the accessory had no size when last laid out.
   bool _empty = false;
+
+  static const _capsule = IOS26GlassSurface(
+    corners: GlassSurfaceCorners.capsule,
+    interactive: true,
+  );
+
+  Widget _glass() {
+    final opacity = widget.glassOpacity;
+    if (_empty) return const SizedBox.shrink();
+    if (opacity != null) {
+      return NativeViewSettleScope(
+        fade: opacity,
+        child: FadeTransition(opacity: opacity, child: _capsule),
+      );
+    }
+    return widget.glass ? _capsule : const SizedBox.shrink();
+  }
 
   void _onSize(Size size) {
     final empty = size.isEmpty;
@@ -1182,14 +1217,7 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
       fit: StackFit.passthrough,
       children: [
         // In the same place either way, so the accessory keeps its own.
-        Positioned.fill(
-          child: _empty || !widget.glass
-              ? const SizedBox.shrink()
-              : const IOS26GlassSurface(
-                  corners: GlassSurfaceCorners.capsule,
-                  interactive: true,
-                ),
-        ),
+        Positioned.fill(child: _glass()),
         SizeReporter(onSizeChanged: _onSize, child: widget.child),
       ],
     );
