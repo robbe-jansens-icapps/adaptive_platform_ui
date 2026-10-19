@@ -45,6 +45,15 @@ class MaterialTabAccessory extends StatefulWidget {
   /// The radius of the band's top corners, a Material sheet's.
   static const double cornerRadius = 28;
 
+  /// The band, as the accessory sits on it: it runs on into the navigation
+  /// bar below.
+  static const surface = AdaptiveAccessorySurface(
+    outsets: EdgeInsets.fromLTRB(sidePadding, topPadding, sidePadding, 0),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(cornerRadius)),
+    ),
+  );
+
   @override
   State<MaterialTabAccessory> createState() => _MaterialTabAccessoryState();
 }
@@ -110,6 +119,7 @@ class _MaterialTabAccessoryState extends State<MaterialTabAccessory> {
         layout: widget.layout,
       ),
       expansion: sheet,
+      surface: MaterialTabAccessory.surface,
       child: AccessoryMakesWay(
         covered: covered,
         child: AccessorySheetDrag(

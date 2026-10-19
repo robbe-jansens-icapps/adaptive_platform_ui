@@ -16,6 +16,7 @@ import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_keyboard_fade.dart';
 import '../widgets/ios26/ios26_glass_surface.dart';
 import '../widgets/ios26/native_view_settle.dart';
+import '../widgets/sheet/adaptive_sheet.dart' show kAdaptiveSheetCornerRadius;
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
@@ -130,6 +131,15 @@ class _HostedTabBarState extends State<HostedTabBar>
   void _onCapsuleChanged(Object id, Rect? capsule) {
     if (!mounted || _capsules[id] == capsule) return;
     setState(() => _capsules[id] = capsule);
+  }
+
+  /// How far each tab layout's tray, or the page's sheet in its place,
+  /// reaches beyond the accessory, as last laid out, by the layout's id.
+  final Map<Object, EdgeInsets?> _trayOutsets = <Object, EdgeInsets?>{};
+
+  void _onTrayOutsets(Object id, EdgeInsets? outsets) {
+    if (!mounted || _trayOutsets[id] == outsets) return;
+    setState(() => _trayOutsets[id] = outsets);
   }
 
   // The tray opening into its sheet ------------------------------------------
@@ -384,6 +394,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     final going = driver == null ? null : _goingAndComing().$1;
     final leave = driver?.drive(_bringsUpperIn ? _leaveOnPush : _leaveOnPop);
     _capsules.removeWhere((id, _) => !_built.any((entry) => entry.id == id));
+    _trayOutsets.removeWhere((id, _) => !_built.any((entry) => entry.id == id));
     // Under a dialog the native bar stays in sight, under the dialog's
     // barrier as UIKit's does: the dialog comes up in the middle of the
     // screen, clear of it. The bar sits above the navigator, out of the
@@ -523,6 +534,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                   widget.accessoryBand?.value = band;
                 },
                 onOpenExtent: _onOpenExtent,
+                onTrayOutsets: (outsets) => _onTrayOutsets(entry.id, outsets),
                 accessory: _nativeAccessory(
                   entry,
                   bar,
@@ -640,6 +652,11 @@ class _HostedTabBarState extends State<HostedTabBar>
     final onTray = _traysIt(layout);
     final onSheet = layout == AdaptiveTabAccessoryLayout.onSheet;
     final covered = sheet?.value ?? kAlwaysDismissedAnimation;
+    // What it sits on: the tray's glass, or the page's sheet's in its place,
+    // or a capsule of its own.
+    final surface = onTray
+        ? _traySurface(_trayOutsets[entry.id], onSheet: onSheet)
+        : _capsuleSurface;
     return NativeViewSettleScope(
       // Its native views leave the screen too as it makes way for a sheet,
       // and under a dialog, whose barrier dims only what Flutter draws there.
@@ -662,6 +679,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                   spec,
                   glass: false,
                   expansion: expansion,
+                  surface: surface,
                 ),
               )
             else if (onSheet)
@@ -673,16 +691,22 @@ class _HostedTabBarState extends State<HostedTabBar>
                   covered: covered,
                   child: AccessorySheetDrag(
                     sheet: sheet,
-                    child: nativeAccessory(
-                      widget.blend.registry,
-                      entry,
-                      accessory,
-                      spec,
-                      // Apart from the sheet's content above it, on glass of
-                      // its own, where the sheet lifts it.
-                      glass: false,
-                      glassOpacity: sheet?.lifted,
-                      expansion: sheet,
+                    child: AnimatedBuilder(
+                      animation: sheet?.lifted ?? kAlwaysDismissedAnimation,
+                      builder: (context, _) => nativeAccessory(
+                        widget.blend.registry,
+                        entry,
+                        accessory,
+                        spec,
+                        // Apart from the sheet's content above it, on glass
+                        // of its own, where the sheet lifts it.
+                        glass: false,
+                        glassOpacity: sheet?.lifted,
+                        expansion: sheet,
+                        surface: (sheet?.lifted.value ?? 0) >= 0.5
+                            ? _capsuleSurface
+                            : surface,
+                      ),
                     ),
                   ),
                 ),
@@ -694,6 +718,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                 accessory,
                 spec,
                 glass: !onTray,
+                surface: surface,
               ),
             // On the tray, the tray's barrier dims it.
             if (!onTray)
@@ -724,6 +749,36 @@ class _HostedTabBarState extends State<HostedTabBar>
         child: drags
             ? _trayDrag(glass, behavior: HitTestBehavior.opaque)
             : const AbsorbPointer(child: glass),
+      ),
+    );
+  }
+
+  /// The glass of an accessory's own capsule.
+  static const _capsuleSurface = AdaptiveAccessorySurface(
+    shape: StadiumBorder(),
+  );
+
+  /// The tray's glass as far as it reaches beyond the accessory ([outsets]),
+  /// or [onSheet] the page's sheet's in its place, with the sheet's corners.
+  static AdaptiveAccessorySurface? _traySurface(
+    EdgeInsets? outsets, {
+    required bool onSheet,
+  }) {
+    if (outsets == null) return null;
+    return AdaptiveAccessorySurface(
+      outsets: outsets,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: onSheet
+            ? BorderRadius.vertical(
+                top: const Radius.circular(kAdaptiveSheetCornerRadius),
+                bottom: Radius.circular(
+                  IOS26GlassSurface.concentricRadius(
+                    inset: kAccessoryTrayInset,
+                    minimum: kAdaptiveSheetCornerRadius,
+                  ),
+                ),
+              )
+            : _trayCorners,
       ),
     );
   }
@@ -1104,7 +1159,8 @@ bool _traysIt(AdaptiveTabAccessoryLayout layout) =>
 
 /// A tab layout's [accessory] with the native chrome: in [spec]'s
 /// [AdaptiveAccessoryScope], on its glass capsule ([NativeAccessoryGlass])
-/// unless it has other [glass] under it, in the key that keeps its state
+/// unless it has other [glass] under it, told what it sits on ([surface]),
+/// in the key that keeps its state
 /// wherever the host shows it.
 Widget nativeAccessory(
   ToolbarRegistry registry,
@@ -1114,11 +1170,13 @@ Widget nativeAccessory(
   bool glass = true,
   Animation<double>? glassOpacity,
   AdaptiveTrayExpansion? expansion,
+  AdaptiveAccessorySurface? surface,
 }) => KeyedSubtree(
   key: registry.accessoryKey(tabs.id),
   child: AdaptiveAccessoryScope(
     spec: spec,
     expansion: expansion,
+    surface: surface,
     // The same element either way, so the accessory keeps its state as it
     // moves on or off the tray.
     child: NativeAccessoryGlass(
@@ -1238,6 +1296,7 @@ class _AccessoryOverTabs
     this.expansion,
     this.onRestingHeight,
     this.onOpenExtent,
+    this.onTrayOutsets,
     this.layout = AdaptiveTabAccessoryLayout.floating,
   });
 
@@ -1254,6 +1313,11 @@ class _AccessoryOverTabs
 
   /// Told how tall [expanded] is, as it is laid out.
   final ValueChanged<double>? onOpenExtent;
+
+  /// Told how far the tray, or a page's sheet in its place, reaches beyond
+  /// the accessory on each side with the tray closed, after the frame; null
+  /// where there is none.
+  final ValueChanged<EdgeInsets?>? onTrayOutsets;
 
   /// Laid over all of it, as the tray is, or as the capsule of the tabs is
   /// while there is no tray to show: a dialog's barrier.
@@ -1284,7 +1348,8 @@ class _AccessoryOverTabs
       _RenderAccessoryOverTabs(capsule, layout: layout)
         ..expansion = expansion
         ..onRestingHeight = onRestingHeight
-        ..onOpenExtent = onOpenExtent;
+        ..onOpenExtent = onOpenExtent
+        ..onTrayOutsets = onTrayOutsets;
 
   @override
   void updateRenderObject(
@@ -1296,7 +1361,8 @@ class _AccessoryOverTabs
       ..accessoryLayout = layout
       ..expansion = expansion
       ..onRestingHeight = onRestingHeight
-      ..onOpenExtent = onOpenExtent;
+      ..onOpenExtent = onOpenExtent
+      ..onTrayOutsets = onTrayOutsets;
   }
 }
 
@@ -1335,7 +1401,9 @@ class _RenderAccessoryOverTabs extends RenderBox
 
   void Function(double resting, double band)? onRestingHeight;
   ValueChanged<double>? onOpenExtent;
+  ValueChanged<EdgeInsets?>? onTrayOutsets;
   (double, double)? _reportedResting;
+  EdgeInsets? _reportedOutsets;
 
   /// How much of what the tray opens into is in sight, as last laid out.
   double _reveal = 0;
@@ -1652,6 +1720,26 @@ class _RenderAccessoryOverTabs extends RenderBox
     }
     if (_accessory case final accessory?) {
       (accessory.parentData! as BoxParentData).offset = placed.accessory;
+    }
+    final tray = placed.tray;
+    final accessory = _accessory;
+    // With the tray closed: what it opens into lies between the two.
+    final outsets = tray == null || accessory == null
+        ? null
+        : EdgeInsets.fromLTRB(
+            placed.accessory.dx - tray.left,
+            placed.accessory.dy - tray.top,
+            tray.right - placed.accessory.dx - accessory.size.width,
+            tray.bottom -
+                placed.accessory.dy -
+                accessory.size.height -
+                placed.reveal,
+          );
+    if (outsets != _reportedOutsets) {
+      _reportedOutsets = outsets;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (attached) onTrayOutsets?.call(outsets);
+      });
     }
     if (_tray case final tray?) {
       (tray.parentData! as BoxParentData).offset =

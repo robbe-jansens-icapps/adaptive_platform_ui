@@ -56,6 +56,10 @@ class AdaptiveSheetController extends ChangeNotifier {
   void _onDetentChanged() => notifyListeners();
 }
 
+/// The radius of the top corners of a sheet that floats over its page with
+/// the native chrome (iOS 26); those along the bottom follow the display's.
+const double kAdaptiveSheetCornerRadius = 30;
+
 /// A sheet that floats over the content of a page, like the ones in Find My
 /// and Maps on iOS 26: a grabber, a [header] that stays in view, and [child]
 /// below it, scrolled by the sheet when it does not fit.
@@ -1208,7 +1212,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       );
     }
     final sidePanel = metrics.sidePanel;
-    const radius = 30.0;
+    const radius = kAdaptiveSheetCornerRadius;
     if (AdaptiveChromeScope.chromeOf(context) != null) {
       return AdaptiveGlass(
         shape: RoundedSuperellipseBorder(

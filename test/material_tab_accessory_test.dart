@@ -158,6 +158,15 @@ void main() {
           Theme.of(context).colorScheme.surfaceContainer,
     );
     expect(tester.getRect(band().first).top, rect.top - 12);
+    // Told it sits on the band, which reaches the window's sides.
+    final surface = AdaptiveAccessoryScope.surfaceOf(
+      tester.element(accessory),
+    )!;
+    expect(surface, MaterialTabAccessory.surface);
+    final outline = surface.outline(rect.size).getBounds().shift(rect.topLeft);
+    expect(outline.left, 0);
+    expect(outline.right, size.width);
+    expect(outline.top, tester.getRect(band().first).top);
     expect(accessoryBand, 48 + MaterialTabAccessory.topPadding);
     expect(padding, 48 + MaterialTabAccessory.topPadding);
 

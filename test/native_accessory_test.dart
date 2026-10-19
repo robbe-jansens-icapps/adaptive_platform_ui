@@ -397,6 +397,11 @@ void main() {
     expect(lastSpec!.placement, AdaptiveChromePlacement.bottom);
     expect(lastSpec!.compact, isFalse);
     expect(lastSpec!.room, double.infinity);
+    // On its capsule, which it fills.
+    expect(
+      AdaptiveAccessoryScope.surfaceOf(tester.element(accessory)),
+      const AdaptiveAccessorySurface(shape: StadiumBorder()),
+    );
 
     const room = 50 + kNativeAccessoryGap + 48;
     expect(tabs.insetOf('Tab 0'), room);
@@ -573,6 +578,20 @@ void main() {
     expect(
       tester.widget<IOS26GlassSurface>(trayGlass).cornerRadius,
       kAccessoryTrayCornerRadius,
+    );
+    // The accessory is told how far the tray's glass reaches around it, and
+    // its shape.
+    final surface = AdaptiveAccessoryScope.surfaceOf(
+      tester.element(accessory),
+    )!;
+    expect(surface.outline(rect.size).getBounds().shift(rect.topLeft), tray);
+    expect(
+      (surface.shape as RoundedSuperellipseBorder).borderRadius,
+      isA<BorderRadius>().having(
+        (radius) => radius.topLeft,
+        'top left',
+        const Radius.circular(kAccessoryTrayCornerRadius),
+      ),
     );
     // The pages keep clear of all of it.
     expect(tabs.insetOf('Tab 0'), 874 - tray.top);
@@ -1365,6 +1384,51 @@ void main() {
       }
       return bottom;
     }
+
+    testWidgets('the accessory is told it sits on the sheet\'s glass where a '
+        'tray would be, with the sheet\'s corners, and on its own capsule '
+        'where the sheet lifts it', (tester) async {
+      final opens = ValueNotifier<bool>(true);
+      addTearDown(opens.dispose);
+      final (_, controller) = await pumpSheet(
+        tester,
+        opens: opens,
+        lifts: true,
+      );
+      final rect = tester.getRect(accessory);
+      final folded = AdaptiveAccessoryScope.surfaceOf(
+        tester.element(accessory),
+      )!;
+      const padding = 22 - kAccessoryTrayInset;
+      expect(
+        folded.outline(rect.size).getBounds().shift(rect.topLeft),
+        Rect.fromLTRB(
+          rect.left - padding,
+          rect.top - padding,
+          rect.right + padding,
+          874 - kAccessoryTrayInset,
+        ),
+      );
+      expect(
+        (folded.shape as RoundedSuperellipseBorder).borderRadius,
+        isA<BorderRadius>().having(
+          (radius) => radius.topLeft,
+          'top left',
+          const Radius.circular(kAdaptiveSheetCornerRadius),
+        ),
+      );
+
+      // A station above it: on its capsule.
+      opens.value = false;
+      await tester.pump();
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pumpAndSettle();
+      expect(
+        AdaptiveAccessoryScope.surfaceOf(tester.element(accessory)),
+        const AdaptiveAccessorySurface(shape: StadiumBorder()),
+      );
+      unmockPlatformViews();
+    });
 
     testWidgets('content that does not open from the accessory ends where the '
         'accessory\'s band begins, wherever the sheet is: coming up from '

@@ -306,7 +306,10 @@ class RentalAccessory extends StatelessWidget {
   accessory sits on the `NavigationBar`'s own surface, in a band just above
   its destinations, so the two are one bar with rounded top corners; a
   page's sheet comes up from behind it, and one with `opensFromAccessory`
-  comes up into the accessory's place as on iOS:
+  comes up into the accessory's place as on iOS.
+  `AdaptiveAccessoryScope.surfaceOf` tells the accessory what it sits on and
+  how far that reaches, so a page swiped away inside it can slide on to the
+  glass's edge and be cut off in its shape:
 
 ```dart
 AdaptiveBottomNavigationBar(
