@@ -3,7 +3,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+import 'native_view_settle.dart';
 
 /// Native iOS 26 segmented control implementation using platform views
 class IOS26SegmentedControl extends StatefulWidget {
@@ -59,12 +62,31 @@ class IOS26SegmentedControl extends StatefulWidget {
   /// Optional text color for the selected segment.
   final Color? selectedTextColor;
 
+  /// Takes the native control's path in a test, where there is no UIKit.
+  @visibleForTesting
+  static bool? debugHasUIKitOverride;
+
   @override
   State<IOS26SegmentedControl> createState() => _IOS26SegmentedControlState();
 }
 
-class _IOS26SegmentedControlState extends State<IOS26SegmentedControl> {
+class _IOS26SegmentedControlState extends State<IOS26SegmentedControl>
+    with
+        SingleTickerProviderStateMixin,
+        NativeViewSettle<IOS26SegmentedControl> {
   static int _nextId = 0;
+
+  static bool get _hasUIKit =>
+      IOS26SegmentedControl.debugHasUIKitOverride ??
+      (!kIsWeb && Platform.isIOS);
+
+  /// The stand-in's opacity: 1 while it stands in for the native control, and
+  /// fading out over it once that is back.
+  late final AnimationController _standIn = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  )..addStatusListener((_) => mounted ? setState(() {}) : null);
+
   late final int _id;
   late final MethodChannel _channel;
   bool? _lastIsDark;
@@ -85,13 +107,34 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_hasUIKit) followRoute();
     _syncThemeIfNeeded();
   }
 
   @override
   void dispose() {
+    _standIn.dispose();
     _channel.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  @override
+  void didChangeSettled(bool settled) {
+    if (!settled) {
+      _standIn.value = 1;
+      return;
+    }
+    if (_standIn.value == 0) return;
+    // The native control is back on screen with the next frame; the stand-in
+    // makes way once it is.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !this.settled) return;
+      if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+        _standIn.value = 0;
+      } else {
+        _standIn.reverse(from: 1);
+      }
+    });
   }
 
   Brightness _effectiveBrightness() {
@@ -176,9 +219,7 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl> {
 
     final effectiveSelectedTextColor =
         widget.selectedTextColor ??
-        (widget.color != null
-            ? CupertinoColors.white
-            : effectiveTextColor);
+        (widget.color != null ? CupertinoColors.white : effectiveTextColor);
 
     return <String, dynamic>{
       'textColor': _colorToARGB(effectiveTextColor),
@@ -223,22 +264,54 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl> {
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb && Platform.isIOS) {
-      Widget control = UiKitView(
-        viewType: 'adaptive_platform_ui/ios26_segmented_control',
-        creationParams: _buildCreationParams(),
-        creationParamsCodec: const StandardMessageCodec(),
-        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-          Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
-          Factory<HorizontalDragGestureRecognizer>(
-            () => HorizontalDragGestureRecognizer(),
+    if (_hasUIKit) {
+      // Laid out all along, so the native view is made once; on screen only
+      // while its page holds still in front. Left on screen under a dialog or
+      // a page sliding over it, iOS composited what came after it only within
+      // the clip around it: a sheet's shape. A stand-in takes its place.
+      final platformView = IgnorePointer(
+        ignoring: !settled,
+        child: Opacity(
+          opacity: settled ? 1 : 0,
+          child: UiKitView(
+            viewType: 'adaptive_platform_ui/ios26_segmented_control',
+            creationParams: _buildCreationParams(),
+            creationParamsCodec: const StandardMessageCodec(),
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+              Factory<TapGestureRecognizer>(() => TapGestureRecognizer()),
+              Factory<HorizontalDragGestureRecognizer>(
+                () => HorizontalDragGestureRecognizer(),
+              ),
+              Factory<PanGestureRecognizer>(() => PanGestureRecognizer()),
+            },
           ),
-          Factory<PanGestureRecognizer>(() => PanGestureRecognizer()),
-        },
+        ),
       );
-
-      // Wrap in SizedBox for height
-      control = SizedBox(height: widget.height, child: control);
+      final themeParams = _buildThemeParams();
+      final standIn = !settled || _standIn.value > 0
+          ? FadeTransition(
+              opacity: _standIn,
+              child: _SegmentedControlStandIn(
+                labels: widget.labels,
+                selectedIndex: widget.selectedIndex,
+                tint: widget.color,
+                textColor: Color(themeParams['textColor'] as int),
+                selectedTextColor: Color(
+                  themeParams['selectedTextColor'] as int,
+                ),
+              ),
+            )
+          : const SizedBox.shrink();
+      // The same children in every state, so the native view stays put.
+      Widget control = SizedBox(
+        height: widget.height,
+        child: Stack(
+          children: [
+            Positioned.fill(child: platformView),
+            Positioned.fill(child: standIn),
+          ],
+        ),
+      );
 
       // Center if shrinkWrap is true (but don't use IntrinsicWidth with UiKitView)
       if (widget.shrinkWrap) {
@@ -271,5 +344,75 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl> {
     }
 
     return SizedBox(height: widget.height, child: control);
+  }
+}
+
+/// What shows for the native segmented control while its page is covered or
+/// moves: its segments on a capsule track, the one selected on a thumb in its
+/// tint, as UIKit draws them. It takes no touches.
+class _SegmentedControlStandIn extends StatelessWidget {
+  const _SegmentedControlStandIn({
+    required this.labels,
+    required this.selectedIndex,
+    required this.tint,
+    required this.textColor,
+    required this.selectedTextColor,
+  });
+
+  final List<String> labels;
+  final int selectedIndex;
+  final Color? tint;
+  final Color textColor;
+  final Color selectedTextColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final track = CupertinoColors.tertiarySystemFill.resolveFrom(context);
+    final thumb =
+        tint ??
+        CupertinoDynamicColor.resolve(
+          const CupertinoDynamicColor.withBrightness(
+            color: CupertinoColors.white,
+            darkColor: Color(0xFF636366),
+          ),
+          context,
+        );
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: ShapeDecoration(color: track, shape: const StadiumBorder()),
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: Row(
+            children: [
+              for (final (i, label) in labels.indexed)
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: i == selectedIndex ? thumb : null,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: Center(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: i == selectedIndex
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: i == selectedIndex
+                              ? selectedTextColor
+                              : textColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
