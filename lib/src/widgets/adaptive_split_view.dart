@@ -201,6 +201,11 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   double? _foldX;
   bool _hasFold = false;
 
+  /// Whether the columns were laid out side by side in an earlier frame: a
+  /// fold that is there as they come is where the divider starts, rather
+  /// than where it moves to.
+  bool _columnsShown = false;
+
   final _masterKey = GlobalKey(debugLabel: 'AdaptiveSplitView master');
 
   /// The navigator of the column. A new one for every column that comes, so
@@ -303,11 +308,13 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   }
 
   /// Moves the divider onto the fold, or off it, after this frame: a fold
-  /// that comes or goes is noticed as the split view builds.
+  /// that comes or goes is noticed as the split view builds. Columns that
+  /// only now come start on the fold.
   void _followFold(bool hasFold) {
     if (hasFold == _hasFold) return;
     _hasFold = hasFold;
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+    if (!_columnsShown ||
+        (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
       _onFold.value = hasFold ? 1 : 0;
       return;
     }
@@ -530,6 +537,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
   /// ([AdaptiveSplitView.showsDetailColumn]): its pages wait for it to come
   /// back instead.
   void _collapse({bool park = false}) {
+    _columnsShown = false;
     // Pages picked in the list, or opened from the page shown first; or
     // those still on their way into a column that is gone again.
     final pages =
@@ -729,6 +737,7 @@ class _AdaptiveSplitViewState extends State<AdaptiveSplitView>
         fold - start - room <= width - _minColumnOnFold;
     if (onFold) _foldX = fold;
     _followFold(onFold);
+    _columnsShown = true;
     final detail = _column(
       context,
       duoControls: duoControls,

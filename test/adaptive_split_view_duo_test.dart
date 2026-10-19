@@ -264,6 +264,15 @@ void main() {
       expect(listRight(tester), flat);
     });
 
+    testWidgets('columns that come while the device is partly open start '
+        'on the fold, rather than moving onto it', (tester) async {
+      useInnerPortrait(tester);
+      const fold = Rect.fromLTRB(362, 0, 402, 951);
+      await tester.pumpWidget(splitView(duoFold(fold, partlyOpen: true)));
+
+      expect(listRight(tester), 381.5);
+    });
+
     testWidgets('a fold across the window, held like a laptop, leaves the '
         'divider where it is', (tester) async {
       useInnerPortrait(tester);
