@@ -309,7 +309,10 @@ class RentalAccessory extends StatelessWidget {
   comes up into the accessory's place as on iOS.
   `AdaptiveAccessoryScope.surfaceOf` tells the accessory what it sits on and
   how far that reaches, so a page swiped away inside it can slide on to the
-  glass's edge and be cut off in its shape:
+  glass's edge and be cut off in its shape. Where no tab bar along the
+  bottom holds it (the iPhone Duo's vertical bar pose, which shows it as a
+  key), a floating sheet can hold one of its own at its bottom,
+  `AdaptiveSheet.accessory`, which behaves the same:
 
 ```dart
 AdaptiveBottomNavigationBar(

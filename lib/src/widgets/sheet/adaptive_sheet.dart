@@ -12,12 +12,15 @@ import 'package:flutter/scheduler.dart';
 import '../../chrome/adaptive_chrome.dart';
 import '../../platform/platform_info.dart';
 import '../../toolbar/duo_vertical_bar.dart';
+import '../../toolbar/hosted_tab_bar.dart' show NativeAccessoryGlass;
 import '../../toolbar/hosted_top_toolbar.dart'
     show kHostedToolbarBottomPadding, kHostedToolbarHeight;
 import '../../toolbar/toolbar_blend.dart' show kToolbarItemSwapDuration;
 import '../../toolbar/toolbar_chrome_scope.dart';
 import '../../toolbar/toolbar_registry.dart';
 import '../../utils/size_reporter.dart';
+import '../accessory_makes_way.dart';
+import '../adaptive_accessory_scope.dart';
 import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
@@ -104,6 +107,7 @@ class AdaptiveSheet extends StatefulWidget {
     this.keepsContentClearOfBars = false,
     this.opensFromAccessory = false,
     this.liftsAccessory = false,
+    this.accessory,
   });
 
   /// The content below the header. It is laid out at its natural height and
@@ -219,6 +223,20 @@ class AdaptiveSheet extends StatefulWidget {
   /// sheet coming up from behind it. Off by default.
   final bool liftsAccessory;
 
+  /// An accessory the sheet holds at its bottom itself, where no tab bar
+  /// along the bottom holds the tab accessory on it
+  /// ([AdaptiveTabAccessoryLayout.onSheet]): in the iPhone Duo's vertical bar
+  /// pose, whose bar shows the tab accessory as a key, a ride's row on the
+  /// map's sheet. It sits round with the sheet's corners, at the collapsed
+  /// detent the sheet's glass around it alone. With [opensFromAccessory] the
+  /// content comes up into its place as it makes way, and a drag on it moves
+  /// the sheet; other content ends above it, and with [liftsAccessory] it
+  /// stands apart on a capsule of its own. [AdaptiveAccessoryScope] tells it
+  /// it is on a page's sheet, along the bottom. Floating sheets with the
+  /// native chrome only: not on a side panel, on Android or with custom
+  /// chrome. One with nothing to show takes no room.
+  final Widget? accessory;
+
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
 
@@ -238,6 +256,8 @@ class _Metrics {
     this.sides = EdgeInsets.zero,
     this.toolbar = 0,
     this.accessoryBand = 0,
+    this.ownAccessory = 0,
+    this.ownAccessoryRoom = 0,
   });
 
   final Size size;
@@ -260,6 +280,14 @@ class _Metrics {
   /// ([AdaptiveSheet.opensFromAccessory]): its content runs on into it.
   final double accessoryBand;
 
+  /// The band the sheet's own accessory ([AdaptiveSheet.accessory]) and the
+  /// room around it take at the bottom of the sheet.
+  final double ownAccessory;
+
+  /// What the content keeps of [ownAccessory] below it: all of it, but where
+  /// the content opens from the accessory and runs on into its place.
+  final double ownAccessoryRoom;
+
   @override
   bool operator ==(Object other) =>
       other is _Metrics &&
@@ -270,7 +298,9 @@ class _Metrics {
       other.rtl == rtl &&
       other.sides == sides &&
       other.toolbar == toolbar &&
-      other.accessoryBand == accessoryBand;
+      other.accessoryBand == accessoryBand &&
+      other.ownAccessory == ownAccessory &&
+      other.ownAccessoryRoom == ownAccessoryRoom;
 
   @override
   int get hashCode => Object.hash(
@@ -282,6 +312,8 @@ class _Metrics {
     sides,
     toolbar,
     accessoryBand,
+    ownAccessory,
+    ownAccessoryRoom,
   );
 }
 
@@ -361,6 +393,31 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   late final AnimationController _lifted = AnimationController(vsync: this);
 
   late final _AccessorySheetLink _link = _AccessorySheetLink(this);
+
+  /// How big the sheet's own accessory ([AdaptiveSheet.accessory]) is, as
+  /// last laid out.
+  Size _ownAccessorySize = Size.zero;
+
+  void _onOwnAccessorySize(Size size) {
+    if (!mounted || size == _ownAccessorySize) return;
+    setState(() => _ownAccessorySize = size);
+  }
+
+  /// How far the sheet's own accessory keeps from its edges: round with its
+  /// corners, a capsule of half the sheet's corner radius in from them.
+  double get _ownInset => _ownAccessorySize.isEmpty
+      ? 0
+      : math.max(
+          0.0,
+          kAdaptiveSheetCornerRadius - _ownAccessorySize.height / 2,
+        );
+
+  /// Whether the sheet holds an accessory of its own as it is now laid out.
+  bool _holdsOwnAccessory({required bool sidePanel, required bool material}) =>
+      widget.accessory != null &&
+      !sidePanel &&
+      !material &&
+      AdaptiveChromeScope.chromeOf(context) == null;
 
   /// The registry the sheet is attached to, for the host to set the
   /// accessory on it.
@@ -478,10 +535,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// otherwise.
   void _syncLink() {
     if (!mounted) return;
+    // A sheet that holds an accessory of its own leaves the host's alone.
     final attach =
-        _liftsAsBuilt ||
-            _opensFromAccessory.value > 0 ||
-            _opensFromAccessory.isAnimating
+        widget.accessory == null &&
+            (_liftsAsBuilt ||
+                _opensFromAccessory.value > 0 ||
+                _opensFromAccessory.isAnimating)
         ? ToolbarRegistry.maybeOf(context)
         : null;
     if (attach == _attachedTo) return;
@@ -589,11 +648,16 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// the sheet's frame.
   double _bottomSpace(_Metrics m) {
     if (m.sidePanel) return widget.padding.bottom;
-    return _contentBottom(m) + widget.padding.bottom;
+    // Above the sheet's own accessory, but where it opens from it.
+    return _contentBottom(m) + widget.padding.bottom + m.ownAccessoryRoom;
   }
 
   double _collapsedExtent(_Metrics m) =>
-      _grabberHeight + (_headerHeight ?? 0) + _bottomGap(m) + _safeBottom(m);
+      _grabberHeight +
+      (_headerHeight ?? 0) +
+      _bottomGap(m) +
+      _safeBottom(m) +
+      m.ownAccessory;
 
   double _largeExtent(_Metrics m) =>
       m.size.height -
@@ -985,6 +1049,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         final sidePanel =
             widget.sidePanel ??
             constraints.maxWidth >= AdaptiveSheet.sidePanelMinWidth;
+        final ownAccessory =
+            _holdsOwnAccessory(sidePanel: sidePanel, material: material) &&
+                !_ownAccessorySize.isEmpty
+            ? _ownAccessorySize.height + 2 * _ownInset
+            : 0.0;
         final metrics = _Metrics(
           size: constraints.biggest,
           padding: MediaQuery.paddingOf(context),
@@ -998,6 +1067,8 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           accessoryBand: widget.opensFromAccessory && !sidePanel
               ? AdaptiveBottomBarInset.accessoryOf(context)
               : 0,
+          ownAccessory: ownAccessory,
+          ownAccessoryRoom: widget.opensFromAccessory ? 0 : ownAccessory,
         );
         if (metrics != _metrics) {
           _metrics = metrics;
@@ -1056,18 +1127,38 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           // painted, not laid out, so only a clip of its own cuts it off.
           return material ? ClipRect(child: panel) : panel;
         }
+        final own = _holdsOwnAccessory(sidePanel: false, material: material)
+            ? _ownAccessory(metrics)
+            : null;
+        // Across, where the sheet floats at its smallest.
+        final across = _frame(_collapsedExtent(metrics), metrics);
+        final inset = _ownInset;
         return AnimatedBuilder(
           animation: _extent,
-          builder: (context, child) => Stack(
-            // A clip around the native glass would break it.
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fromRect(
-                rect: _frame(_extent.value, metrics),
-                child: child!,
-              ),
-            ],
-          ),
+          builder: (context, child) {
+            final frame = _frame(_extent.value, metrics);
+            return Stack(
+              // A clip around the native glass would break it.
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fromRect(rect: frame, child: child!),
+                // At the bottom of the sheet, wherever the sheet is, and out
+                // of view with it.
+                if (own != null)
+                  Positioned(
+                    left: across.left + inset,
+                    width: math.max(0.0, across.width - 2 * inset),
+                    top:
+                        math.max(
+                          frame.top,
+                          frame.bottom - metrics.ownAccessory,
+                        ) +
+                        inset,
+                    child: own,
+                  ),
+              ],
+            );
+          },
           child: body,
         );
       },
@@ -1246,19 +1337,70 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// the accessory, or going down behind it, never shows around it, where it
   /// has no glass of its own to cover it. Null where the content runs on.
   double? Function()? _accessoryEdge(_Metrics m) {
+    final own = m.ownAccessory;
     if (m.sidePanel ||
         !_holdsAccessory(m) ||
         !(widget.opensFromAccessory || widget.liftsAccessory) ||
-        AdaptiveBottomBarInset.accessoryOf(context) <= 0) {
+        (own <= 0 && AdaptiveBottomBarInset.accessoryOf(context) <= 0)) {
       return null;
     }
     final edge = m.size.height - m.padding.bottom;
     // From the frame its content stops opening from the accessory, before the
     // accessory has started to ease in, until it opens from it all the way,
-    // what goes having eased out.
-    return () => widget.opensFromAccessory && _opensFromAccessory.value >= 1
-        ? null
-        : edge - _frame(_extent.value, m).top;
+    // what goes having eased out. Above the band of the sheet's own
+    // accessory, or of the host's.
+    return () {
+      if (widget.opensFromAccessory && _opensFromAccessory.value >= 1) {
+        return null;
+      }
+      final frame = _frame(_extent.value, m);
+      return own > 0 ? frame.height - own : edge - frame.top;
+    };
+  }
+
+  /// The sheet's own accessory ([AdaptiveSheet.accessory]), told where it is,
+  /// making way as the content comes up over it, moving the sheet when
+  /// dragged, and on a capsule of its own while the sheet lifts it.
+  Widget _ownAccessory(_Metrics m) {
+    final across = _frame(_collapsedExtent(m), m);
+    final inset = _ownInset;
+    final spec = AdaptiveAccessorySpec(
+      placement: AdaptiveChromePlacement.bottom,
+      compact: false,
+      room: math.max(0.0, across.width - 2 * inset),
+      layout: AdaptiveTabAccessoryLayout.onSheet,
+    );
+    // The sheet's glass around it, round with its corners, or its capsule.
+    final onSheet = AdaptiveAccessorySurface(
+      outsets: EdgeInsets.all(inset),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(kAdaptiveSheetCornerRadius),
+      ),
+    );
+    const onCapsule = AdaptiveAccessorySurface(shape: StadiumBorder());
+    return AccessoryMakesWay(
+      covered: _covered,
+      child: AccessorySheetDrag(
+        sheet: _link,
+        child: AnimatedBuilder(
+          animation: _lifted,
+          child: NativeAccessoryGlass(
+            glass: false,
+            glassOpacity: _lifted,
+            child: SizeReporter(
+              onSizeChanged: _onOwnAccessorySize,
+              child: widget.accessory,
+            ),
+          ),
+          builder: (context, child) => AdaptiveAccessoryScope(
+            spec: spec,
+            expansion: _link,
+            surface: _lifted.value >= 0.5 ? onCapsule : onSheet,
+            child: child!,
+          ),
+        ),
+      ),
+    );
   }
 }
 
