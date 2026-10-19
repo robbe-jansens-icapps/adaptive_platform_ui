@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart';
 import '../chrome/adaptive_chrome.dart';
 import '../platform/platform_info.dart';
 import '../utils/size_reporter.dart';
+import '../widgets/accessory_makes_way.dart';
 import '../widgets/adaptive_accessory_scope.dart';
 import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_keyboard_fade.dart';
@@ -668,11 +669,11 @@ class _HostedTabBarState extends State<HostedTabBar>
               // own pixels are dimmed here.
               _DimmedUnderDialog(
                 route: dialog,
-                child: _MakesWayForSheet(
+                child: AccessoryMakesWay(
                   covered: covered,
-                  child: _sheetDrag(
-                    sheet,
-                    nativeAccessory(
+                  child: AccessorySheetDrag(
+                    sheet: sheet,
+                    child: nativeAccessory(
                       widget.blend.registry,
                       entry,
                       accessory,
@@ -704,36 +705,6 @@ class _HostedTabBarState extends State<HostedTabBar>
       ),
     );
   }
-
-  /// [child], with vertical drags on it moving the page's [sheet] it opens
-  /// into, under the finger. Takes no drags without one.
-  Widget _sheetDrag(AccessorySheet? sheet, Widget child) => RawGestureDetector(
-    gestures: {
-      VerticalDragGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
-            () => VerticalDragGestureRecognizer(debugOwner: this),
-            (recognizer) {
-              recognizer.onlyAcceptDragOnThreshold = true;
-              // From where the finger came down, so the sheet stays under it.
-              recognizer.dragStartBehavior = DragStartBehavior.down;
-              if (sheet == null) {
-                recognizer
-                  ..onStart = null
-                  ..onUpdate = null
-                  ..onEnd = null;
-                return;
-              }
-              recognizer
-                ..onStart = ((_) => sheet.dragStart())
-                ..onUpdate = ((details) =>
-                    sheet.dragUpdate(-details.primaryDelta!))
-                ..onEnd = ((details) =>
-                    sheet.dragEnd(-(details.primaryVelocity ?? 0)));
-            },
-          ),
-    },
-    child: child,
-  );
 
   /// The glass tray the accessory and the tabs share
   /// ([AdaptiveTabAccessoryLayout.tray]). It takes the touches that miss
@@ -1843,59 +1814,6 @@ class _BarrierOverTabs extends StatelessWidget {
           else
             Positioned.fromRect(rect: capsule!, child: dim),
         ],
-      ),
-    );
-  }
-}
-
-/// The accessory on a page's sheet that opens from it, making way as the
-/// sheet's content comes up over it ([covered] from 0 to 1): it is out of
-/// sight by the time the content is halfway in, so the two never show at
-/// once for long where they lie over each other; it takes no touches once
-/// the content starts to show, which then has them, and leaves the
-/// semantics tree halfway.
-class _MakesWayForSheet extends StatefulWidget {
-  const _MakesWayForSheet({required this.covered, required this.child});
-
-  final Animation<double> covered;
-  final Widget child;
-
-  @override
-  State<_MakesWayForSheet> createState() => _MakesWayForSheetState();
-}
-
-class _MakesWayForSheetState extends State<_MakesWayForSheet> {
-  late CurvedAnimation _gone = _goneFor(widget.covered);
-
-  static CurvedAnimation _goneFor(Animation<double> covered) =>
-      CurvedAnimation(parent: covered, curve: const Interval(0, 0.5));
-
-  @override
-  void didUpdateWidget(_MakesWayForSheet oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.covered == widget.covered) return;
-    _gone.dispose();
-    _gone = _goneFor(widget.covered);
-  }
-
-  @override
-  void dispose() {
-    _gone.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final covered = widget.covered;
-    return FadeTransition(
-      opacity: ReverseAnimation(_gone),
-      child: AnimatedBuilder(
-        animation: covered,
-        child: widget.child,
-        builder: (context, child) => IgnorePointer(
-          ignoring: covered.value > 0.05,
-          child: ExcludeSemantics(excluding: covered.value > 0.5, child: child),
-        ),
       ),
     );
   }

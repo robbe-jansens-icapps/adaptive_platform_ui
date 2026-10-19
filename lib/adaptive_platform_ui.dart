@@ -99,6 +99,7 @@ export 'src/widgets/adaptive_snackbar.dart';
 export 'src/widgets/adaptive_toast.dart';
 export 'src/widgets/adaptive_keyboard_dismissal.dart';
 export 'src/widgets/adaptive_keyboard_fade.dart';
+export 'src/widgets/material_tab_accessory.dart';
 export 'src/widgets/adaptive_split_view.dart';
 export 'src/widgets/adaptive_two_pane.dart';
 export 'src/widgets/adaptive_date_picker.dart';

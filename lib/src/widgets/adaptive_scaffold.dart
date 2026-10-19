@@ -24,6 +24,7 @@ import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
 import '../toolbar/toolbar_registry.dart';
 import '../utils/size_reporter.dart';
+import 'material_tab_accessory.dart';
 
 /// Sent to the native tab bar and glass capsule in place of a badge count for
 /// a dot without a count (see [AdaptiveNavigationDestination.showsBadgeDot]).
@@ -1379,10 +1380,20 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         );
       }
 
+      // The tab layout's accessory, on the navigation bar's own surface, in a
+      // band above it that the pages run on under.
+      final accessory = widget.bottomNavigationBar!.accessory;
+      final tabsBody = widget.body ?? const SizedBox.shrink();
       return Scaffold(
         key: widget.scaffoldKey,
         appBar: appBar,
-        body: widget.body ?? const SizedBox.shrink(),
+        body: accessory == null
+            ? tabsBody
+            : MaterialTabAccessory(
+                accessory: accessory,
+                layout: widget.bottomNavigationBar!.accessoryLayout,
+                body: tabsBody,
+              ),
         resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
         bottomNavigationBar: bottomNavBar,
         floatingActionButton: widget.floatingActionButton,

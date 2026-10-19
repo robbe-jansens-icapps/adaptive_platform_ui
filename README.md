@@ -302,7 +302,11 @@ class RentalAccessory extends StatelessWidget {
   (or through `AdaptiveAccessoryScope.expansionOf`), the accessory makes way
   and the sheet's content comes up into its place. With `liftsAccessory`,
   other content on the sheet (a station's details) lies above the accessory
-  with the accessory apart on a glass capsule of its own:
+  with the accessory apart on a glass capsule of its own. On Android the
+  accessory sits on the `NavigationBar`'s own surface, in a band just above
+  its destinations, so the two are one bar with rounded top corners; a
+  page's sheet comes up from behind it, and one with `opensFromAccessory`
+  comes up into the accessory's place as on iOS:
 
 ```dart
 AdaptiveBottomNavigationBar(

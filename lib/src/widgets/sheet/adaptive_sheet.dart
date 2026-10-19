@@ -195,8 +195,10 @@ class AdaptiveSheet extends StatefulWidget {
   /// a drag up on the accessory pulls the sheet up with it. Its content then
   /// runs on into the room the accessory takes, and ends where the tabs
   /// begin, as it would with no accessory, while the pages keep their
-  /// padding. With the native iOS chrome, along the bottom: no effect on a
-  /// side panel or on Android. Turned off or on, the accessory eases in or
+  /// padding. With the native iOS tab bar, and with the Material one, which
+  /// holds the accessory in a band above its destinations
+  /// (`AdaptiveScaffold` on Android); no effect on a side panel or with
+  /// custom chrome. Turned off or on, the accessory eases in or
   /// out rather than jumping, as the sheet changes what it shows.
   final bool opensFromAccessory;
 
@@ -207,8 +209,9 @@ class AdaptiveSheet extends StatefulWidget {
   /// say, above a ride's row. The capsule comes in as the content comes up
   /// above the accessory and goes as it goes down, and stays away where the
   /// content comes up into the accessory's place instead
-  /// ([opensFromAccessory]). With the native iOS chrome, along the bottom.
-  /// Off by default.
+  /// ([opensFromAccessory]). With the native iOS tab bar, along the bottom;
+  /// the Material bar holds the accessory on a band of its own already, the
+  /// sheet coming up from behind it. Off by default.
   final bool liftsAccessory;
 
   /// From this width on the sheet becomes a side panel by default.
@@ -423,11 +426,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   }
 
   /// Whether the sheet may hold the tab accessory as it is now laid out:
-  /// floating along the bottom, with the native chrome.
+  /// along the bottom, under the native tab bar or the Material one, not
+  /// with custom chrome.
   bool _holdsAccessory(_Metrics m) =>
-      !m.material &&
-      !m.sidePanel &&
-      AdaptiveChromeScope.chromeOf(context) == null;
+      !m.sidePanel && AdaptiveChromeScope.chromeOf(context) == null;
 
   /// Starts or stops lifting the accessory apart, after the frame that
   /// changed it.
@@ -979,7 +981,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           toolbar: _route == null || material ? 0 : _hostedToolbarHeight(),
           // What the accessory on the sheet takes of the bottom padding, for
           // the content to run on into, where it opens from it.
-          accessoryBand: widget.opensFromAccessory && !material && !sidePanel
+          accessoryBand: widget.opensFromAccessory && !sidePanel
               ? AdaptiveBottomBarInset.accessoryOf(context)
               : 0,
         );
@@ -994,7 +996,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         }
         final holds = _holdsAccessory(metrics);
         _followOpensFromAccessory(holds && widget.opensFromAccessory);
-        _followLiftsAccessory(holds && widget.liftsAccessory);
+        // The Material bar holds the accessory on a band of its own already.
+        _followLiftsAccessory(
+          holds && !metrics.material && widget.liftsAccessory,
+        );
         final body = _buildBody(context, metrics);
         if (sidePanel) {
           final hidden = _target?.isHidden ?? !_measured;
