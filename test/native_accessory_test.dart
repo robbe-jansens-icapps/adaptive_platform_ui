@@ -1322,6 +1322,87 @@ void main() {
       unmockPlatformViews();
     });
 
+    testWidgets('rising from the accessory to other content, as a station '
+        'comes up above a folded ride, the sheet keeps the accessory in sight '
+        'all the way', (tester) async {
+      final opens = ValueNotifier<bool>(true);
+      addTearDown(opens.dispose);
+      final (_, controller) = await pumpSheet(
+        tester,
+        opens: opens,
+        lifts: true,
+      );
+      expect(opacityOf(tester, accessory), 1);
+
+      opens.value = false;
+      await tester.pump();
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      var least = 1.0;
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        least = math.min(least, opacityOf(tester, accessory));
+      }
+      await tester.pumpAndSettle();
+      expect(least, greaterThan(0.99));
+      expect(tester.getRect(card).bottom, closeTo(874 - 84 - band, 0.5));
+      unmockPlatformViews();
+    });
+
+    /// How far down the content of [finder] is painted at most, in the
+    /// window: the clips around it.
+    double paintedDownTo(WidgetTester tester, Finder finder) {
+      RenderObject child = tester.renderObject(finder);
+      var bottom = double.infinity;
+      for (var parent = child.parent; parent != null; parent = parent.parent) {
+        final clip = parent.describeApproximatePaintClip(child);
+        if (clip != null) {
+          bottom = math.min(
+            bottom,
+            MatrixUtils.transformRect(parent.getTransformTo(null), clip).bottom,
+          );
+        }
+        child = parent;
+      }
+      return bottom;
+    }
+
+    testWidgets('content that does not open from the accessory ends where the '
+        'accessory\'s band begins, wherever the sheet is: coming up from '
+        'behind it, it never shows around it', (tester) async {
+      final opens = ValueNotifier<bool>(true);
+      addTearDown(opens.dispose);
+      final (_, controller) = await pumpSheet(
+        tester,
+        opens: opens,
+        lifts: true,
+      );
+      const edge = 874 - 84 - band;
+
+      // From the first frame on its way up, the content runs on below the
+      // band, cut off there.
+      opens.value = false;
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pump();
+      expect(tester.getRect(card).bottom, greaterThan(edge + 20));
+      expect(paintedDownTo(tester, card), closeTo(edge, 0.5));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getRect(card).bottom, greaterThan(edge + 20));
+      expect(paintedDownTo(tester, card), closeTo(edge, 0.5));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(card).bottom, closeTo(edge, 0.5));
+      expect(paintedDownTo(tester, card), closeTo(edge, 0.5));
+
+      // What opens from the accessory runs on into its room, open.
+      opens.value = true;
+      await tester.pumpAndSettle();
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(card).bottom, closeTo(874 - 84, 0.5));
+      expect(paintedDownTo(tester, card), greaterThan(874 - 84));
+      unmockPlatformViews();
+    });
+
     testWidgets('under a dialog, the glass it is lifted onto is a stand-in, '
         'which the dialog dims with it', (tester) async {
       final (tabs, _) = await pumpSheet(

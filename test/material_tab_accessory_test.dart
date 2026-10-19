@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -234,6 +236,33 @@ void main() {
     expect(bandColor(tester).a, 1);
     await tester.tap(accessory);
     expect(taps, 1);
+  });
+
+  testWidgets('as other content comes up from the accessory, a station above '
+      'a folded ride, the accessory and the band stay in sight all the way', (
+    tester,
+  ) async {
+    final opens = ValueNotifier<bool>(true);
+    addTearDown(opens.dispose);
+    final controller = await pumpTabs(tester, sheet: true, opens: opens);
+
+    opens.value = false;
+    await tester.pump();
+    controller.animateTo(AdaptiveSheetDetent.fitContent);
+    var least = 1.0;
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      least = math.min(
+        least,
+        math.min(opacityOf(tester, accessory), bandColor(tester).a),
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(least, greaterThan(0.99));
+    expect(
+      tester.getRect(card).bottom,
+      closeTo(tester.getRect(band().first).top, 0.5),
+    );
   });
 
   testWidgets('the band makes way for the keyboard, which the Scaffold leaves '

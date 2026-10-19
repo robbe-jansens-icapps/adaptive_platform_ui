@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../chrome/adaptive_chrome.dart';
@@ -343,6 +344,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// make way: 0 at the collapsed detent, 1 once the content is all in sight.
   late final AnimationController _covered = AnimationController(vsync: this);
 
+  /// What moves the edge the content keeps clear of the accessory at.
+  late final Listenable _accessoryEdgeMoves = Listenable.merge([
+    _extent,
+    _opensFromAccessory,
+  ]);
+
   /// How far the content lies above the accessory where the sheet lifts it
   /// apart ([AdaptiveSheet.liftsAccessory]): 0 with nothing above it, or
   /// where the content comes up into its place, 1 once the content is all in
@@ -498,9 +505,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           );
     var covered = live * _opensFromAccessory.value;
     // On its way down onto the accessory, as other content gives way to what
-    // opens from it, the accessory only comes back into sight: it would fade
-    // out under content that is going, then in again.
-    if (m != null && _isFoldingOntoAccessory(m)) {
+    // opens from it, and on its way up from it to other content, which lies
+    // above it, the accessory only comes back into sight: it would fade out
+    // under content that is going, or that comes up as it stops opening from
+    // it, then in again.
+    if (m != null &&
+        (_isFoldingOntoAccessory(m) || _opensFromAccessoryAsBuilt == false)) {
       covered = math.min(covered, _covered.value);
     }
     if (covered != _covered.value) _covered.value = covered;
@@ -1217,9 +1227,135 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       // around the glass would break it.
       child: ClipRSuperellipse(
         borderRadius: BorderRadius.circular(sidePanel ? 28 : radius),
-        child: content,
+        child: _ClearOfAccessory(
+          bottom: _accessoryEdge(metrics),
+          moves: _accessoryEdgeMoves,
+          child: content,
+        ),
       ),
     );
+  }
+
+  /// Where the content of a sheet that holds the tab accessory on its glass
+  /// ends, in the sheet's own coordinates, while it does not open from it: at
+  /// the top of the accessory's band, so that content coming up from below
+  /// the accessory, or going down behind it, never shows around it, where it
+  /// has no glass of its own to cover it. Null where the content runs on.
+  double? Function()? _accessoryEdge(_Metrics m) {
+    if (m.sidePanel ||
+        !_holdsAccessory(m) ||
+        !(widget.opensFromAccessory || widget.liftsAccessory) ||
+        AdaptiveBottomBarInset.accessoryOf(context) <= 0) {
+      return null;
+    }
+    final edge = m.size.height - m.padding.bottom;
+    // From the frame its content stops opening from the accessory, before the
+    // accessory has started to ease in, until it opens from it all the way,
+    // what goes having eased out.
+    return () => widget.opensFromAccessory && _opensFromAccessory.value >= 1
+        ? null
+        : edge - _frame(_extent.value, m).top;
+  }
+}
+
+/// [child], cut off at the [bottom] it is told while it is not null: the
+/// content of a sheet that holds the tab accessory, kept clear of it. Asks
+/// again as the sheet [moves].
+class _ClearOfAccessory extends SingleChildRenderObjectWidget {
+  const _ClearOfAccessory({
+    required this.bottom,
+    required this.moves,
+    super.child,
+  });
+
+  final double? Function()? bottom;
+  final Listenable moves;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderClearOfAccessory(bottom, moves);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderClearOfAccessory renderObject,
+  ) {
+    renderObject
+      ..bottom = bottom
+      ..moves = moves;
+  }
+}
+
+class _RenderClearOfAccessory extends RenderProxyBox {
+  _RenderClearOfAccessory(this._bottom, this._moves);
+
+  double? Function()? _bottom;
+  set bottom(double? Function()? value) {
+    if (value == null && _bottom == null) return;
+    _bottom = value;
+    markNeedsPaint();
+  }
+
+  Listenable _moves;
+  set moves(Listenable value) {
+    if (value == _moves) return;
+    if (attached) _moves.removeListener(markNeedsPaint);
+    _moves = value;
+    if (attached) _moves.addListener(markNeedsPaint);
+    markNeedsPaint();
+  }
+
+  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _moves.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _moves.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    super.dispose();
+  }
+
+  Rect? get _clipRect {
+    final bottom = _bottom?.call();
+    if (bottom == null || bottom >= size.height) return null;
+    return Rect.fromLTRB(0, 0, size.width, math.max(0.0, bottom));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final rect = child == null ? null : _clipRect;
+    if (rect == null) {
+      _clip.layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    _clip.layer = context.pushClipRect(
+      needsCompositing,
+      offset,
+      rect,
+      super.paint,
+      oldLayer: _clip.layer,
+    );
+  }
+
+  @override
+  Rect? describeApproximatePaintClip(RenderObject child) => _clipRect;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final rect = _clipRect;
+    if (rect != null && !rect.contains(position)) return false;
+    return super.hitTest(result, position: position);
   }
 }
 
