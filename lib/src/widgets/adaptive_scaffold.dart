@@ -357,6 +357,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
   /// measured, while the page draws the bar itself.
   final ValueNotifier<double> _ownTabBarHeight = ValueNotifier<double>(0);
 
+  /// What the Material navigation bar follows of the tab accessory's band.
+  final MaterialTabAccessoryLink _materialTabAccessory =
+      MaterialTabAccessoryLink();
+
   /// Whether the native tab bar is shrunk while the page scrolls, for the bar
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
   final ValueNotifier<bool> _tabBarMinimized = _PageValue<bool>(false);
@@ -612,6 +616,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
     // below once it sees the entry gone.
     _toolbarRegistry?.remove(this);
     _ownTabBarHeight.dispose();
+    _materialTabAccessory.dispose();
     _tabBarMinimized.dispose();
     _scrollEdge.dispose();
     _titleBand.dispose();
@@ -1388,8 +1393,8 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         );
       }
 
-      // The tab layout's accessory, on the navigation bar's own surface, in a
-      // band above it that the pages run on under.
+      // The tab layout's accessory, on a card in a band above the navigation
+      // bar that the pages run on under, tucked behind the bar.
       final accessory = widget.bottomNavigationBar!.accessory;
       final tabsBody = widget.body ?? const SizedBox.shrink();
       return Scaffold(
@@ -1401,9 +1406,15 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
                 accessory: accessory,
                 layout: widget.bottomNavigationBar!.accessoryLayout,
                 body: tabsBody,
+                link: _materialTabAccessory,
               ),
         resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
-        bottomNavigationBar: bottomNavBar,
+        bottomNavigationBar: accessory == null
+            ? bottomNavBar
+            : MaterialTabAccessoryBar(
+                link: _materialTabAccessory,
+                child: bottomNavBar!,
+              ),
         floatingActionButton: widget.floatingActionButton,
         extendBodyBehindAppBar: widget.extendBodyBehindAppBar,
         extendBody: widget.extendBody,

@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../chrome/adaptive_chrome.dart';
 import '../toolbar/toolbar_registry.dart';
+import '../utils/outside_layout.dart';
 import '../utils/size_reporter.dart';
 import 'accessory_makes_way.dart';
 import 'adaptive_accessory_scope.dart';
 import 'adaptive_keyboard_fade.dart';
 import 'adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 
-/// A tab layout's accessory with the Material navigation bar (Android): on
-/// the bar's own surface, in its colour, in a band just above its
-/// destinations, so the two are one bar that rises over the pages with
-/// rounded top corners, as a sheet at its smallest holds them.
+/// A tab layout's accessory with the Material navigation bar (Android): on a
+/// card of the lowest surface container colour, in a band just above the
+/// bar's destinations, rising over the pages with rounded top corners as a
+/// sheet at its smallest. The bar's top corners round in while the card
+/// shows, or a page's sheet is up ([MaterialTabAccessoryBar]), what meets
+/// the bar showing around them, so the two stay together and still stand
+/// apart.
 ///
 /// The pages run on under the band and keep clear of it: their bottom
 /// padding grows by its height, which [AdaptiveBottomBarInset.accessoryOf]
@@ -30,6 +34,7 @@ class MaterialTabAccessory extends StatefulWidget {
     required this.accessory,
     required this.layout,
     required this.body,
+    this.link,
   });
 
   final Widget accessory;
@@ -38,17 +43,27 @@ class MaterialTabAccessory extends StatefulWidget {
   /// The pages, which run on under the band.
   final Widget body;
 
-  /// Room the band keeps above the accessory, and at its sides.
+  /// Tells the navigation bar below whether the band shows and how far a
+  /// page's sheet covers it.
+  final MaterialTabAccessoryLink? link;
+
+  /// Room the band keeps above the accessory, below it, and at its sides.
   static const double topPadding = 12;
+  static const double bottomPadding = 12;
   static const double sidePadding = 16;
 
-  /// The radius of the band's top corners, a Material sheet's.
+  /// The radius of the band's top corners, a Material sheet's, and of the
+  /// navigation bar's in front of it.
   static const double cornerRadius = 28;
 
-  /// The band, as the accessory sits on it: it runs on into the navigation
-  /// bar below.
+  /// The band, as the accessory sits on it.
   static const surface = AdaptiveAccessorySurface(
-    outsets: EdgeInsets.fromLTRB(sidePadding, topPadding, sidePadding, 0),
+    outsets: EdgeInsets.fromLTRB(
+      sidePadding,
+      topPadding,
+      sidePadding,
+      bottomPadding,
+    ),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(cornerRadius)),
     ),
@@ -96,20 +111,27 @@ class _MaterialTabAccessoryState extends State<MaterialTabAccessory> {
     if (!mounted) return;
     final empty = size.isEmpty;
     if (empty != _empty) setState(() => _empty = empty);
-    _band.value = empty ? 0 : size.height + MaterialTabAccessory.topPadding;
+    _band.value = empty
+        ? 0
+        : size.height +
+              MaterialTabAccessory.topPadding +
+              MaterialTabAccessory.bottomPadding;
+    widget.link?.shown = !empty;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color =
-        NavigationBarTheme.of(context).backgroundColor ??
-        theme.colorScheme.surfaceContainer;
+    final color = theme.colorScheme.surfaceContainerLowest;
     // Only the sheet of the tab that holds the accessory on it.
     final sheet = widget.layout == AdaptiveTabAccessoryLayout.onSheet
         ? _sheet
         : null;
     final covered = sheet?.value ?? kAlwaysDismissedAnimation;
+    final link = widget.link;
+    if (link != null && link.covered != covered) {
+      runOutsideLayout(() => link.covered = covered, mounted: () => mounted);
+    }
     final width = MediaQuery.sizeOf(context).width;
     final accessory = AdaptiveAccessoryScope(
       spec: AdaptiveAccessorySpec(
@@ -136,7 +158,7 @@ class _MaterialTabAccessoryState extends State<MaterialTabAccessory> {
         Positioned.fill(
           child: ValueListenableBuilder<double>(
             valueListenable: _band,
-            child: widget.body,
+            child: _LinkScope(link: link, child: widget.body),
             builder: (context, band, body) => AdaptiveBottomBarInset(
               height: band,
               accessory: band,
@@ -162,7 +184,7 @@ class _MaterialTabAccessoryState extends State<MaterialTabAccessory> {
                           MaterialTabAccessory.sidePadding,
                           MaterialTabAccessory.topPadding,
                           MaterialTabAccessory.sidePadding,
-                          0,
+                          MaterialTabAccessory.bottomPadding,
                         ),
                   child: accessory,
                 ),
@@ -203,6 +225,169 @@ class _MaterialTabAccessoryState extends State<MaterialTabAccessory> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// What the navigation bar under a [MaterialTabAccessory] follows: whether
+/// the band shows anything, how far a page's sheet that opens from the
+/// accessory covers it, and whether a page's sheet is up behind the bar.
+class MaterialTabAccessoryLink extends ChangeNotifier {
+  bool _shown = false;
+  Animation<double> _covered = kAlwaysDismissedAnimation;
+  final Set<Object> _sheetsUp = <Object>{};
+  bool _disposed = false;
+
+  /// The link of the [MaterialTabAccessory] the pages of [context] are on.
+  static MaterialTabAccessoryLink? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_LinkScope>()?.link;
+
+  /// Whether the band shows the accessory.
+  bool get shown => _shown;
+
+  set shown(bool value) {
+    if (value == _shown) return;
+    _shown = value;
+    notifyListeners();
+  }
+
+  /// How far a page's sheet has come up into the band's place, from 0 to 1.
+  Animation<double> get covered => _covered;
+
+  set covered(Animation<double> value) {
+    if (value == _covered) return;
+    _covered = value;
+    notifyListeners();
+  }
+
+  /// Whether a page's sheet is up, its bottom along the bar.
+  bool get sheetUp => _sheetsUp.isNotEmpty;
+
+  /// Tells whether the sheet [sheet] is up. Ignored once the link is gone,
+  /// as a sheet that goes with it tells of that after the frame.
+  void setSheetUp(Object sheet, {required bool up}) {
+    if (_disposed) return;
+    final changed = up ? _sheetsUp.add(sheet) : _sheetsUp.remove(sheet);
+    if (changed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+}
+
+class _LinkScope extends InheritedWidget {
+  const _LinkScope({required this.link, required super.child});
+
+  final MaterialTabAccessoryLink? link;
+
+  @override
+  bool updateShouldNotify(_LinkScope oldWidget) => link != oldWidget.link;
+}
+
+/// The navigation bar under a [MaterialTabAccessory]: its top corners round
+/// in while the band's card shows or a page's sheet is up, and flatten again
+/// as they go, the card's or the sheet's colour showing around them.
+class MaterialTabAccessoryBar extends StatefulWidget {
+  const MaterialTabAccessoryBar({
+    super.key,
+    required this.link,
+    required this.child,
+  });
+
+  final MaterialTabAccessoryLink link;
+  final Widget child;
+
+  @override
+  State<MaterialTabAccessoryBar> createState() =>
+      _MaterialTabAccessoryBarState();
+}
+
+class _MaterialTabAccessoryBarState extends State<MaterialTabAccessoryBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shown = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+    value: widget.link.shown || widget.link.sheetUp ? 1 : 0,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    widget.link.addListener(_onLinkChanged);
+  }
+
+  @override
+  void didUpdateWidget(MaterialTabAccessoryBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.link == widget.link) return;
+    oldWidget.link.removeListener(_onLinkChanged);
+    widget.link.addListener(_onLinkChanged);
+    _onLinkChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.link.removeListener(_onLinkChanged);
+    _shown.dispose();
+    super.dispose();
+  }
+
+  void _onLinkChanged() {
+    if (!mounted) return;
+    final shown = widget.link.shown || widget.link.sheetUp;
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _shown.value = shown ? 1 : 0;
+    } else if (shown) {
+      _shown.forward();
+    } else {
+      _shown.reverse();
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final link = widget.link;
+    final covered = link.covered;
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: Listenable.merge([_shown, covered]),
+      child: widget.child,
+      builder: (context, child) {
+        final rounding = Curves.easeOutCubic.transform(_shown.value);
+        // What meets the bar: the band's card, or the sheet that came up
+        // into its place or stands above the bar.
+        final behind = link.shown
+            ? Color.lerp(
+                scheme.surfaceContainerLowest,
+                scheme.surfaceContainerLow,
+                covered.value.clamp(0.0, 1.0),
+              )!
+            : scheme.surfaceContainerLow;
+        return Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: MaterialTabAccessory.cornerRadius,
+              child: ColoredBox(color: behind),
+            ),
+            ClipRRect(
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(
+                  MaterialTabAccessory.cornerRadius * rounding,
+                ),
+              ),
+              clipBehavior: rounding > 0 ? Clip.antiAlias : Clip.none,
+              child: child,
+            ),
+          ],
+        );
+      },
     );
   }
 }

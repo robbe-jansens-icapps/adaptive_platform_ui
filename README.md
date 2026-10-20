@@ -303,10 +303,11 @@ class RentalAccessory extends StatelessWidget {
   and the sheet's content comes up into its place. With `liftsAccessory`,
   other content on the sheet (a station's details) lies above the accessory
   with the accessory apart on a glass capsule of its own. On Android the
-  accessory sits on the `NavigationBar`'s own surface, in a band just above
-  its destinations, so the two are one bar with rounded top corners; a
-  page's sheet comes up from behind it, and one with `opensFromAccessory`
-  comes up into the accessory's place as on iOS.
+  accessory sits in the middle of a white card in a band just above the
+  `NavigationBar`'s destinations; the bar's top corners round in while the
+  card shows or a page's sheet is up along the bar, so the two stay together
+  and still stand apart. A page's sheet comes up from behind the bar, and one
+  with `opensFromAccessory` comes up into the accessory's place as on iOS.
   `AdaptiveAccessoryScope.surfaceOf` tells the accessory what it sits on and
   how far that reaches, so a page swiped away inside it can slide on to the
   glass's edge and be cut off in its shape. Where no tab bar along the

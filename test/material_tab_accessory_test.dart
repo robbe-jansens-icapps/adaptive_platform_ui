@@ -38,6 +38,26 @@ void main() {
     return opacity;
   }
 
+  /// The radius of the navigation bar's top corners.
+  double barCorner(WidgetTester tester) {
+    final clip = tester.widget<ClipRRect>(
+      find.ancestor(of: navigationBar, matching: find.byType(ClipRRect)).first,
+    );
+    return (clip.borderRadius as BorderRadius).topLeft.x;
+  }
+
+  /// The colour that shows around the navigation bar's round corners.
+  Color behindBar(WidgetTester tester) => tester
+      .widget<ColoredBox>(
+        find
+            .descendant(
+              of: find.byType(MaterialTabAccessoryBar),
+              matching: find.byType(ColoredBox),
+            )
+            .first,
+      )
+      .color;
+
   bool hits(WidgetTester tester, Finder finder, Offset at) {
     final box = tester.renderObject(finder);
     return tester.hitTestOnBinding(at).path.any((e) => e.target == box);
@@ -141,23 +161,23 @@ void main() {
     return controller;
   }
 
-  testWidgets('the accessory sits on the navigation bar\'s surface, in its '
-      'colour, in a band just above its destinations, which the pages run on '
+  testWidgets('the accessory sits on a card in a band just above the '
+      'navigation bar\'s destinations, in its middle, which the pages run on '
       'under and keep clear of', (tester) async {
     await pumpTabs(tester);
 
     final bar = tester.getRect(navigationBar);
     final rect = tester.getRect(accessory);
-    expect(rect.bottom, bar.top);
+    expect(rect.bottom, bar.top - MaterialTabAccessory.bottomPadding);
     expect(rect.left, MaterialTabAccessory.sidePadding);
     expect(rect.right, size.width - MaterialTabAccessory.sidePadding);
     final context = tester.element(navigationBar);
     expect(
       bandColor(tester),
-      NavigationBarTheme.of(context).backgroundColor ??
-          Theme.of(context).colorScheme.surfaceContainer,
+      Theme.of(context).colorScheme.surfaceContainerLowest,
     );
     expect(tester.getRect(band().first).top, rect.top - 12);
+    expect(tester.getRect(band().first).bottom, bar.top);
     // Told it sits on the band, which reaches the window's sides.
     final surface = AdaptiveAccessoryScope.surfaceOf(
       tester.element(accessory),
@@ -167,11 +187,79 @@ void main() {
     expect(outline.left, 0);
     expect(outline.right, size.width);
     expect(outline.top, tester.getRect(band().first).top);
-    expect(accessoryBand, 48 + MaterialTabAccessory.topPadding);
-    expect(padding, 48 + MaterialTabAccessory.topPadding);
+    expect(
+      accessoryBand,
+      48 + MaterialTabAccessory.topPadding + MaterialTabAccessory.bottomPadding,
+    );
+    expect(
+      padding,
+      48 + MaterialTabAccessory.topPadding + MaterialTabAccessory.bottomPadding,
+    );
 
     await tester.tap(accessory);
     expect(taps, 1);
+  });
+
+  testWidgets('the navigation bar rounds its top corners in front of the '
+      'card as it comes, and squares them again as it goes', (tester) async {
+    final shown = ValueNotifier<bool>(true);
+    addTearDown(shown.dispose);
+    await pumpTabs(
+      tester,
+      settle: false,
+      accessoryWidget: ValueListenableBuilder<bool>(
+        valueListenable: shown,
+        builder: (context, shown, _) =>
+            SizedBox(key: const ValueKey('accessory'), height: shown ? 48 : 0),
+      ),
+    );
+    await tester.pump();
+    expect(barCorner(tester), 0);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      barCorner(tester),
+      inExclusiveRange(0, MaterialTabAccessory.cornerRadius),
+    );
+    await tester.pumpAndSettle();
+    expect(barCorner(tester), MaterialTabAccessory.cornerRadius);
+    expect(
+      behindBar(tester),
+      Theme.of(
+        tester.element(navigationBar),
+      ).colorScheme.surfaceContainerLowest,
+    );
+
+    shown.value = false;
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      barCorner(tester),
+      inExclusiveRange(0, MaterialTabAccessory.cornerRadius),
+    );
+    await tester.pumpAndSettle();
+    expect(barCorner(tester), 0);
+  });
+
+  testWidgets('a page\'s sheet up along the bar rounds its corners too, '
+      'without an accessory', (tester) async {
+    await pumpTabs(
+      tester,
+      accessoryWidget: const SizedBox.shrink(key: ValueKey('accessory')),
+    );
+    expect(barCorner(tester), 0);
+
+    await pumpTabs(
+      tester,
+      sheet: true,
+      opens: ValueNotifier<bool>(false),
+      accessoryWidget: const SizedBox.shrink(key: ValueKey('accessory')),
+    );
+    expect(barCorner(tester), MaterialTabAccessory.cornerRadius);
+    expect(
+      behindBar(tester),
+      Theme.of(tester.element(navigationBar)).colorScheme.surfaceContainerLow,
+    );
   });
 
   testWidgets('the pages get the band\'s room in the frame after the '
@@ -180,8 +268,14 @@ void main() {
     expect(padding, 0);
 
     await tester.pump();
-    expect(padding, 48 + MaterialTabAccessory.topPadding);
-    expect(accessoryBand, 48 + MaterialTabAccessory.topPadding);
+    expect(
+      padding,
+      48 + MaterialTabAccessory.topPadding + MaterialTabAccessory.bottomPadding,
+    );
+    expect(
+      accessoryBand,
+      48 + MaterialTabAccessory.topPadding + MaterialTabAccessory.bottomPadding,
+    );
   });
 
   testWidgets('one with nothing to show takes no band', (tester) async {
@@ -206,18 +300,34 @@ void main() {
     // Behind the band, all of it: the sheet starts where the band does.
     expect(
       tester.getRect(card).top,
-      closeTo(bar.top - 48 - MaterialTabAccessory.topPadding, 0.5),
+      closeTo(
+        bar.top -
+            48 -
+            MaterialTabAccessory.topPadding -
+            MaterialTabAccessory.bottomPadding,
+        0.5,
+      ),
     );
     expect(opacityOf(tester, accessory), 1);
+    expect(barCorner(tester), MaterialTabAccessory.cornerRadius);
 
     controller.animateTo(AdaptiveSheetDetent.fitContent);
     await tester.pumpAndSettle();
     expect(tester.getRect(card).bottom, closeTo(bar.top, 0.5));
     expect(opacityOf(tester, accessory), 0);
     expect(bandColor(tester).a, closeTo(0, 0.001));
+    // Up along the bar, the sheet keeps its corners round.
+    expect(barCorner(tester), MaterialTabAccessory.cornerRadius);
+    expect(
+      behindBar(tester),
+      Theme.of(tester.element(navigationBar)).colorScheme.surfaceContainerLow,
+    );
     expect(hits(tester, card, at), isTrue);
     // The pages keep their room.
-    expect(padding, 48 + MaterialTabAccessory.topPadding);
+    expect(
+      padding,
+      48 + MaterialTabAccessory.topPadding + MaterialTabAccessory.bottomPadding,
+    );
   });
 
   testWidgets('a drag up on the accessory pulls the sheet up', (tester) async {

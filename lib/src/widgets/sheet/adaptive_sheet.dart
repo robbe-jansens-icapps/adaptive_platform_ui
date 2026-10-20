@@ -18,12 +18,14 @@ import '../../toolbar/hosted_top_toolbar.dart'
 import '../../toolbar/toolbar_blend.dart' show kToolbarItemSwapDuration;
 import '../../toolbar/toolbar_chrome_scope.dart';
 import '../../toolbar/toolbar_registry.dart';
+import '../../utils/outside_layout.dart';
 import '../../utils/size_reporter.dart';
 import '../accessory_makes_way.dart';
 import '../adaptive_accessory_scope.dart';
 import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
+import '../material_tab_accessory.dart' show MaterialTabAccessoryLink;
 import 'adaptive_sheet_detent.dart';
 
 /// Moves an [AdaptiveSheet] between its detents and tells where it is.
@@ -358,6 +360,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   bool _dragging = false;
   EdgeInsets? _reportedObstruction;
 
+  /// The Material navigation bar's link, told whether the sheet is up along
+  /// the bar, which rounds its corners for it.
+  MaterialTabAccessoryLink? _barLink;
+  bool _reportedUp = false;
+
   /// The spring the sheet settles on, and when it gets there.
   _RetargetableSpring? _spring;
   TickerFuture? _settling;
@@ -442,6 +449,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     if (widget.header == null) _headerHeight = 0;
     _scrollController.addListener(_onScroll);
     _extent.addListener(_updateCovered);
+    _extent.addListener(_reportUp);
     _opensFromAccessory.addStatusListener((_) => _syncLink());
   }
 
@@ -465,6 +473,19 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final barLink = MaterialTabAccessoryLink.maybeOf(context);
+    if (barLink != _barLink) {
+      final old = _barLink;
+      if (_reportedUp) {
+        runOutsideLayout(
+          () => old?.setSheetUp(this, up: false),
+          mounted: () => true,
+        );
+      }
+      _barLink = barLink;
+      _reportedUp = false;
+      _reportUp();
+    }
     // A sheet that is a popup route of its own (a modal sheet) slides out of
     // view as the route goes, however it is popped: the barrier tapped, a
     // button, back. A page's own sheet stays with its page.
@@ -479,6 +500,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   @override
   void dispose() {
+    if (_reportedUp) {
+      final link = _barLink;
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => link?.setSheetUp(this, up: false),
+      );
+    }
     _route?.animation?.removeStatusListener(_onRouteStatus);
     _route?.animation?.removeListener(_followRouteOut);
     widget.controller?._detach(this);
@@ -491,6 +518,16 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _covered.dispose();
     _lifted.dispose();
     super.dispose();
+  }
+
+  void _reportUp() {
+    final link = _barLink;
+    if (link == null) return;
+    final m = _metrics;
+    final up = m != null && m.material && !m.sidePanel && _extent.value > 0.5;
+    if (up == _reportedUp) return;
+    _reportedUp = up;
+    runOutsideLayout(() => link.setSheetUp(this, up: up), mounted: () => true);
   }
 
   /// Whether the sheet may hold the tab accessory as it is now laid out:
@@ -1098,6 +1135,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
             _reportedObstruction = null;
             _onExtentsChanged();
             _updateCovered();
+            _reportUp();
           });
         }
         final holds = _holdsAccessory(metrics);
