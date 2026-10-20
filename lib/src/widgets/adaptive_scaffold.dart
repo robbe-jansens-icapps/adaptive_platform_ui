@@ -23,6 +23,7 @@ import 'adaptive_split_view.dart';
 import 'ios26/ios26_scaffold.dart';
 import '../toolbar/toolbar_chrome_scope.dart';
 import '../toolbar/toolbar_registry.dart';
+import '../utils/outside_layout.dart';
 import '../utils/size_reporter.dart';
 import 'material_tab_accessory.dart';
 
@@ -414,15 +415,22 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         decides = entry;
       }
     }
-    if (decides != null) _scrollEdge.value = decides.edge;
+    if (decides != null) {
+      final edge = decides.edge;
+      runOutsideLayout(() => _scrollEdge.value = edge, mounted: () => mounted);
+    }
     // Any scrollable the page scrolls moves the title band, the list inside
     // a scroll view with a header (a NestedScrollView) too: once its header
     // is gone, scrolling back moves that list, not the outer scroll view.
     if (notification is ScrollUpdateNotification) {
-      _followScroll(
-        notification.metrics,
-        notification.scrollDelta ?? 0,
-        underBand: _underTitleBand(context),
+      final delta = notification.scrollDelta ?? 0;
+      runOutsideLayout(
+        () => _followScroll(
+          notification.metrics,
+          delta,
+          underBand: context.mounted && _underTitleBand(context),
+        ),
+        mounted: () => mounted,
       );
     }
     return false;

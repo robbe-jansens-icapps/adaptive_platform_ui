@@ -54,12 +54,13 @@ Widget listPage(
   String title, {
   Color color = pageColor,
   ScrollController? controller,
+  int rows = 60,
 }) {
   final list = ListView(
     key: ValueKey<String>('list $title'),
     controller: controller,
     children: [
-      for (var i = 0; i < 60; i++)
+      for (var i = 0; i < rows; i++)
         SizedBox(height: 60, child: Text('$title row $i')),
     ],
   );
@@ -163,6 +164,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(backdropOpacity(tester), 0);
     },
+  );
+
+  testWidgets(
+    'a list that springs back into place as the window changes, a device turned, takes the bar\'s background along after that frame',
+    (tester) async {
+      phone(tester);
+      // Sideways first: upright, the window shows all of the list.
+      tester.view.physicalSize = const Size(844, 390);
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await pumpApp(tester, listPage('List', controller: controller, rows: 8));
+      expect(backdropOpacity(tester), 0);
+
+      // Turned quickly, the list is left a little down from its top as the
+      // next turn lays it out: it springs back, a scroll that starts while
+      // the page is laid out.
+      final position = controller.position;
+      position.correctPixels(position.pixels + 12);
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(position.pixels, position.minScrollExtent);
+      expect(backdropOpacity(tester), 0);
+    },
+    // iOS's scroll physics: a list out of place springs back rather than
+    // being clamped.
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 
   testWidgets(

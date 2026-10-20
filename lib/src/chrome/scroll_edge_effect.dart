@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../utils/outside_layout.dart';
 import '../utils/size_reporter.dart';
 import 'adaptive_chrome.dart';
 
@@ -442,7 +443,8 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
       _ => (null, 0),
     };
     if (metrics == null || depth != 0) return false;
-    _edge.value = AdaptiveScrollEdge.of(metrics) ?? 0;
+    final edge = AdaptiveScrollEdge.of(metrics) ?? 0;
+    runOutsideLayout(() => _edge.value = edge, mounted: () => mounted);
     return false;
   }
 
