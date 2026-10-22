@@ -25,6 +25,7 @@ Widget sheetApp({
   ValueChanged<EdgeInsets>? onSettled,
   ValueChanged<AdaptiveSheetDetent>? onDetentChanged,
   bool? sidePanel,
+  Widget? child,
 }) => MaterialApp(
   home: Stack(
     children: [
@@ -37,7 +38,9 @@ Widget sheetApp({
           onDetentChanged: onDetentChanged,
           sidePanel: sidePanel,
           header: const SizedBox(height: 60, child: Text('header')),
-          child: SizedBox(height: contentHeight, child: const Text('content')),
+          child:
+              child ??
+              SizedBox(height: contentHeight, child: const Text('content')),
         ),
       ),
     ],
@@ -265,6 +268,49 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 100));
     expect(sheetTop(tester), top);
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('keeps what is at the bottom of content that changes its height '
+      'frame after frame in place', (tester) async {
+    usePhone(tester);
+    Widget withBottom(double height) => sheetApp(
+      child: SizedBox(
+        height: height,
+        child: const Align(
+          alignment: Alignment.bottomCenter,
+          child: Text('bottom'),
+        ),
+      ),
+    );
+    await tester.pumpWidget(withBottom(200));
+    await tester.pumpAndSettle();
+    final bottom = tester.getBottomLeft(find.text('bottom')).dy;
+
+    for (var content = 204.0; content <= 300; content += 4) {
+      await tester.pumpWidget(withBottom(content));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester.getBottomLeft(find.text('bottom')).dy,
+        closeTo(bottom, 0.5),
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.getBottomLeft(find.text('bottom')).dy, closeTo(bottom, 0.5));
+    expect(sheetTop(tester), closeTo(_phone.height - fitExtent(300), 0.5));
+  });
+
+  testWidgets('goes along with a small change of its content at once', (
+    tester,
+  ) async {
+    usePhone(tester);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(sheetApp(contentHeight: 210));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(sheetTop(tester), closeTo(_phone.height - fitExtent(210), 0.5));
     expect(tester.hasRunningAnimations, isFalse);
   });
 

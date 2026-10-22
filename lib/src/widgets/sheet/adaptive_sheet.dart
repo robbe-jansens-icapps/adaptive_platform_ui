@@ -372,6 +372,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// The frame the content's height last changed in.
   Duration? _contentChangedAt;
 
+  /// Whether the content sits on the bottom edge of the sheet, rather than
+  /// hanging from its top: while the sheet goes along with its content, a
+  /// frame late, what is at the bottom of the content stays in place.
+  var _contentOnBottomEdge = false;
+
   /// Whether the side panel was in view as it last built.
   bool _panelInView = false;
   static const _panelResizeDuration = Duration(milliseconds: 300);
@@ -763,20 +768,23 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     if (!mounted || _contentHeight == size.height) return;
     final now = SchedulerBinding.instance.currentFrameTimeStamp;
     final changedAt = _contentChangedAt;
+    final previous = _contentHeight;
     _contentChangedAt = now;
     setState(() => _contentHeight = size.height);
     // Content whose height changes frame after frame animates it itself, such
     // as pages of different heights sliding past: the sheet goes along with
     // it, where a spring started anew on every frame would trail and twitch.
-    if (changedAt != null &&
-        now - changedAt <= _followContentWithin &&
-        _followContent()) {
-      return;
-    }
+    // So does a small change, such as the first step of one of those.
+    final follows =
+        (changedAt != null && now - changedAt <= _followContentWithin) ||
+        (previous != null &&
+            (size.height - previous).abs() <= _followContentUpTo);
+    if (follows && _followContent()) return;
     _onExtentsChanged();
   }
 
   static const _followContentWithin = Duration(milliseconds: 50);
+  static const _followContentUpTo = 16.0;
 
   bool _followContent() {
     final m = _metrics;
@@ -785,8 +793,16 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     if (target.isHidden) return false;
     _extent.stop();
     _extent.value = _extentOf(target, m);
+    // A side panel grows down from its top.
+    _contentOnBottomEdge = !m.sidePanel;
     _report(target);
     return true;
+  }
+
+  void _hangContentFromTop() {
+    if (!_contentOnBottomEdge) return;
+    _contentOnBottomEdge = false;
+    if (mounted) setState(() {});
   }
 
   /// Something the extents depend on changed: the first measurement shows the
@@ -805,6 +821,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   }
 
   Future<void> _settleTo(AdaptiveSheetDetent detent, {double velocity = 0}) {
+    _hangContentFromTop();
     final m = _metrics;
     if (m == null || !_measured) {
       _target = detent;
@@ -978,6 +995,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   void _onDragStart() {
     _interrupt();
     _dragging = true;
+    _hangContentFromTop();
   }
 
   /// Moves the sheet up by [delta] (down when negative), with resistance past
@@ -1359,7 +1377,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                 // moves the sheet.
                 : _dragsSheet(
                     OverflowBox(
-                      alignment: Alignment.topCenter,
+                      alignment: _contentOnBottomEdge
+                          ? Alignment.bottomCenter
+                          : Alignment.topCenter,
                       minHeight: 0,
                       maxHeight: double.infinity,
                       child: Padding(
