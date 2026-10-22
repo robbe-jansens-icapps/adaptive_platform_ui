@@ -369,6 +369,9 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   _RetargetableSpring? _spring;
   TickerFuture? _settling;
 
+  /// The frame the content's height last changed in.
+  Duration? _contentChangedAt;
+
   /// Whether the side panel was in view as it last built.
   bool _panelInView = false;
   static const _panelResizeDuration = Duration(milliseconds: 300);
@@ -758,8 +761,32 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   void _onContentMeasured(Size size) {
     if (!mounted || _contentHeight == size.height) return;
+    final now = SchedulerBinding.instance.currentFrameTimeStamp;
+    final changedAt = _contentChangedAt;
+    _contentChangedAt = now;
     setState(() => _contentHeight = size.height);
+    // Content whose height changes frame after frame animates it itself, such
+    // as pages of different heights sliding past: the sheet goes along with
+    // it, where a spring started anew on every frame would trail and twitch.
+    if (changedAt != null &&
+        now - changedAt <= _followContentWithin &&
+        _followContent()) {
+      return;
+    }
     _onExtentsChanged();
+  }
+
+  static const _followContentWithin = Duration(milliseconds: 50);
+
+  bool _followContent() {
+    final m = _metrics;
+    final target = _target;
+    if (m == null || !_measured || _dragging || target == null) return false;
+    if (target.isHidden) return false;
+    _extent.stop();
+    _extent.value = _extentOf(target, m);
+    _report(target);
+    return true;
   }
 
   /// Something the extents depend on changed: the first measurement shows the

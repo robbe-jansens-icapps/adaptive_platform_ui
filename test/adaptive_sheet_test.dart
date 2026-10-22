@@ -243,6 +243,47 @@ void main() {
     expect(sheetTop(tester), closeTo(_phone.height - fitExtent(300), 0.5));
   });
 
+  testWidgets('goes along with content that changes its height frame after '
+      'frame, rather than springing after it', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    for (var content = 205.0; content <= 300; content += 5) {
+      await tester.pumpWidget(sheetApp(contentHeight: content));
+      await tester.pump(const Duration(milliseconds: 16));
+      // The first step springs; from the next one on it goes along.
+      if (content == 205) continue;
+      expect(
+        sheetTop(tester),
+        closeTo(_phone.height - fitExtent(content), 0.5),
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 16));
+    final top = sheetTop(tester);
+    expect(top, closeTo(_phone.height - fitExtent(300), 0.5));
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sheetTop(tester), top);
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('springs to content that changes its height once', (
+    tester,
+  ) async {
+    usePhone(tester);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(sheetApp(contentHeight: 300));
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(sheetTop(tester), greaterThan(_phone.height - fitExtent(300) + 10));
+    await tester.pumpAndSettle();
+    expect(sheetTop(tester), closeTo(_phone.height - fitExtent(300), 0.5));
+  });
+
   testWidgets('becomes a side panel on a wide window', (tester) async {
     usePhone(tester, size: const Size(951, 669));
     final settled = <EdgeInsets>[];
