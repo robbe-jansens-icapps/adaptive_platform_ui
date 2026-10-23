@@ -113,8 +113,9 @@ class AdaptiveNavigationDestination {
   );
 
   /// Shows a dot without a count, for something that needs attention but
-  /// cannot be counted: the system's own dot on the native tab bar, unlike a
-  /// [badgeText] glyph. Ignored while [badgeCount] or [badgeText] is set.
+  /// cannot be counted: on the native tab bar a dot about 10 points across,
+  /// where the system's own badge without text would be as big as one with a
+  /// count. Ignored while [badgeCount] or [badgeText] is set.
   final bool showsBadgeDot;
 
   /// The badge as the native views take it: the count, or [kBadgeDot].

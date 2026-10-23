@@ -50,6 +50,10 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     /// (nil = platform default). A transparent background + a colored glyph
     /// renders a clean dot (e.g. badgeText "●").
     private static func applyBadge(to item: UITabBarItem, count: Int?, text: String?, colorARGB: Int?, textColorARGB: Int?) {
+        if (text ?? "").isEmpty, count == -1 {
+            applyBadgeDot(to: item, colorARGB: colorARGB)
+            return
+        }
         let value: String?
         if let text = text, !text.isEmpty {
             value = text
@@ -67,6 +71,21 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             item.setBadgeTextAttributes(nil, for: .normal)
             item.setBadgeTextAttributes(nil, for: .selected)
         }
+    }
+
+    /// The dot of `kBadgeDot` (-1), about as big as the one on the iPhone
+    /// Duo's glass capsule tabs: a glyph on a clear badge. The empty badge
+    /// UIKit draws for "" is as big as one with a count. Still UIKit's badge,
+    /// so it stays on the icon and goes into the selection's lens with it.
+    private static func applyBadgeDot(to item: UITabBarItem, colorARGB: Int?) {
+        item.badgeValue = "\u{25CF}"
+        item.badgeColor = .clear
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: colorARGB.map(colorFromARGB) ?? UIColor.systemRed,
+            .font: UIFont.systemFont(ofSize: 12),
+        ]
+        item.setBadgeTextAttributes(attrs, for: .normal)
+        item.setBadgeTextAttributes(attrs, for: .selected)
     }
 
     private static func badgeAt<T>(_ arr: [T?], _ i: Int) -> T? {
@@ -1168,8 +1187,9 @@ class iOS26TabBarViewFactory: NSObject, FlutterPlatformViewFactory {
     }
 }
 
-/// The badge text for a count from Dart: nil for none, "99+" past 99, and an
-/// empty string, which UIKit draws as a dot, for -1 (`kBadgeDot`).
+/// The badge text for a count from Dart: nil for none and "99+" past 99. -1
+/// (`kBadgeDot`) is an empty string, which UIKit draws as a dot as big as a
+/// badge with a count: the tab bar draws its own (`applyBadgeDot`).
 func tabBadgeText(_ count: Int?) -> String? {
     guard let count = count else { return nil }
     if count == -1 { return "" }
