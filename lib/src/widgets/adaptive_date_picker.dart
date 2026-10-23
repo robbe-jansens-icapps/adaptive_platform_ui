@@ -294,11 +294,20 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
 
   final _picker = IOS26DatePickerController();
 
+  /// Whether a tap on the checkmark is being handled: a second tap while the
+  /// native picker answers would pop the page under the sheet too.
+  bool _confirming = false;
+
   /// Confirms the date, or, while the calendar shows its month and year
   /// wheels, goes back to its days first: a month and a year are not a date
   /// yet, and the checkmark is where one would confirm them.
   Future<void> _onConfirm() async {
-    if (await _picker.showDays()) return;
+    if (_confirming) return;
+    _confirming = true;
+    if (await _picker.showDays()) {
+      _confirming = false;
+      return;
+    }
     if (mounted) Navigator.of(context).pop(_result);
   }
 

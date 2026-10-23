@@ -229,5 +229,71 @@ void main() {
 
       expect(await result, isNull);
     });
+
+    /// The picker opened from a page pushed over home, so a pop too many
+    /// closes that page.
+    Future<Future<DateTime?>> openOverPage(WidgetTester tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navigator, home: const Text('Home')),
+      );
+      late BuildContext context;
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (c) {
+            context = c;
+            return const Text('Form');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      final result = AdaptiveDatePicker.show(
+        context: context,
+        initialDate: DateTime(1990, 5, 17),
+        firstDate: DateTime(1900),
+        lastDate: DateTime(2010),
+      );
+      await tester.pumpAndSettle();
+      return result;
+    }
+
+    testWidgets('a second tap on the checkmark while the first confirms '
+        'closes the sheet once, not the page under it', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      final result = await openOverPage(tester);
+      final (id, _) = created.single;
+      final answers = <Completer<bool>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            MethodChannel('adaptive_platform_ui/ios26_date_picker_$id'),
+            (call) {
+              final answer = Completer<bool>();
+              answers.add(answer);
+              return answer.future;
+            },
+          );
+
+      await tester.tap(find.bySemanticsLabel('OK'));
+      await tester.tap(find.bySemanticsLabel('OK'));
+      for (final answer in answers) {
+        answer.complete(false);
+      }
+      await tester.pumpAndSettle();
+
+      expect(await result, DateTime(1990, 5, 17));
+      expect(find.text('Form'), findsOneWidget);
+    });
+
+    testWidgets('a second tap on the close button closes the sheet once, not '
+        'the page under it', (tester) async {
+      final result = await openOverPage(tester);
+
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+
+      expect(await result, isNull);
+      expect(find.text('Form'), findsOneWidget);
+    });
   });
 }
