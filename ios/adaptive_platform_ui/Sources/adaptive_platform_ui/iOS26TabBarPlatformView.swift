@@ -179,8 +179,9 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let bar = self?.tabBar else { return }
+            guard let self, let bar = self.tabBar else { return }
             applyAppFont(to: bar)
+            self.container.setNeedsLayout()
         }
         bar.delegate = self
         // Its labels keep one size whatever the text size, as the system's do.
@@ -417,7 +418,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
             self?.handleContainerWidthChange()
         }
         container.onLayout = { [weak self] in
-            self?.reportCapsuleIfChanged()
+            self?.reportLayoutIfChanged()
         }
 
         // Setup method call handler
@@ -464,6 +465,55 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         guard frame != lastCapsule else { return }
         lastCapsule = frame
         channel.invokeMethod("capsuleChanged", arguments: Self.encode(frame))
+    }
+
+    /// Where the tabs are, as last told to Flutter.
+    private var lastTabFrames: [CGRect?]?
+
+    /// The button of each tab, by the item's index: UIKit has no API for it.
+    /// Found by the title it carries as its accessibility label, not in a
+    /// label (whose accessibility label is its text), and hidden or not: the
+    /// selected tab's may be, while the selection's lens shows it.
+    private func tabButtons() -> [Int: UIView] {
+        guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return [:] }
+        var found: [Int: UIView] = [:]
+        func collect(_ view: UIView) {
+            for subview in view.subviews {
+                if !(subview is UILabel), let label = subview.accessibilityLabel,
+                   let index = items.indices.first(where: { found[$0] == nil && items[$0].title == label }) {
+                    found[index] = subview
+                    continue
+                }
+                collect(subview)
+            }
+        }
+        collect(bar)
+        return found
+    }
+
+    /// Where each tab's button is, in the view's coordinates, by the item's
+    /// index: nil for one not found.
+    private func tabFrames() -> [CGRect?] {
+        guard let bar = tabBar, let count = bar.items?.count else { return [] }
+        bar.layoutIfNeeded()
+        let buttons = tabButtons()
+        return (0..<count).map { index in
+            buttons[index].map { $0.convert($0.bounds, to: container) }
+        }
+    }
+
+    private static func encode(_ frames: [CGRect?]) -> [Any] {
+        return frames.map { encode($0) ?? NSNull() }
+    }
+
+    /// Tells Flutter where the capsule and the tabs are whenever a layout
+    /// moves them: Flutter lays the tabs' semantics over them, for VoiceOver.
+    private func reportLayoutIfChanged() {
+        reportCapsuleIfChanged()
+        let frames = tabFrames()
+        guard frames != lastTabFrames else { return }
+        lastTabFrames = frames
+        channel.invokeMethod("tabFramesChanged", arguments: Self.encode(frames))
     }
 
     private func applyMinimizeBehavior() {
@@ -679,6 +729,8 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                 if selectedIndex >= 0, selectedIndex < items.count {
                     bar.selectedItem = items[selectedIndex]
                 }
+                // The tabs move: the view lays out again to report them.
+                self.container.setNeedsLayout()
             }
             result(nil)
 
@@ -757,6 +809,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
                     : .leftToRight
             }
             self.container.semanticContentAttribute = attribute
+            self.container.setNeedsLayout()
             result(nil)
 
         case "setMinimizeBehavior":
@@ -783,6 +836,11 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         case "getCapsule":
             self.lastCapsule = self.capsuleFrame()
             result(Self.encode(self.lastCapsule))
+
+        case "getTabFrames":
+            let frames = self.tabFrames()
+            self.lastTabFrames = frames
+            result(Self.encode(frames))
 
         case "setBadgeCounts":
             guard let args = call.arguments as? [String: Any],
@@ -932,6 +990,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         if currentSelectedIndex < items.count {
             bar.selectedItem = items[currentSelectedIndex]
         }
+        container.setNeedsLayout()
     }
 
     func view() -> UIView { container }
@@ -940,23 +999,13 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         if let fontObserver { NotificationCenter.default.removeObserver(fontObserver) }
     }
 
-    /// The tab under [point]: the one whose button, found by its title,
+    /// The tab under [point], in the view's coordinates: the one whose button
     /// holds the point, or else the one nearest to it.
     private func item(at point: CGPoint) -> UITabBarItem? {
-        guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return nil }
-        var buttons: [(UITabBarItem, CGRect)] = []
-        func collect(_ view: UIView) {
-            for subview in view.subviews {
-                if let label = subview.accessibilityLabel,
-                   let item = items.first(where: { $0.title == label }),
-                   !buttons.contains(where: { $0.0 === item }) {
-                    buttons.append((item, subview.convert(subview.bounds, to: bar)))
-                    continue
-                }
-                collect(subview)
-            }
+        guard let items = tabBar?.items else { return nil }
+        let buttons = tabFrames().enumerated().compactMap { index, frame in
+            frame.map { (items[index], $0) }
         }
-        collect(bar)
         if let hit = buttons.first(where: { $0.1.contains(point) }) { return hit.0 }
         return buttons.min(by: { abs($0.1.midX - point.x) < abs($1.1.midX - point.x) })?.0
     }
@@ -972,7 +1021,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
         case .began, .changed:
             guard UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory,
                   let window = bar.window,
-                  let item = item(at: recognizer.location(in: bar))
+                  let item = item(at: recognizer.location(in: container))
             else {
                 largeContentHUD?.dismiss()
                 largeContentHUD = nil

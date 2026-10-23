@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foldable/foldable.dart';
 
+import 'voice_over_fixture.dart';
+
 /// Forces the chrome on (there is no iOS 26 in a widget test).
 FoldableData forcedChrome({List<ReservedRegion> regions = const []}) =>
     FoldableData(
@@ -630,6 +632,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(coverOpacity(tester), 1);
     expect(tabBarsMade(), hasLength(1));
+  }, variant: ios);
+
+  testWidgets('VoiceOver finds the tabs over the page under the bar, and not '
+      'while a dialog covers them', (tester) async {
+    usePhone(tester);
+    final semantics = tester.ensureSemantics();
+    final tabs = Tabs();
+    addTearDown(tabs.dispose);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      hostedApp(
+        navigator,
+        tabsPage(
+          tabs,
+          children: [
+            page(
+              'Map',
+              body: Semantics(
+                container: true,
+                label: 'Map view',
+                child: const SizedBox.expand(),
+              ),
+            ),
+            page('Account'),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      '$tabBarType${'_'}${tabBarsMade().single}',
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('tabFramesChanged', [
+          {'x': 21.0, 'y': 0.0, 'width': 180.0, 'height': 62.0},
+          {'x': 201.0, 'y': 0.0, 'width': 180.0, 'height': 62.0},
+        ]),
+      ),
+      (_) {},
+    );
+    await tester.pump();
+    final tabNodes = find.semantics.byPredicate(
+      (node) => node.getSemanticsData().hint.startsWith('Tab '),
+    );
+    final account = const Rect.fromLTWH(
+      201,
+      0,
+      180,
+      62,
+    ).shift(tester.getTopLeft(nativeBar)).center;
+    expect(voiceOverHit(tester, account)?.label, 'Account');
+
+    showDialog<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Center(child: Text('Sure?')),
+    );
+    await tester.pumpAndSettle();
+    expect(tabNodes, findsNothing);
+
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(tabNodes, findsNWidgets(2));
+    expect(voiceOverHit(tester, account)?.label, 'Account');
+    semantics.dispose();
   }, variant: ios);
 
   testWidgets('a page without tabs pushed over a dialog takes the tabs, '

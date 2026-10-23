@@ -96,6 +96,13 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   TabBarMinimizeBehavior? _lastMinimizeBehavior;
   bool? _lastHidden;
 
+  /// Where the capsule and each tab's button are in the bar, as the native
+  /// view last told, for the tabs' semantics over it.
+  final _layout = ValueNotifier<({Rect? capsule, List<Rect?>? tabs})>((
+    capsule: null,
+    tabs: null,
+  ));
+
   bool get _isDark =>
       MediaQuery.platformBrightnessOf(context) == Brightness.dark;
   bool get _isRtl => Directionality.of(context) == TextDirection.rtl;
@@ -119,6 +126,7 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
   @override
   void dispose() {
     _channel?.setMethodCallHandler(null);
+    _layout.dispose();
     super.dispose();
   }
 
@@ -278,19 +286,45 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
         height: h,
         child: Offstage(
           offstage: !widget.showNativeView,
-          child: UiKitView(
-            viewType: 'adaptive_platform_ui/ios26_tab_bar',
-            creationParams: creationParams,
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: _onCreated,
-            // Every touch on the bar is the bar's, at once: with a tap
-            // recognizer it only got them when the finger lifted, so a
-            // finger held on a tab (the large content viewer of the
-            // accessibility text sizes) or sliding across the tabs did
-            // nothing.
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-            },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // VoiceOver passes over a platform view, which has no label or
+              // action of its own, to what lies under it: over a map it found
+              // the map rather than the tabs. The tabs' own nodes take the
+              // native bar's place.
+              ExcludeSemantics(
+                child: UiKitView(
+                  viewType: 'adaptive_platform_ui/ios26_tab_bar',
+                  creationParams: creationParams,
+                  creationParamsCodec: const StandardMessageCodec(),
+                  onPlatformViewCreated: _onCreated,
+                  // Every touch on the bar is the bar's, at once: with a tap
+                  // recognizer it only got them when the finger lifted, so a
+                  // finger held on a tab (the large content viewer of the
+                  // accessibility text sizes) or sliding across the tabs did
+                  // nothing.
+                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<OneSequenceGestureRecognizer>(
+                      EagerGestureRecognizer.new,
+                    ),
+                  },
+                ),
+              ),
+              ExcludeSemantics(
+                excluding: widget.hidden,
+                child: ValueListenableBuilder(
+                  valueListenable: _layout,
+                  builder: (context, layout, _) => _TabSemantics(
+                    destinations: widget.destinations,
+                    selectedIndex: widget.selectedIndex,
+                    onTap: widget.onTap,
+                    capsule: layout.capsule,
+                    tabs: layout.tabs,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -378,13 +412,26 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     _syncDirectionalityIfNeeded();
     _syncPropsToNativeIfNeeded();
     // Told of every change after this, but maybe laid out before it listened.
-    if (widget.onCapsuleChanged != null) {
-      _invoke<Map<Object?, Object?>>(ch, 'getCapsule').then((frame) {
-        if (mounted && identical(ch, _channel)) {
-          widget.onCapsuleChanged?.call(_rectOf(frame));
-        }
-      });
-    }
+    _invoke<Map<Object?, Object?>>(ch, 'getCapsule').then((frame) {
+      if (mounted && identical(ch, _channel)) _onCapsule(_rectOf(frame));
+    });
+    _invoke<List<Object?>>(ch, 'getTabFrames').then((frames) {
+      if (mounted && identical(ch, _channel)) _onTabFrames(frames);
+    });
+  }
+
+  void _onCapsule(Rect? capsule) {
+    _layout.value = (capsule: capsule, tabs: _layout.value.tabs);
+    widget.onCapsuleChanged?.call(capsule);
+  }
+
+  void _onTabFrames(Object? frames) {
+    _layout.value = (
+      capsule: _layout.value.capsule,
+      tabs: frames is List
+          ? [for (final frame in frames) _rectOf(frame)]
+          : null,
+    );
   }
 
   static Rect? _rectOf(Object? frame) {
@@ -418,7 +465,11 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
 
   Future<dynamic> _onMethodCall(MethodCall call) async {
     if (call.method == 'capsuleChanged') {
-      widget.onCapsuleChanged?.call(_rectOf(call.arguments));
+      _onCapsule(_rectOf(call.arguments));
+      return null;
+    }
+    if (call.method == 'tabFramesChanged') {
+      _onTabFrames(call.arguments);
       return null;
     }
     if (call.method == 'valueChanged') {
@@ -598,5 +649,112 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
     final h = (size?['height'] as num?)?.toDouble();
     if (!mounted || h == null || h <= 0 || h == _intrinsicHeight) return;
     setState(() => _intrinsicHeight = h);
+  }
+}
+
+/// A node for each tab where the native bar shows it: label, place among the
+/// tabs as [CupertinoTabBar] gives it, whether it is selected, and a tap that
+/// selects it. It takes no touches: they go on to the native bar.
+class _TabSemantics extends StatelessWidget {
+  const _TabSemantics({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.onTap,
+    required this.capsule,
+    required this.tabs,
+  });
+
+  final List<AdaptiveNavigationDestination> destinations;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  /// The capsule the tabs are on, if the native bar told it.
+  final Rect? capsule;
+
+  /// Where each tab's button is, if the native bar told it.
+  final List<Rect?>? tabs;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = destinations.length;
+    final localizations =
+        Localizations.of<CupertinoLocalizations>(
+          context,
+          CupertinoLocalizations,
+        ) ??
+        const DefaultCupertinoLocalizations();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final rects = _rects(constraints.biggest, Directionality.of(context));
+        return Stack(
+          children: [
+            for (var i = 0; i < count; i++)
+              Positioned.fromRect(
+                rect: rects[i],
+                child: Semantics(
+                  container: true,
+                  button: true,
+                  selected: i == selectedIndex,
+                  label: destinations[i].label,
+                  hint: localizations.tabSemanticsLabel(
+                    tabIndex: i + 1,
+                    tabCount: count,
+                  ),
+                  onTap: () => onTap(i),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The native bar's frames once it told one for every tab, which overlap:
+  /// a touch where two do is the nearer one's. Until then the capsule, or the
+  /// bar, shared out evenly: the whole bar with a search tab, which sits apart
+  /// from the capsule.
+  List<Rect> _rects(Size size, TextDirection direction) {
+    final frames = tabs;
+    if (frames != null &&
+        frames.length == destinations.length &&
+        !frames.contains(null)) {
+      final rects = frames.cast<Rect>().toList();
+      final order = [for (var i = 0; i < rects.length; i++) i]
+        ..sort((a, b) => rects[a].left.compareTo(rects[b].left));
+      for (var k = 1; k < order.length; k++) {
+        final before = rects[order[k - 1]];
+        final after = rects[order[k]];
+        if (before.right <= after.left) continue;
+        final middle = (before.right + after.left) / 2;
+        rects[order[k - 1]] = Rect.fromLTRB(
+          before.left,
+          before.top,
+          middle,
+          before.bottom,
+        );
+        rects[order[k]] = Rect.fromLTRB(
+          middle,
+          after.top,
+          after.right,
+          after.bottom,
+        );
+      }
+      return rects;
+    }
+    final searches = destinations.any((destination) => destination.isSearch);
+    final area = searches ? Offset.zero & size : capsule ?? Offset.zero & size;
+    final width = area.width / destinations.length;
+    return [
+      for (var i = 0; i < destinations.length; i++)
+        Rect.fromLTWH(
+          direction == TextDirection.rtl
+              ? area.right - width * (i + 1)
+              : area.left + width * i,
+          area.top,
+          width,
+          area.height,
+        ),
+    ];
   }
 }
