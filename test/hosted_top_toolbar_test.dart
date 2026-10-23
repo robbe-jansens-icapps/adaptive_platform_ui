@@ -4,8 +4,11 @@ import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foldable/foldable.dart';
+
+import 'voice_over_fixture.dart';
 
 /// Forces the chrome on (there is no iOS 26 in a widget test); the insets
 /// stay those of an ordinary iPhone, so this is not the Duo pose.
@@ -467,5 +470,164 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('VoiceOver', () {
+    // Off iOS, a platform view's focus node takes a focus action, which
+    // VoiceOver would stop at.
+    final ios = TargetPlatformVariant.only(TargetPlatform.iOS);
+    const toolbarType = 'adaptive_platform_ui/ios26_toolbar';
+    final created = <(int, String)>[];
+
+    setUp(() {
+      created.clear();
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      IOS26Button.debugHasUIKitOverride = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform_views, (
+            call,
+          ) async {
+            if (call.method == 'create') {
+              final args = call.arguments as Map<Object?, Object?>;
+              created.add((args['id']! as int, args['viewType']! as String));
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      PlatformInfo.debugIOSVersionOverride = null;
+      IOS26Button.debugHasUIKitOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform_views, null);
+    });
+
+    /// A pushed page with a native title and a native button, over a list
+    /// that runs under the bar, as VoiceOver finds content scrolled under it.
+    Future<void> pumpDetail(
+      WidgetTester tester, {
+      required VoidCallback onShare,
+    }) async {
+      final nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(hostedApp(navigatorKey: nav, home: page('Home')));
+      await tester.pump();
+      nav.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => AdaptiveScaffold(
+            appBar: AdaptiveAppBar(
+              title: 'Detail',
+              useNativeToolbar: true,
+              actions: [
+                AdaptiveAppBarAction(
+                  iosSymbol: 'square.and.arrow.up',
+                  label: 'Share',
+                  onPressed: onShare,
+                ),
+              ],
+            ),
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder nativeToolbar() => find.byWidgetPredicate(
+      (widget) => widget is UiKitView && widget.viewType == toolbarType,
+    );
+
+    /// The native bar tells where its items are, in its view.
+    Future<void> tellItemFrames(
+      WidgetTester tester, {
+      required List<Rect?> actions,
+      Rect? title,
+    }) async {
+      Object? encode(Rect? frame) => frame == null
+          ? null
+          : {
+              'x': frame.left,
+              'y': frame.top,
+              'width': frame.width,
+              'height': frame.height,
+            };
+      final id = created.lastWhere((view) => view.$2 == toolbarType).$1;
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        '${toolbarType}_$id',
+        const StandardMethodCodec().encodeMethodCall(
+          MethodCall('itemFramesChanged', {
+            'actions': [for (final frame in actions) encode(frame)],
+            'leading': null,
+            'title': encode(title),
+          }),
+        ),
+        (_) {},
+      );
+      await tester.pump();
+    }
+
+    /// A labelled list under the whole screen, over everything but the bars.
+    Widget listUnderBars(Widget child) => Stack(
+      children: [
+        Semantics(
+          container: true,
+          label: 'List',
+          child: const SizedBox.expand(),
+        ),
+        child,
+      ],
+    );
+
+    testWidgets('finds the native bar\'s button, title and back button over '
+        'what is under the bar', (tester) async {
+      usePhone(tester);
+      final semantics = tester.ensureSemantics();
+      var shares = 0;
+      await pumpDetail(tester, onShare: () => shares++);
+      // Laid over the page, under the host's bars, as a list scrolled under
+      // them is.
+      final navigatorState = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      navigatorState.overlay!.insert(
+        OverlayEntry(builder: (_) => listUnderBars(const SizedBox.shrink())),
+      );
+      await tester.pump();
+
+      const share = Rect.fromLTWH(342, 62, 44, 44);
+      const title = Rect.fromLTWH(170, 73, 62, 22);
+      await tellItemFrames(tester, actions: [share], title: title);
+      final origin = tester.getTopLeft(nativeToolbar());
+
+      expect(voiceOverHit(tester, share.shift(origin).center)?.label, 'Share');
+      final header = voiceOverHit(tester, title.shift(origin).center)!;
+      expect(header.label, 'Detail');
+      expect(header.getSemanticsData().flagsCollection.isHeader, isTrue);
+      expect(voiceOverHit(tester, tester.getCenter(backButton))?.label, 'Back');
+
+      tester.semantics.tap(find.semantics.byLabel('Share'));
+      expect(shares, 1);
+      tester.semantics.tap(find.semantics.byLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Detail'), findsNothing);
+      semantics.dispose();
+    }, variant: ios);
+
+    testWidgets('until the native bar tells where they are, its buttons are '
+        'where it lays them out', (tester) async {
+      usePhone(tester);
+      final semantics = tester.ensureSemantics();
+      await pumpDetail(tester, onShare: () {});
+      final origin = tester.getTopLeft(nativeToolbar());
+      final width = tester.getSize(nativeToolbar()).width;
+
+      final share = find.semantics.byLabel('Share').evaluate().single;
+      expect(
+        globalRectOf(tester, share),
+        Rect.fromLTWH(width - 16 - 44, 62, 44, 44).shift(origin),
+      );
+      semantics.dispose();
+    }, variant: ios);
   });
 }

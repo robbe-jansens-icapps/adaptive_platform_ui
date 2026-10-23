@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'
+    show DefaultMaterialLocalizations, MaterialLocalizations;
 import 'package:flutter/scheduler.dart';
 
 import '../chrome/adaptive_chrome.dart';
@@ -902,6 +904,28 @@ class _BackButtonState extends State<_BackButton>
       );
     }
     final glyph = _glyph;
+    final localizations =
+        Localizations.of<MaterialLocalizations>(
+          context,
+          MaterialLocalizations,
+        ) ??
+        const DefaultMaterialLocalizations();
+    // One node, labelled, for the native button and its stand-in: VoiceOver
+    // passes over the native button's platform view, which has no label or
+    // action of its own, to what lies under it.
+    return Semantics(
+      container: true,
+      button: true,
+      label: content.backStyle == AdaptiveBackButtonStyle.close
+          ? localizations.closeButtonTooltip
+          : localizations.backButtonTooltip,
+      onTap: onBack,
+      child: ExcludeSemantics(child: _nativeButton(onBack, glyph)),
+    );
+  }
+
+  Widget _nativeButton(VoidCallback onBack, GlassButtonGlyph? glyph) {
+    final content = widget.content;
     // A circle as tall as the bar, as the system's back button.
     return SizedBox.square(
       dimension: kHostedToolbarHeight,

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'
+    show DefaultMaterialLocalizations, MaterialLocalizations;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../toolbar/duo_top_strip.dart';
@@ -75,6 +77,11 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
   int? _lastTint;
   List<AdaptiveAppBarAction>? _lastActions;
 
+  /// Where the native bar's buttons, its leading button and its title are in
+  /// its view, as it last told, for their semantics over it.
+  final _items =
+      ValueNotifier<({List<Rect?> actions, Rect? leading, Rect? title})?>(null);
+
   bool get _isDark =>
       MediaQuery.platformBrightnessOf(context) == Brightness.dark;
 
@@ -98,6 +105,12 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _syncPropsToNativeIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _items.dispose();
+    super.dispose();
   }
 
   @override
@@ -216,12 +229,34 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
               right: clusterRight,
               top: 0,
               bottom: 0,
-              child: UiKitView(
-                viewType: 'adaptive_platform_ui/ios26_toolbar',
-                creationParams: creationParams,
-                creationParamsCodec: const StandardMessageCodec(),
-                onPlatformViewCreated: _onPlatformViewCreated,
-                hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // VoiceOver passes over a platform view, which has no label
+                  // or action of its own, to what lies under it, such as a
+                  // list scrolled under the bar: the items' own nodes take
+                  // the native bar's place.
+                  ExcludeSemantics(
+                    child: UiKitView(
+                      viewType: 'adaptive_platform_ui/ios26_toolbar',
+                      creationParams: creationParams,
+                      creationParamsCodec: const StandardMessageCodec(),
+                      onPlatformViewCreated: _onPlatformViewCreated,
+                      hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+                    ),
+                  ),
+                  ValueListenableBuilder(
+                    valueListenable: _items,
+                    builder: (context, items, _) => _itemSemantics(
+                      context,
+                      items,
+                      top: safePadding,
+                      clusterLeft: clusterLeft,
+                      clusterRight: clusterRight,
+                      titleInset: titleInset,
+                    ),
+                  ),
+                ],
               ),
             ),
           if (widget.leading != null)
@@ -247,6 +282,154 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
         ],
       ),
     );
+  }
+
+  /// A node for each of the native bar's items where it shows them, or,
+  /// until it told where, where it lays them out: in the native view's
+  /// coordinates. They take no touches: those go on to the native bar.
+  Widget _itemSemantics(
+    BuildContext context,
+    ({List<Rect?> actions, Rect? leading, Rect? title})? items, {
+    required double top,
+    required double clusterLeft,
+    required double clusterRight,
+    required double titleInset,
+  }) {
+    final actions = widget.actions ?? const <AdaptiveAppBarAction>[];
+    final title = widget.titleWidget == null ? widget.title : null;
+    final leadingText = widget.leading == null ? widget.leadingText : null;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        Rect mirrored(Rect rect) => rtl
+            ? Rect.fromLTRB(
+                width - rect.right,
+                rect.top,
+                width - rect.left,
+                rect.bottom,
+              )
+            : rect;
+        final laidOut = _actionRects(actions, width: width, top: top);
+        final localizations =
+            Localizations.of<MaterialLocalizations>(
+              context,
+              MaterialLocalizations,
+            ) ??
+            const DefaultMaterialLocalizations();
+        final leadingRect = leadingText == null
+            ? null
+            : items?.leading ??
+                  mirrored(
+                    Rect.fromLTWH(
+                      _margin + widget.leadingInset,
+                      top,
+                      leadingText.isEmpty
+                          ? _controlSize
+                          : _textButtonWidth(leadingText),
+                      widget.height,
+                    ),
+                  );
+        final titleRect = title == null
+            ? null
+            : items?.title ??
+                  Rect.fromLTRB(
+                    titleInset - clusterLeft,
+                    top,
+                    width + clusterRight - titleInset,
+                    top + widget.height,
+                  );
+        return Stack(
+          children: [
+            if (titleRect != null)
+              Positioned.fromRect(
+                rect: titleRect,
+                child: Semantics(
+                  container: true,
+                  header: true,
+                  label: title,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            if (leadingRect != null)
+              Positioned.fromRect(
+                rect: leadingRect,
+                child: Semantics(
+                  container: true,
+                  button: true,
+                  label: leadingText!.isEmpty
+                      ? localizations.backButtonTooltip
+                      : leadingText,
+                  onTap: widget.onLeadingTap,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            for (var i = 0; i < actions.length; i++)
+              Positioned.fromRect(
+                rect:
+                    (items != null && i < items.actions.length
+                        ? items.actions[i]
+                        : null) ??
+                    mirrored(laidOut[i]),
+                child: Semantics(
+                  container: true,
+                  button: true,
+                  label: actions[i].effectiveLabel,
+                  onTap: () => _activate(i),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Where the bar lays [actions] out, about: in from its trailing end, as
+  /// wide as [_titleInset] reckons them.
+  List<Rect> _actionRects(
+    List<AdaptiveAppBarAction> actions, {
+    required double width,
+    required double top,
+  }) {
+    final rects = List<Rect>.filled(actions.length, Rect.zero);
+    var right = width - _margin;
+    for (var i = actions.length - 1; i >= 0; i--) {
+      if (i < actions.length - 1 &&
+          actions[i].spacerAfter == ToolbarSpacerType.fixed) {
+        right -= 12;
+      }
+      final actionWidth = _actionWidth(actions[i]);
+      rects[i] = Rect.fromLTWH(
+        right - actionWidth,
+        top,
+        actionWidth,
+        widget.height,
+      );
+      right -= actionWidth;
+    }
+    return rects;
+  }
+
+  /// Taps action [index] as a finger would: one with a menu opens it, the
+  /// native one, or Flutter's where the native bar cannot.
+  Future<void> _activate(int index) async {
+    final action = widget.actions![index];
+    if (!action.hasMenu) {
+      widget.onActionTap?.call(index);
+      return;
+    }
+    bool? opened;
+    try {
+      opened = await _channel?.invokeMethod<bool>('activateAction', {
+        'index': index,
+      });
+    } on MissingPluginException {
+      opened = false;
+    } on PlatformException {
+      opened = false;
+    }
+    if (opened != true && mounted) action.press(context);
   }
 
   static const _margin = 16.0;
@@ -276,13 +459,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
     final actions = widget.actions ?? const <AdaptiveAppBarAction>[];
     var actionsWidth = 0.0;
     for (final action in actions) {
-      final title = action.title;
-      final iconOnly =
-          action.iosSymbol != null ||
-          action.icon != null ||
-          action.iconWidget != null ||
-          title == null;
-      actionsWidth += iconOnly ? _controlSize : _textButtonWidth(title);
+      actionsWidth += _actionWidth(action);
       if (action.spacerAfter != ToolbarSpacerType.none) actionsWidth += 12;
     }
     final trailing =
@@ -291,6 +468,17 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
   }
 
   static const _controlSize = 44.0;
+
+  /// About as wide as the system draws [action]'s bar button.
+  static double _actionWidth(AdaptiveAppBarAction action) {
+    final title = action.title;
+    final iconOnly =
+        action.iosSymbol != null ||
+        action.icon != null ||
+        action.iconWidget != null ||
+        title == null;
+    return iconOnly ? _controlSize : _textButtonWidth(title);
+  }
 
   /// About as wide as the system draws a bar button with [text].
   static double _textButtonWidth(String text) {
@@ -308,8 +496,13 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
   }
 
   void _onPlatformViewCreated(int id) {
-    _channel = MethodChannel('adaptive_platform_ui/ios26_toolbar_$id');
-    _channel!.setMethodCallHandler(_handleMethodCall);
+    final channel = MethodChannel('adaptive_platform_ui/ios26_toolbar_$id');
+    _channel = channel;
+    channel.setMethodCallHandler(_handleMethodCall);
+    // Told of every change after this, but maybe laid out before it listened.
+    channel.invokeMethod<Object?>('getItemFrames').then((frames) {
+      if (mounted && identical(channel, _channel)) _onItemFrames(frames);
+    }, onError: (Object _) {});
     _lastIsDark = _isDark;
     _lastTint = widget.tintColor != null
         ? _colorToARGB(widget.tintColor!)
@@ -317,8 +510,36 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
     _lastActions = widget.actions != null ? List.of(widget.actions!) : null;
   }
 
+  void _onItemFrames(Object? frames) {
+    if (frames is! Map) return;
+    final actions = frames['actions'];
+    _items.value = (
+      actions: actions is List
+          ? [for (final frame in actions) _rectOf(frame)]
+          : const [],
+      leading: _rectOf(frames['leading']),
+      title: _rectOf(frames['title']),
+    );
+  }
+
+  static Rect? _rectOf(Object? frame) {
+    if (frame is! Map) return null;
+    final x = frame['x'], y = frame['y'];
+    final width = frame['width'], height = frame['height'];
+    if (x is! num || y is! num || width is! num || height is! num) return null;
+    return Rect.fromLTWH(
+      x.toDouble(),
+      y.toDouble(),
+      width.toDouble(),
+      height.toDouble(),
+    );
+  }
+
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
+      case 'itemFramesChanged':
+        _onItemFrames(call.arguments);
+        break;
       case 'onLeadingTapped':
         widget.onLeadingTap?.call();
         break;

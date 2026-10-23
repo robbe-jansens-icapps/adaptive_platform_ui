@@ -32,11 +32,13 @@ class iOS26ToolbarFactory: NSObject, FlutterPlatformViewFactory {
 class ToolbarContainerView: UIView {
     var gradientLayer: CAGradientLayer?
     var onTraitChange: (() -> Void)?
+    var onLayout: (() -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         // Extend gradient below the container bounds for smooth fade
         gradientLayer?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height + 30)
+        if window != nil { onLayout?() }
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -109,10 +111,80 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         channel.setMethodCallHandler { [weak self] call, result in
             self?.handleMethodCall(call, result: result)
         }
+        containerView.onLayout = { [weak self] in
+            self?.reportItemFramesIfChanged()
+        }
     }
 
     func view() -> UIView {
         return containerView
+    }
+
+    /// Where the bar's items are, as last told to Flutter.
+    private var lastItemFrames: NSDictionary?
+
+    /// How many actions Flutter gave the bar.
+    private var actionCount = 0
+
+    /// The view UIKit shows [label] in, a button's rather than the label in
+    /// it unless [inLabel]: UIKit has no API for the views of bar items. Not
+    /// one of [taken].
+    private func view(labelled label: String, inLabel: Bool = false, taken: [UIView]) -> UIView? {
+        func search(_ view: UIView) -> UIView? {
+            for subview in view.subviews {
+                if subview.accessibilityLabel == label, inLabel || !(subview is UILabel),
+                   !taken.contains(where: { $0 === subview }) {
+                    return subview
+                }
+                if let found = search(subview) { return found }
+            }
+            return nil
+        }
+        return search(navigationBar)
+    }
+
+    /// The views of the bar's buttons by action index, of its leading button
+    /// and of its title.
+    private func itemViews() -> (actions: [Int: UIView], leading: UIView?, title: UIView?) {
+        navigationBar.layoutIfNeeded()
+        var taken: [UIView] = []
+        var actions: [Int: UIView] = [:]
+        var leading: UIView?
+        for item in (navigationItem.leftBarButtonItems ?? []) + (navigationItem.rightBarButtonItems ?? []) {
+            guard let label = item.accessibilityLabel ?? item.title,
+                  let found = view(labelled: label, taken: taken) else { continue }
+            taken.append(found)
+            if item.tag == Self.leadingTag {
+                leading = found
+            } else {
+                actions[item.tag] = found
+            }
+        }
+        let title = navigationItem.title.flatMap { view(labelled: $0, inLabel: true, taken: taken) }
+        return (actions, leading, title)
+    }
+
+    /// Where the bar's items are, in the view's coordinates: Flutter lays
+    /// their semantics over them, for VoiceOver.
+    private func itemFrames() -> NSDictionary {
+        let views = itemViews()
+        func frame(_ view: UIView?) -> Any {
+            guard let view = view else { return NSNull() }
+            let rect = view.convert(view.bounds, to: containerView)
+            return ["x": rect.minX, "y": rect.minY, "width": rect.width, "height": rect.height]
+        }
+        return [
+            "actions": (0..<actionCount).map { frame(views.actions[$0]) },
+            "leading": frame(views.leading),
+            "title": frame(views.title),
+        ]
+    }
+
+    private func reportItemFramesIfChanged() {
+        let frames = itemFrames()
+        guard frames != lastItemFrames else { return }
+        lastItemFrames = frames
+        channel.invokeMethod("itemFramesChanged", arguments: frames)
     }
 
     private func setupGradient() {
@@ -205,6 +277,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
                     action: #selector(leadingTapped)
                 )
             }
+            leadingButton.tag = Self.leadingTag
             leadingItems.append(leadingButton)
         }
 
@@ -212,6 +285,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         var leftGroup: [UIBarButtonItem] = []
         var rightGroup: [UIBarButtonItem] = []
 
+        actionCount = (params["actions"] as? [[String: Any]])?.count ?? 0
         if let actions = params["actions"] as? [[String: Any]] {
             // First pass: check if any flexible spacer exists
             let hasFlexible = actions.contains { ($0["spacerAfter"] as? Int) == 2 }
@@ -348,6 +422,9 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         )
     }
 
+    /// The tag of the leading button: the actions' are their indices.
+    private static let leadingTag = -1
+
     @objc private func leadingTapped() {
         channel.invokeMethod("onLeadingTapped", arguments: nil)
     }
@@ -361,6 +438,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         case "updateTitle":
             if let args = call.arguments as? [String: Any], let title = args["title"] as? String {
                 navigationItem.title = title
+                containerView.setNeedsLayout()
                 result(nil)
             } else {
                 result(FlutterMethodNotImplemented)
@@ -378,6 +456,7 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
             if let args = call.arguments as? [String: Any] {
                 perActionTintTags.removeAll()
                 configureItems(args)
+                containerView.setNeedsLayout()
                 // Re-apply global tint to items without per-action tint
                 if let globalTint = navigationBar.tintColor {
                     for item in (navigationItem.leftBarButtonItems ?? []) + (navigationItem.rightBarButtonItems ?? []) {
@@ -412,6 +491,19 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
                 }
             }
             result(nil)
+        case "getItemFrames":
+            let frames = itemFrames()
+            lastItemFrames = frames
+            result(frames)
+        case "activateAction":
+            // As a finger would: a button with a menu opens it.
+            guard let args = call.arguments as? [String: Any],
+                  let index = args["index"] as? Int,
+                  let found = itemViews().actions[index] else {
+                result(false)
+                return
+            }
+            result(found.accessibilityActivate())
         default:
             result(FlutterMethodNotImplemented)
         }
