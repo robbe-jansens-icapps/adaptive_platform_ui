@@ -38,6 +38,7 @@ class AdaptiveAppBar {
     this.appBar,
     this.onBack,
     this.backButtonStyle = AdaptiveBackButtonStyle.back,
+    this.backButtonIdentifier,
     this.automaticallyImplyLeading = true,
     this.showsBackdrop = true,
     this.hidesOnScroll = true,
@@ -117,6 +118,11 @@ class AdaptiveAppBar {
   /// Whether the back button of the fixed toolbar is a chevron or a cross.
   final AdaptiveBackButtonStyle backButtonStyle;
 
+  /// An identifier for UI tests on the back button of the toolbar host's
+  /// native toolbar ([Semantics.identifier]: the accessibility identifier on
+  /// iOS), for the native button and the stand-in that shows while pages move.
+  final String? backButtonIdentifier;
+
   /// Whether the fixed toolbar adds a back button by itself when the page can
   /// pop. Turn it off for pages that show one only through [onBack].
   final bool automaticallyImplyLeading;
@@ -164,6 +170,7 @@ class AdaptiveAppBar {
     PreferredSizeWidget? appBar,
     VoidCallback? onBack,
     AdaptiveBackButtonStyle? backButtonStyle,
+    String? backButtonIdentifier,
     bool? automaticallyImplyLeading,
     bool? showsBackdrop,
     bool? hidesOnScroll,
@@ -185,6 +192,7 @@ class AdaptiveAppBar {
       appBar: appBar ?? this.appBar,
       onBack: onBack ?? this.onBack,
       backButtonStyle: backButtonStyle ?? this.backButtonStyle,
+      backButtonIdentifier: backButtonIdentifier ?? this.backButtonIdentifier,
       automaticallyImplyLeading:
           automaticallyImplyLeading ?? this.automaticallyImplyLeading,
       showsBackdrop: showsBackdrop ?? this.showsBackdrop,

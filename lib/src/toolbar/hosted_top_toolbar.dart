@@ -42,6 +42,7 @@ class TopToolbarContent {
     this.navigator,
     this.onBack,
     this.backStyle = AdaptiveBackButtonStyle.back,
+    this.backIdentifier,
     this.backdrop = true,
     this.backdropColor,
     this.subtitle,
@@ -75,6 +76,7 @@ class TopToolbarContent {
       navigator: entry.navigator,
       onBack: appBar.onBack,
       backStyle: appBar.backButtonStyle,
+      backIdentifier: appBar.backButtonIdentifier,
       backdrop: appBar.showsBackdrop,
       backdropColor: appBar.backdropColor,
       subtitle: appBar.subtitle,
@@ -105,6 +107,9 @@ class TopToolbarContent {
   /// Performed by the back button instead of popping [navigator].
   final VoidCallback? onBack;
   final AdaptiveBackButtonStyle backStyle;
+
+  /// [AdaptiveAppBar.backButtonIdentifier].
+  final String? backIdentifier;
 
   /// Whether the page wants the bar's backdrop behind its controls.
   final bool backdrop;
@@ -916,6 +921,7 @@ class _BackButtonState extends State<_BackButton>
     return Semantics(
       container: true,
       button: true,
+      identifier: content.backIdentifier,
       label: content.backStyle == AdaptiveBackButtonStyle.close
           ? localizations.closeButtonTooltip
           : localizations.backButtonTooltip,

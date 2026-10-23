@@ -44,6 +44,7 @@ class AdaptiveNavigationDestination {
     this.badgeColor,
     this.badgeTextColor,
     this.addSpacerAfter = false,
+    this.identifier,
   });
 
   /// Icon to display.
@@ -126,6 +127,11 @@ class AdaptiveNavigationDestination {
   /// Useful for creating grouped tabs (e.g., left group and right group)
   /// Only applies to iOS 26+ native tab bar
   final bool addSpacerAfter;
+
+  /// An identifier for UI tests on the tab's node ([Semantics.identifier]:
+  /// the accessibility identifier on iOS, the resource id on Android), on the
+  /// native iOS 26 tab bar and the Material navigation bar.
+  final String? identifier;
 }
 
 /// Tab bar minimize behavior for iOS 26+
@@ -1385,11 +1391,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
               selectedIconWidget = Badge(child: selectedIconWidget);
             }
 
-            return NavigationDestination(
+            final destination = NavigationDestination(
               icon: iconWidget,
               selectedIcon: selectedIconWidget,
               label: dest.label,
             );
+            return dest.identifier == null
+                ? destination
+                : Semantics(
+                    container: true,
+                    identifier: dest.identifier,
+                    child: destination,
+                  );
           }).toList(),
         );
       }

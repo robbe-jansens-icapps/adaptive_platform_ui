@@ -509,6 +509,7 @@ void main() {
     Future<void> pumpDetail(
       WidgetTester tester, {
       required VoidCallback onShare,
+      String? backIdentifier,
     }) async {
       final nav = GlobalKey<NavigatorState>();
       await tester.pumpWidget(hostedApp(navigatorKey: nav, home: page('Home')));
@@ -519,6 +520,7 @@ void main() {
             appBar: AdaptiveAppBar(
               title: 'Detail',
               useNativeToolbar: true,
+              backButtonIdentifier: backIdentifier,
               actions: [
                 AdaptiveAppBarAction(
                   iosSymbol: 'square.and.arrow.up',
@@ -611,6 +613,17 @@ void main() {
       tester.semantics.tap(find.semantics.byLabel('Back'));
       await tester.pumpAndSettle();
       expect(find.text('Detail'), findsNothing);
+      semantics.dispose();
+    }, variant: ios);
+
+    testWidgets('the back button has the page\'s identifier on its node, for '
+        'UI tests', (tester) async {
+      usePhone(tester);
+      final semantics = tester.ensureSemantics();
+      await pumpDetail(tester, onShare: () {}, backIdentifier: 'back_button');
+
+      final back = find.semantics.byLabel('Back').evaluate().single;
+      expect(back.getSemanticsData().identifier, 'back_button');
       semantics.dispose();
     }, variant: ios);
 

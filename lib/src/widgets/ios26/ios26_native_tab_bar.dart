@@ -695,6 +695,7 @@ class _TabSemantics extends StatelessWidget {
                   container: true,
                   button: true,
                   selected: i == selectedIndex,
+                  identifier: destinations[i].identifier,
                   label: destinations[i].label,
                   hint: localizations.tabSemanticsLabel(
                     tabIndex: i + 1,

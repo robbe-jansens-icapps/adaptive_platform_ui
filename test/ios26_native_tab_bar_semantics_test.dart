@@ -311,4 +311,31 @@ void main() {
     expect(tabs, findsNWidgets(2));
     semantics.dispose();
   }, variant: ios);
+
+  testWidgets('a tab with an identifier has it on its node, for UI tests', (
+    tester,
+  ) async {
+    usePhone(tester);
+    final semantics = tester.ensureSemantics();
+    await pumpOverMap(
+      tester,
+      IOS26NativeTabBar(
+        destinations: const [
+          AdaptiveNavigationDestination(
+            icon: 'map',
+            label: 'Map',
+            identifier: 'tab_map',
+          ),
+          AdaptiveNavigationDestination(icon: 'person', label: 'Account'),
+        ],
+        selectedIndex: 0,
+        onTap: (_) {},
+        height: _barHeight,
+      ),
+    );
+
+    expect(tab('Map').getSemanticsData().identifier, 'tab_map');
+    expect(tab('Account').getSemanticsData().identifier, isEmpty);
+    semantics.dispose();
+  }, variant: ios);
 }
