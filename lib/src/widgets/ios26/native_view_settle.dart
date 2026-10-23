@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../toolbar/toolbar_blend.dart';
+import '../../utils/bar_frost.dart';
 
 /// Follows whether the page a native view is on holds still in front
 /// ([settled]), for the view to be on screen only then.
@@ -14,6 +15,12 @@ import '../../toolbar/toolbar_blend.dart';
 /// showed within the clip around that view (a sheet's rounded shape), and the
 /// rest of the screen stayed as it was. In between, a Flutter stand-in takes
 /// its place.
+///
+/// Scrolled under a bar's frost ([BarFrost]), the view is off screen too, its
+/// stand-in blurred with the rest of the content there: iOS blurs a native
+/// view only within its own frame, a box with hard edges in the bar. It goes
+/// with the frame the scroll moves it in, and comes back as it leaves the
+/// frost.
 ///
 /// Call [followRoute] from `didChangeDependencies`, and react to changes in
 /// [didChangeSettled].
@@ -35,6 +42,18 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   /// What fades the view as a whole, from a [NativeViewSettleScope] around
   /// it: it holds still only while that is fully in.
   ValueListenable<bool>? _scope;
+
+  /// The scroll views the view is in, innermost first, which move it under a
+  /// bar's frost and out again.
+  List<ScrollPosition> _positions = const [];
+
+  /// Where the view was in its view when last looked at, and how far each of
+  /// [_positions] had scrolled then.
+  Rect? _rect;
+  final Map<ScrollPosition, double> _pixels = {};
+
+  bool _underFrost = false;
+  bool _frostCheckScheduled = false;
 
   bool _settled = true;
   bool _firstSettle = true;
@@ -63,6 +82,7 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
       _routeTransition = transition?..addListener(_onRouteTransition);
     }
     _listenTo(route?.animation, route?.secondaryAnimation);
+    _followScroll();
     // A build follows.
     _updateSettled(rebuild: false);
   }
@@ -71,7 +91,98 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   void dispose() {
     _routeTransition?.removeListener(_onRouteTransition);
     _listenTo(null, null);
+    for (final position in _positions) {
+      position.removeListener(_onScrolled);
+    }
     super.dispose();
+  }
+
+  void _followScroll() {
+    final positions = <ScrollPosition>[];
+    for (
+      ScrollableState? scrollable = Scrollable.maybeOf(context);
+      scrollable != null;
+      scrollable = scrollable.context.findAncestorStateOfType<ScrollableState>()
+    ) {
+      positions.add(scrollable.position);
+    }
+    if (listEquals(positions, _positions)) return;
+    for (final position in _positions) {
+      position.removeListener(_onScrolled);
+    }
+    _positions = positions;
+    for (final position in positions) {
+      position.addListener(_onScrolled);
+    }
+    _rect = null;
+    _pixels.clear();
+    _scheduleFrostCheck();
+  }
+
+  // Where the scroll moves the view is known before the frame lays it out
+  // there, so the stand-in is in its place in that same frame. A scroll while
+  // the page is laid out, as a list that springs back into place, is looked
+  // at once the frame is done.
+  void _onScrolled() {
+    if (SchedulerBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
+      _setUnderFrost(_isUnderFrost(_movedRect()));
+    }
+    _scheduleFrostCheck();
+  }
+
+  void _scheduleFrostCheck() {
+    if (_frostCheckScheduled) return;
+    _frostCheckScheduled = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        _frostCheckScheduled = false;
+        if (mounted) _setUnderFrost(_isUnderFrost(_measure()));
+      })
+      ..ensureVisualUpdate();
+  }
+
+  Rect? _measure() {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return _rect = null;
+    _pixels.clear();
+    for (final position in _positions) {
+      if (position.hasPixels) _pixels[position] = position.pixels;
+    }
+    return _rect = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
+  }
+
+  /// Where the view is once laid out with the scroll offsets as they are now.
+  Rect? _movedRect() {
+    final rect = _rect;
+    if (rect == null) return null;
+    var shift = Offset.zero;
+    for (final position in _positions) {
+      final then = _pixels[position];
+      if (then == null || !position.hasPixels) continue;
+      final moved = position.pixels - then;
+      shift += switch (position.axisDirection) {
+        AxisDirection.down => Offset(0, -moved),
+        AxisDirection.up => Offset(0, moved),
+        AxisDirection.right => Offset(-moved, 0),
+        AxisDirection.left => Offset(moved, 0),
+      };
+    }
+    return rect.shift(shift);
+  }
+
+  bool _isUnderFrost(Rect? rect) {
+    final box = context.findRenderObject();
+    return rect != null && box is RenderBox && BarFrost.covers(box, rect);
+  }
+
+  void _setUnderFrost(bool underFrost) {
+    if (underFrost == _underFrost) return;
+    _underFrost = underFrost;
+    _updateSettled();
   }
 
   void _listenTo(Animation<double>? animation, Animation<double>? secondary) {
@@ -85,7 +196,11 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
     _secondaryAnimation = secondary?..addStatusListener(_onRouteStatus);
   }
 
-  void _onRouteStatus(AnimationStatus _) => _updateSettled();
+  void _onRouteStatus(AnimationStatus _) {
+    _updateSettled();
+    // The page's bar may have come or gone over the view.
+    if (_positions.isNotEmpty) _scheduleFrostCheck();
+  }
 
   // May come in the middle of a build (a page registering with the toolbar):
   // looked at once it is done.
@@ -114,7 +229,8 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
         (route == null || !route.offstage) &&
         !(_routeTransition?.value ?? false) &&
         // Faded as a whole, as the tab accessory over the native tab bar is.
-        (_scope?.value ?? true);
+        (_scope?.value ?? true) &&
+        !_underFrost;
     if (settled == _settled && !_firstSettle) return;
     _firstSettle = false;
     _settled = settled;

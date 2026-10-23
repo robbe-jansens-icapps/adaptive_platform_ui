@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../utils/bar_frost.dart';
 import '../utils/outside_layout.dart';
 import '../utils/size_reporter.dart';
 import 'adaptive_chrome.dart';
@@ -514,7 +515,8 @@ class _ScrollEdgeEffectState extends State<_ScrollEdgeEffect> {
 ///
 /// Custom chrome draws it unless the app brings its own
 /// ([AdaptiveChrome.barBackgroundBuilder]); the native toolbar and the iPhone
-/// Duo's title band draw it too.
+/// Duo's title band draw it too. Native views scrolled under it leave it to
+/// their Flutter stand-ins, which it blurs ([BarFrost]).
 class AdaptiveBarBackdrop extends StatelessWidget {
   const AdaptiveBarBackdrop({
     super.key,
@@ -569,14 +571,16 @@ class AdaptiveBarBackdrop extends StatelessWidget {
     );
     // A solid bar has nothing to show through it.
     if (tint >= 1) return surface;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: blurSigma,
-          sigmaY: blurSigma,
-          tileMode: TileMode.mirror,
+    return BarFrost(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: blurSigma,
+            sigmaY: blurSigma,
+            tileMode: TileMode.mirror,
+          ),
+          child: surface,
         ),
-        child: surface,
       ),
     );
   }
