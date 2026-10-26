@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -44,6 +45,7 @@ class IOS26GlassSurface extends StatefulWidget {
     this.fill,
     this.clear = false,
     this.interactive = false,
+    this.clipBehavior = Clip.none,
     this.child,
   });
 
@@ -65,6 +67,12 @@ class IOS26GlassSurface extends StatefulWidget {
   /// Lets the glass respond to touches with the system's highlight. The
   /// touches still go to [child].
   final bool interactive;
+
+  /// Clips [child] to the glass's shape, concentric corners included, so
+  /// content that runs on to an edge, such as a list scrolled to the bottom
+  /// of a sheet, is cut off where the glass ends. Only [child] is clipped: a
+  /// clip around the glass would break it.
+  final Clip clipBehavior;
 
   final Widget? child;
 
@@ -194,6 +202,20 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
     channel.invokeMethod<void>('update', params);
   }
 
+  Widget? get _content {
+    final child = widget.child;
+    if (child == null) return null;
+    return _ShapeClip(
+      corners: widget.corners,
+      cornerRadius: widget.cornerRadius,
+      window: widget.corners == GlassSurfaceCorners.concentric
+          ? MediaQuery.sizeOf(context)
+          : Size.zero,
+      clipBehavior: widget.clipBehavior,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_hasUIKit) {
@@ -202,7 +224,7 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(child: _Frosted(widget: widget)),
-          ?widget.child,
+          ?_content,
         ],
       );
     }
@@ -234,7 +256,7 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
               child: _StandIn(widget: widget),
             ),
           ),
-        ?widget.child,
+        ?_content,
       ],
     );
   }
@@ -395,6 +417,112 @@ class _RenderConcentricShape extends RenderBox {
     final painter = _decorationFor(radius).createBoxPainter(markNeedsPaint);
     painter.paint(context.canvas, offset, ImageConfiguration(size: size));
     painter.dispose();
+  }
+}
+
+/// Clips the content of an [IOS26GlassSurface] to the surface's shape, with
+/// concentric corners where the surface is on the screen when painted, as
+/// [_ConcentricShape] draws them.
+class _ShapeClip extends SingleChildRenderObjectWidget {
+  const _ShapeClip({
+    required this.corners,
+    required this.cornerRadius,
+    required this.window,
+    required this.clipBehavior,
+    super.child,
+  });
+
+  final GlassSurfaceCorners corners;
+  final double cornerRadius;
+  final Size window;
+  final Clip clipBehavior;
+
+  @override
+  _RenderShapeClip createRenderObject(BuildContext context) =>
+      _RenderShapeClip(corners, cornerRadius, window, clipBehavior);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderShapeClip renderObject) {
+    renderObject
+      ..corners = corners
+      ..cornerRadius = cornerRadius
+      ..window = window
+      ..clipBehavior = clipBehavior;
+  }
+}
+
+class _RenderShapeClip extends RenderProxyBox {
+  _RenderShapeClip(
+    this._corners,
+    this._cornerRadius,
+    this._window,
+    this._clipBehavior,
+  );
+
+  GlassSurfaceCorners _corners;
+  set corners(GlassSurfaceCorners value) {
+    if (value == _corners) return;
+    _corners = value;
+    markNeedsPaint();
+  }
+
+  double _cornerRadius;
+  set cornerRadius(double value) {
+    if (value == _cornerRadius) return;
+    _cornerRadius = value;
+    markNeedsPaint();
+  }
+
+  Size _window;
+  set window(Size value) {
+    if (value == _window) return;
+    _window = value;
+    markNeedsPaint();
+  }
+
+  Clip _clipBehavior;
+  set clipBehavior(Clip value) {
+    if (value == _clipBehavior) return;
+    _clipBehavior = value;
+    markNeedsPaint();
+  }
+
+  final LayerHandle<ClipRSuperellipseLayer> _clipLayer =
+      LayerHandle<ClipRSuperellipseLayer>();
+
+  BorderRadius get _radius => switch (_corners) {
+    GlassSurfaceCorners.fixed => BorderRadius.circular(_cornerRadius),
+    GlassSurfaceCorners.capsule => BorderRadius.circular(size.shortestSide / 2),
+    GlassSurfaceCorners.concentric => concentricCornersAt(
+      localToGlobal(Offset.zero) & size,
+      window: _window,
+      minimum: _cornerRadius,
+    ),
+  };
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null || _clipBehavior == Clip.none) {
+      _clipLayer.layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    final bounds = Offset.zero & size;
+    _clipLayer.layer = context.pushClipRSuperellipse(
+      needsCompositing,
+      offset,
+      bounds,
+      _radius.toRSuperellipse(bounds),
+      super.paint,
+      clipBehavior: _clipBehavior,
+      oldLayer: _clipLayer.layer,
+    );
+  }
+
+  @override
+  void dispose() {
+    _clipLayer.layer = null;
+    super.dispose();
   }
 }
 

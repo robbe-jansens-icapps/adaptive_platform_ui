@@ -138,4 +138,94 @@ void main() {
 
     expect(created.single['fill'], 0x80FFFFFF);
   });
+
+  group('content clip', () {
+    const content = Key('content');
+
+    // A sheet floating 8 points from the bottom and sides of a 400 by 800
+    // display with 62 point corners.
+    Widget sheet({Clip clipBehavior = Clip.antiAlias}) => MaterialApp(
+      home: Stack(
+        children: [
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            height: 300,
+            child: IOS26GlassSurface(
+              cornerRadius: 34,
+              corners: GlassSurfaceCorners.concentric,
+              clipBehavior: clipBehavior,
+              child: const SizedBox.expand(key: content),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    void usePhone(WidgetTester tester) {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      PlatformInfo.debugDisplayCornerRadiusOverride = 62;
+      addTearDown(() => PlatformInfo.debugDisplayCornerRadiusOverride = null);
+      IOS26GlassSurface.debugHasUIKitOverride = true;
+      addTearDown(() => IOS26GlassSurface.debugHasUIKitOverride = null);
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (call) async => null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          null,
+        ),
+      );
+    }
+
+    RenderObject clipOf(WidgetTester tester) =>
+        tester.renderObject(find.byKey(content)).parent!;
+
+    testWidgets('cuts the content off in the glass\'s concentric shape', (
+      tester,
+    ) async {
+      usePhone(tester);
+      await tester.pumpWidget(sheet());
+
+      const bottom = Radius.circular(62 - 8);
+      expect(
+        clipOf(tester),
+        paints..clipRSuperellipse(
+          rsuperellipse: const BorderRadius.only(
+            topLeft: Radius.circular(34),
+            topRight: Radius.circular(34),
+            bottomLeft: bottom,
+            bottomRight: bottom,
+          ).toRSuperellipse(Offset.zero & const Size(384, 300)),
+        ),
+      );
+    });
+
+    testWidgets('leaves the content as it is unless asked', (tester) async {
+      usePhone(tester);
+      await tester.pumpWidget(sheet(clipBehavior: Clip.none));
+
+      expect(clipOf(tester), isNot(paints..clipRSuperellipse()));
+    });
+
+    testWidgets('never clips the glass itself', (tester) async {
+      usePhone(tester);
+      await tester.pumpWidget(sheet());
+      await tester.pump();
+
+      final surface = tester.renderObject(find.byType(IOS26GlassSurface));
+      final clip = clipOf(tester);
+      RenderObject? ancestor = tester.renderObject(find.byType(UiKitView));
+      while (ancestor != null && ancestor != surface) {
+        expect(ancestor, isNot(same(clip)));
+        ancestor = ancestor.parent;
+      }
+      expect(ancestor, same(surface));
+    });
+  });
 }
