@@ -63,11 +63,10 @@ class IOS26DatePicker extends StatefulWidget {
 
   final IOS26DatePickerController? controller;
 
-  /// While true, a Flutter stand-in takes the native picker's place and the
-  /// native picker is not made yet: UIKit takes a while to make it, which
-  /// stalls an animation running meanwhile, such as the sheet it comes up in.
-  /// Once false, it is made and fades in over the stand-in: the system's
-  /// wheels over Flutter's, the calendar into its room.
+  /// While true, the native picker is not made yet and its room stays empty:
+  /// UIKit takes a few frames to make one, which freeze an animation running
+  /// meanwhile, such as the sheet it comes up in. Once false, it is made and
+  /// fades in.
   final bool deferNative;
 
   /// Takes the native path (or not) whatever the platform, for tests.
@@ -80,6 +79,10 @@ class IOS26DatePicker extends StatefulWidget {
 
 class _IOS26DatePickerState extends State<IOS26DatePicker> {
   static const _fade = Duration(milliseconds: 150);
+
+  /// A first picker of its kind that needs another height than the one it
+  /// got grows or shrinks to it rather than jumping.
+  static const _resize = Duration(milliseconds: 200);
 
   /// How long the native picker may take to say its height before it shows
   /// all the same.
@@ -95,10 +98,9 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   double? _height;
 
   /// Whether the native picker is made, and whether it shows, drawn at its
-  /// height: until then the stand-in does.
+  /// height.
   bool _made = false;
   bool _shown = false;
-  bool _standInGone = false;
   Timer? _showAtLatest;
 
   static bool get _hasUIKit =>
@@ -185,38 +187,40 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
       });
   }
 
-  /// The wheels as Flutter draws them, where there is no UIKit, and in place
-  /// of the system's wheels until they show.
-  Widget _cupertinoWheels() => SizedBox(
-    height: 216,
-    child: CupertinoDatePicker(
-      initialDateTime: widget.initialDate,
-      minimumDate: widget.firstDate,
-      maximumDate: widget.lastDate,
-      mode: widget.mode,
-      minuteInterval: widget.minuteInterval,
-      use24hFormat: widget.use24HourFormat,
-      onDateTimeChanged: widget.onChanged,
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
-    if (!_hasUIKit) return _cupertinoWheels();
+    if (!_hasUIKit) {
+      return SizedBox(
+        height: 216,
+        child: CupertinoDatePicker(
+          initialDateTime: widget.initialDate,
+          minimumDate: widget.firstDate,
+          maximumDate: widget.lastDate,
+          mode: widget.mode,
+          minuteInterval: widget.minuteInterval,
+          use24hFormat: widget.use24HourFormat,
+          onDateTimeChanged: widget.onChanged,
+        ),
+      );
+    }
     _made = _made || !widget.deferNative;
     final tint = widget.tint;
     final firstDate = widget.firstDate;
     final lastDate = widget.lastDate;
     final inline = widget.style == IOS26DatePickerStyle.inline;
-    return SizedBox(
-      height:
-          _height ?? _knownHeights[_heightKey(context)] ?? (inline ? 360 : 216),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_made)
-            AnimatedOpacity(
-              key: const ValueKey('native'),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(
+        end:
+            _height ??
+            _knownHeights[_heightKey(context)] ??
+            (inline ? 360 : 216),
+      ),
+      duration: _resize,
+      curve: Curves.easeOutCubic,
+      builder: (context, height, child) =>
+          SizedBox(height: height, child: child),
+      child: _made
+          ? AnimatedOpacity(
               // Faint rather than out until it shows: iOS lays it out, and
               // it says its height, only once it is on screen.
               opacity: _shown ? 1 : 0.01,
@@ -247,19 +251,8 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
                   ),
                 },
               ),
-            ),
-          if (!_standInGone)
-            IgnorePointer(
-              key: const ValueKey('stand-in'),
-              child: AnimatedOpacity(
-                opacity: _shown ? 0 : 1,
-                duration: _fade,
-                onEnd: () => setState(() => _standInGone = true),
-                child: inline ? const SizedBox.shrink() : _cupertinoWheels(),
-              ),
-            ),
-        ],
-      ),
+            )
+          : null,
     );
   }
 }

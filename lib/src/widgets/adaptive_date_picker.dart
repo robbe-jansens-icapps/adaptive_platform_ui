@@ -294,12 +294,10 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
 
   final _picker = IOS26DatePickerController();
 
-  /// How far in the sheet is when the native picker is made. Making it takes
-  /// UIKit a while, and a sheet that slid up meanwhile skipped most of its
-  /// frames; what is left of the spring by then is a creep of a few points,
-  /// which the stall does not show in.
-  static const _inEnough = 0.97;
-
+  /// The sheet's way in. The native picker is made once the sheet is in and
+  /// holds still: UIKit takes a few frames to make one, every time, and a
+  /// sheet still moving meanwhile, even the last points of its spring, froze
+  /// and then jumped.
   Animation<double>? _entrance;
   bool _entered = false;
 
@@ -308,29 +306,24 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
     super.didChangeDependencies();
     final entrance = ModalRoute.of(context)?.animation;
     if (identical(entrance, _entrance)) return;
-    _entrance?.removeListener(_onEntrance);
+    _entrance?.removeStatusListener(_onEntrance);
     _entrance = entrance;
-    if (entrance == null || _isIn(entrance)) {
+    if (entrance == null || entrance.isCompleted) {
       _entered = true;
     } else if (!_entered) {
-      entrance.addListener(_onEntrance);
+      entrance.addStatusListener(_onEntrance);
     }
   }
 
   @override
   void dispose() {
-    _entrance?.removeListener(_onEntrance);
+    _entrance?.removeStatusListener(_onEntrance);
     super.dispose();
   }
 
-  static bool _isIn(Animation<double> entrance) =>
-      entrance.isCompleted ||
-      entrance.status == AnimationStatus.forward && entrance.value >= _inEnough;
-
-  void _onEntrance() {
-    final entrance = _entrance!;
-    if (!_isIn(entrance)) return;
-    entrance.removeListener(_onEntrance);
+  void _onEntrance(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _entrance?.removeStatusListener(_onEntrance);
     setState(() => _entered = true);
   }
 
