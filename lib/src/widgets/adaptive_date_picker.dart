@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
@@ -38,8 +40,12 @@ class AdaptiveDatePicker {
     final effectiveLastDate = lastDate ?? DateTime(2100);
 
     if (PlatformInfo.isIOS26OrHigher()) {
-      return showCupertinoModalPopup<DateTime>(
-        context: context,
+      late final _DatePickerSheetRoute<DateTime> route;
+      route = _DatePickerSheetRoute<DateTime>(
+        barrierColor: CupertinoDynamicColor.resolve(
+          kCupertinoModalBarrierColor,
+          context,
+        ),
         builder: (context) => _IOS26DatePickerSheet(
           initialDate: initialDate,
           firstDate: effectiveFirstDate,
@@ -50,8 +56,10 @@ class AdaptiveDatePicker {
           tint: tintColor,
           minuteInterval: minuteInterval,
           use24HourFormat: use24HourFormat,
+          onPickerReady: route.rise,
         ),
       );
+      return Navigator.of(context, rootNavigator: true).push(route);
     }
 
     if (PlatformInfo.isIOS) {
@@ -267,6 +275,7 @@ class _IOS26DatePickerSheet extends StatefulWidget {
     required this.tint,
     required this.minuteInterval,
     required this.use24HourFormat,
+    required this.onPickerReady,
   });
 
   final DateTime initialDate;
@@ -278,6 +287,7 @@ class _IOS26DatePickerSheet extends StatefulWidget {
   final Color? tint;
   final int minuteInterval;
   final bool use24HourFormat;
+  final VoidCallback onPickerReady;
 
   @override
   State<_IOS26DatePickerSheet> createState() => _IOS26DatePickerSheetState();
@@ -293,39 +303,6 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
   );
 
   final _picker = IOS26DatePickerController();
-
-  /// The sheet's way in. The native picker is made once the sheet is in and
-  /// holds still: UIKit takes a few frames to make one, every time, and a
-  /// sheet still moving meanwhile, even the last points of its spring, froze
-  /// and then jumped.
-  Animation<double>? _entrance;
-  bool _entered = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final entrance = ModalRoute.of(context)?.animation;
-    if (identical(entrance, _entrance)) return;
-    _entrance?.removeStatusListener(_onEntrance);
-    _entrance = entrance;
-    if (entrance == null || entrance.isCompleted) {
-      _entered = true;
-    } else if (!_entered) {
-      entrance.addStatusListener(_onEntrance);
-    }
-  }
-
-  @override
-  void dispose() {
-    _entrance?.removeStatusListener(_onEntrance);
-    super.dispose();
-  }
-
-  void _onEntrance(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    _entrance?.removeStatusListener(_onEntrance);
-    setState(() => _entered = true);
-  }
 
   /// Whether a tap on the checkmark is being handled: a second tap while the
   /// native picker answers would pop the page under the sheet too.
@@ -452,7 +429,7 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                     minuteInterval: widget.minuteInterval,
                     use24HourFormat: widget.use24HourFormat,
                     controller: _picker,
-                    deferNative: !_entered,
+                    onReady: widget.onPickerReady,
                     onChanged: (date) => _selected = date,
                   ),
                 ),
@@ -501,4 +478,60 @@ class _SheetButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A modal popup that slides up once its content is drawn. UIKit takes a few
+/// frames to make a native date picker, every time, which froze a sheet that
+/// slid meanwhile and then made it jump. Held at the bottom until the picker
+/// is there at its height, [_readyAtLatest] at most, the sheet slides up with
+/// it, only moving it. Its barrier takes taps from the start.
+class _DatePickerSheetRoute<T> extends CupertinoModalPopupRoute<T> {
+  _DatePickerSheetRoute({required super.builder, required super.barrierColor})
+    : super(barrierLabel: 'Dismiss');
+
+  static const _readyAtLatest = Duration(milliseconds: 300);
+
+  bool _ready = false;
+  Timer? _riseAtLatest;
+
+  @override
+  Simulation createSimulation({required bool forward}) {
+    if (!forward || _ready) return super.createSimulation(forward: forward);
+    _riseAtLatest ??= Timer(_readyAtLatest, rise);
+    // Under way, so its barrier takes taps, but still.
+    return _Still(controller!.value);
+  }
+
+  /// Slides the sheet up, its picker drawn.
+  void rise() {
+    _riseAtLatest?.cancel();
+    if (_ready) return;
+    _ready = true;
+    final controller = this.controller;
+    if (controller?.status == AnimationStatus.forward) {
+      controller!.animateWith(createSimulation(forward: true));
+    }
+  }
+
+  @override
+  void dispose() {
+    _riseAtLatest?.cancel();
+    super.dispose();
+  }
+}
+
+/// Stays where it is until replaced.
+class _Still extends Simulation {
+  _Still(this._at);
+
+  final double _at;
+
+  @override
+  double x(double time) => _at;
+
+  @override
+  double dx(double time) => 0;
+
+  @override
+  bool isDone(double time) => false;
 }

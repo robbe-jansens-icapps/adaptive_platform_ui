@@ -174,84 +174,70 @@ void main() {
       await tester.pump();
     }
 
-    double nativeOpacity(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find.ancestor(
-            of: find.byType(UiKitView),
-            matching: find.byType(AnimatedOpacity),
-          ),
-        )
-        .opacity;
-
-    testWidgets('the sheet slides up at once, the native picker made only '
-        'once it holds still: UIKit takes a few frames to make one, which '
-        'froze the sheet when it still moved', (tester) async {
+    testWidgets('the sheet slides up once its native picker is drawn at its '
+        'height, carrying it: UIKit takes a few frames to make one, which '
+        'froze a sheet that slid meanwhile', (tester) async {
       IOS26DatePicker.debugHasUIKitOverride = true;
+      creating = Completer<void>();
       await showOnly(tester);
 
       await tester.pump(const Duration(milliseconds: 100));
-      expect(sheetShown(tester), greaterThan(0));
-      expect(created, isEmpty);
-      // The last points of its spring.
-      while (sheetShown(tester) < 0.99) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(created, isEmpty);
+      expect(sheetShown(tester), 0);
 
+      creating!.complete();
+      await tester.pump();
+      await fromNative(created.single.$1, 'height', {'height': 388.0});
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(sheetShown(tester), greaterThan(0));
+      expect(tester.getSize(find.byType(IOS26DatePicker)).height, 388);
       await tester.pumpAndSettle();
       expect(sheetShown(tester), 1);
       expect(created, hasLength(1));
     });
 
-    testWidgets('nothing stands in for the native wheels: they fade in once '
-        'drawn at their height', (tester) async {
+    testWidgets('without word from the native picker the sheet slides up all '
+        'the same', (tester) async {
       IOS26DatePicker.debugHasUIKitOverride = true;
-      await showOnly(tester, style: IOS26DatePickerStyle.wheels);
+      creating = Completer<void>();
+      await showOnly(tester);
 
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(sheetShown(tester), 0);
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(CupertinoDatePicker), findsNothing);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(sheetShown(tester), greaterThan(0));
       await tester.pumpAndSettle();
-      final (id, params) = created.single;
-      expect(params['style'], 'wheels');
-      expect(nativeOpacity(tester), lessThan(0.05));
-
-      await fromNative(id, 'height', {'height': 216.0});
-      await tester.pumpAndSettle();
-      expect(nativeOpacity(tester), 1);
-      expect(find.byType(CupertinoDatePicker), findsNothing);
+      expect(sheetShown(tester), 1);
+      creating!.complete();
     });
 
-    testWidgets('a native picker that does not say its height shows all the '
-        'same', (tester) async {
+    testWidgets("the system's wheels come up with the sheet, with nothing "
+        'standing in for them', (tester) async {
       IOS26DatePicker.debugHasUIKitOverride = true;
       await showOnly(tester, style: IOS26DatePickerStyle.wheels);
-      await tester.pumpAndSettle();
-      expect(nativeOpacity(tester), lessThan(0.05));
 
-      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(UiKitView), findsWidgets);
+      expect(find.byType(CupertinoDatePicker), findsNothing);
       await tester.pumpAndSettle();
-      expect(nativeOpacity(tester), 1);
+      expect(created.single.$2['style'], 'wheels');
     });
 
-    testWidgets('a first calendar that needs more room grows to it rather '
-        'than jumping, and the next one starts at its height', (tester) async {
+    testWidgets('a calendar starts at the height an earlier one needed', (
+      tester,
+    ) async {
       IOS26DatePicker.debugHasUIKitOverride = true;
-      await showOnly(tester, style: IOS26DatePickerStyle.inline);
-      await tester.pumpAndSettle();
-      final before = tester.getSize(find.byType(IOS26DatePicker)).height;
-      await fromNative(created.single.$1, 'height', {'height': before + 40});
+      await showOnly(tester);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      final growing = tester.getSize(find.byType(IOS26DatePicker)).height;
-      expect(growing, greaterThan(before));
-      expect(growing, lessThan(before + 40));
+      await fromNative(created.single.$1, 'height', {'height': 388.0});
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(IOS26DatePicker)).height, before + 40);
+      expect(tester.getSize(find.byType(IOS26DatePicker)).height, 388);
       await tester.tap(find.bySemanticsLabel('Close'));
       await tester.pumpAndSettle();
 
       await showOnly(tester);
-      expect(tester.getSize(find.byType(IOS26DatePicker)).height, before + 40);
+      expect(tester.getSize(find.byType(IOS26DatePicker)).height, 388);
     });
 
     testWidgets('a tap beside the sheet closes it, also while it comes up, '

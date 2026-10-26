@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -44,7 +43,7 @@ class IOS26DatePicker extends StatefulWidget {
     this.minuteInterval = 1,
     this.use24HourFormat = false,
     this.controller,
-    this.deferNative = false,
+    this.onReady,
   });
 
   final DateTime initialDate;
@@ -63,11 +62,10 @@ class IOS26DatePicker extends StatefulWidget {
 
   final IOS26DatePickerController? controller;
 
-  /// While true, the native picker is not made yet and its room stays empty:
-  /// UIKit takes a few frames to make one, which freeze an animation running
-  /// meanwhile, such as the sheet it comes up in. Once false, it is made and
-  /// fades in.
-  final bool deferNative;
+  /// Called once the native picker is drawn at the height it needs, for a
+  /// sheet to slide up with it rather than while UIKit makes it, which takes
+  /// a few frames that would freeze the sheet. Right away for the stand-in.
+  final VoidCallback? onReady;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -78,18 +76,8 @@ class IOS26DatePicker extends StatefulWidget {
 }
 
 class _IOS26DatePickerState extends State<IOS26DatePicker> {
-  static const _fade = Duration(milliseconds: 150);
-
-  /// A first picker of its kind that needs another height than the one it
-  /// got grows or shrinks to it rather than jumping.
-  static const _resize = Duration(milliseconds: 200);
-
-  /// How long the native picker may take to say its height before it shows
-  /// all the same.
-  static const _heightAtLatest = Duration(milliseconds: 300);
-
   /// The heights native pickers needed, by style, mode, display width and
-  /// text size: the next one starts at its height rather than growing to it.
+  /// text size: the next one starts at its height.
   static final _knownHeights = <String, double>{};
 
   MethodChannel? _channel;
@@ -97,11 +85,7 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   /// The height the native picker needs at the width it has, once it said.
   double? _height;
 
-  /// Whether the native picker is made, and whether it shows, drawn at its
-  /// height.
-  bool _made = false;
-  bool _shown = false;
-  Timer? _showAtLatest;
+  bool _ready = false;
 
   static bool get _hasUIKit =>
       IOS26DatePicker.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
@@ -110,6 +94,7 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   void initState() {
     super.initState();
     widget.controller?._state = this;
+    if (!_hasUIKit) _onDrawn();
   }
 
   @override
@@ -127,7 +112,6 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   void dispose() {
     if (widget.controller?._state == this) widget.controller?._state = null;
     _channel?.setMethodCallHandler(null);
-    _showAtLatest?.cancel();
     super.dispose();
   }
 
@@ -135,13 +119,15 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
       '${widget.style.name} $_mode ${MediaQuery.sizeOf(context).width.round()} '
       '${MediaQuery.textScalerOf(context).scale(17)}';
 
-  /// Shows the native picker once the frame with it at its height is drawn.
-  void _show() {
-    _showAtLatest?.cancel();
-    if (_shown) return;
-    SchedulerBinding.instance.endOfFrame.then((_) {
-      if (mounted && !_shown) setState(() => _shown = true);
-    });
+  /// Says the picker is ready once the frame with it at its height is drawn.
+  void _onDrawn() {
+    if (_ready) return;
+    _ready = true;
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (mounted) widget.onReady?.call();
+      })
+      ..ensureVisualUpdate();
   }
 
   Future<bool> _showDays() async {
@@ -166,7 +152,6 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   };
 
   void _onCreated(int id) {
-    _showAtLatest = Timer(_heightAtLatest, _show);
     _channel = MethodChannel('adaptive_platform_ui/ios26_date_picker_$id')
       ..setMethodCallHandler((call) async {
         final arguments = call.arguments as Map<Object?, Object?>?;
@@ -182,7 +167,7 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
               _knownHeights[_heightKey(context)] = height;
               setState(() => _height = height);
             }
-            if (mounted) _show();
+            if (mounted) _onDrawn();
         }
       });
   }
@@ -203,56 +188,34 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
         ),
       );
     }
-    _made = _made || !widget.deferNative;
     final tint = widget.tint;
     final firstDate = widget.firstDate;
     final lastDate = widget.lastDate;
     final inline = widget.style == IOS26DatePickerStyle.inline;
-    return TweenAnimationBuilder<double>(
-      tween: Tween(
-        end:
-            _height ??
-            _knownHeights[_heightKey(context)] ??
-            (inline ? 360 : 216),
+    return SizedBox(
+      height:
+          _height ?? _knownHeights[_heightKey(context)] ?? (inline ? 360 : 216),
+      child: UiKitView(
+        viewType: 'adaptive_platform_ui/ios26_date_picker',
+        creationParams: <String, Object>{
+          'mode': _mode,
+          'style': widget.style.name,
+          'initial': widget.initialDate.millisecondsSinceEpoch,
+          'minimum': ?firstDate?.millisecondsSinceEpoch,
+          'maximum': ?lastDate?.millisecondsSinceEpoch,
+          'tint': ?tint?.toARGB32(),
+          'minuteInterval': widget.minuteInterval,
+          'locale': ?Localizations.maybeLocaleOf(context)?.toLanguageTag(),
+          'isDark':
+              MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
+        },
+        creationParamsCodec: const StandardMessageCodec(),
+        onPlatformViewCreated: _onCreated,
+        // Its wheels and its calendar take every touch on them.
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+        },
       ),
-      duration: _resize,
-      curve: Curves.easeOutCubic,
-      builder: (context, height, child) =>
-          SizedBox(height: height, child: child),
-      child: _made
-          ? AnimatedOpacity(
-              // Faint rather than out until it shows: iOS lays it out, and
-              // it says its height, only once it is on screen.
-              opacity: _shown ? 1 : 0.01,
-              duration: _fade,
-              child: UiKitView(
-                viewType: 'adaptive_platform_ui/ios26_date_picker',
-                creationParams: <String, Object>{
-                  'mode': _mode,
-                  'style': widget.style.name,
-                  'initial': widget.initialDate.millisecondsSinceEpoch,
-                  'minimum': ?firstDate?.millisecondsSinceEpoch,
-                  'maximum': ?lastDate?.millisecondsSinceEpoch,
-                  'tint': ?tint?.toARGB32(),
-                  'minuteInterval': widget.minuteInterval,
-                  'locale': ?Localizations.maybeLocaleOf(
-                    context,
-                  )?.toLanguageTag(),
-                  'isDark':
-                      MediaQuery.maybePlatformBrightnessOf(context) ==
-                      Brightness.dark,
-                },
-                creationParamsCodec: const StandardMessageCodec(),
-                onPlatformViewCreated: _onCreated,
-                // Its wheels and its calendar take every touch on them.
-                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                  Factory<OneSequenceGestureRecognizer>(
-                    EagerGestureRecognizer.new,
-                  ),
-                },
-              ),
-            )
-          : null,
     );
   }
 }
