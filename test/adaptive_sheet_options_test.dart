@@ -114,6 +114,85 @@ void main() {
     expect(tester.widget<Opacity>(fade).opacity, 1);
   });
 
+  testWidgets('content kept clear of the bars fades out as it runs on under '
+      'the tabs alone, on glass of their own, but ends at a clean edge above an '
+      'accessory on the sheet, which has none', (tester) async {
+    usePhone(tester);
+    // Tabs along the bottom, 100 points tall with the room below them.
+    tester.view.padding = const FakeViewPadding(top: 60, bottom: 100);
+    tester.view.viewPadding = const FakeViewPadding(top: 60, bottom: 100);
+    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+    PlatformInfo.debugIOSVersionOverride = 26;
+    addTearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      PlatformInfo.debugIOSVersionOverride = null;
+    });
+    final boundary = GlobalKey();
+    const tabsTop = 800.0 - 100;
+
+    /// Whether the content, red, shows at [y] on the screen, with an
+    /// accessory of [accessory] on the sheet.
+    Future<List<bool>> redAt(
+      List<double> ys, {
+      required double accessory,
+    }) async {
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: MaterialApp(
+            home: AdaptiveBottomBarInset(
+              height: 100,
+              accessory: accessory,
+              child: const Stack(
+                children: [
+                  Positioned.fill(child: ColoredBox(color: Colors.white)),
+                  Positioned.fill(
+                    child: AdaptiveSheet(
+                      detents: [AdaptiveSheetDetent.large],
+                      keepsContentClearOfBars: true,
+                      header: SizedBox(height: 40),
+                      child: ColoredBox(
+                        color: Color(0xFFFF0000),
+                        child: SizedBox(height: 2000),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bytes = await tester.runAsync(() async {
+        final image =
+            await (boundary.currentContext!.findRenderObject()!
+                    as RenderRepaintBoundary)
+                .toImage();
+        return image.toByteData();
+      });
+      return [
+        for (final y in ys)
+          () {
+            final offset = (y.round() * 400 + 200) * 4;
+            final red = bytes!.getUint8(offset);
+            final green = bytes.getUint8(offset + 1);
+            return red > 200 && green < 160;
+          }(),
+      ];
+    }
+
+    // Above the tabs, partly into them, and down by their bottom.
+    expect(
+      await redAt([tabsTop - 20, tabsTop + 5, tabsTop + 80], accessory: 0),
+      [true, true, false],
+    );
+    expect(await redAt([tabsTop - 20, tabsTop + 5], accessory: 50), [
+      true,
+      false,
+    ]);
+  });
+
   testWidgets('without a grabber its content starts at the top', (
     tester,
   ) async {

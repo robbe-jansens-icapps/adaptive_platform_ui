@@ -1406,6 +1406,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                     _ScrollEdgeFade(
                       scrolled: _scrolled,
                       fadesTop: !underTop,
+                      // Under the tabs alone, on glass of their own, it fades
+                      // out as it goes on under them; an accessory on the
+                      // sheet has none, and the content ends where it begins.
+                      fadesUnderTabs:
+                          AdaptiveBottomBarInset.accessoryOf(context) <= 0,
                       // Under the tabs and what they carry, wherever the sheet
                       // is: at its tallest it runs on past the bottom. Not
                       // under the home indicator alone.
@@ -1784,6 +1789,7 @@ class _ScrollEdgeFade extends StatelessWidget {
     required this.child,
     this.bottomEdge,
     this.fadesTop = true,
+    this.fadesUnderTabs = false,
   });
 
   final ValueListenable<bool> scrolled;
@@ -1799,8 +1805,16 @@ class _ScrollEdgeFade extends StatelessWidget {
   /// carry with no glass of its own (a tab accessory on the sheet).
   final double Function()? bottomEdge;
 
+  /// Whether the content fades out over the part of it under the tabs, as it
+  /// runs on under them, rather than ending where they begin.
+  final bool fadesUnderTabs;
+
   /// How far the content fades over at its top, once scrolled.
   static const _fade = 16.0;
+
+  /// How far above the tabs the content starts to fade out as it runs on
+  /// under them, gone by about their middle.
+  static const _intoTabs = 12.0;
 
   @override
   Widget build(BuildContext context) {
@@ -1828,12 +1842,17 @@ class _ScrollEdgeFade extends StatelessWidget {
                 shown,
                 if (bottomEdge > 0) clear,
               ],
-              // A clean edge at the bottom, no fade.
+              // A clean edge at the bottom, or a fade over the tabs.
               stops: [
                 if (scrolled) 0,
                 at(scrolled ? _fade : 0),
-                at(bottomEdge > 0 ? bottom : height),
-                if (bottomEdge > 0) at(bottom),
+                at(
+                  bottomEdge > 0
+                      ? bottom - (fadesUnderTabs ? _intoTabs : 0)
+                      : height,
+                ),
+                if (bottomEdge > 0)
+                  at(fadesUnderTabs ? bottom + bottomEdge * 0.6 : bottom),
               ],
             ).createShader(bounds);
           },
