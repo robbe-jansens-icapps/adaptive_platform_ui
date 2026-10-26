@@ -912,7 +912,8 @@ if (selectedDate != null) {
 }
 ```
 
-**iOS**: Uses `CupertinoDatePicker` in a modal bottom sheet with Cancel/Done buttons.
+**iOS 26+**: Uses the system's date picker (`UIDatePicker`, its calendar or its wheels) in a native sheet that UIKit presents over the Flutter view, with a close button and a checkmark.
+**Older iOS**: Uses `CupertinoDatePicker` in a modal bottom sheet with Cancel/Done buttons.
 **Android**: Uses Material `DatePickerDialog`.
 
 ### AdaptiveTimePicker

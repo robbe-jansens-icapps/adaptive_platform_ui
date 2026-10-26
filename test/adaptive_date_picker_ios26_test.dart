@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -94,206 +95,219 @@ void main() {
   });
 
   group('on iOS 26', () {
+    const sheet = MethodChannel('adaptive_platform_ui/date_picker_sheet');
+
+    /// The calls to the native sheet, which answer with [answer].
+    final shown = <Map<Object?, Object?>>[];
+    late Future<Object?> Function(MethodCall call) answer;
+
     setUp(() {
       PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
       PlatformInfo.debugIOSVersionOverride = 26;
+      shown.clear();
+      answer = (_) async => null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(sheet, (call) {
+            shown.add(call.arguments as Map<Object?, Object?>);
+            return answer(call);
+          });
     });
 
-    Future<Future<DateTime?>> open(WidgetTester tester) async {
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(sheet, null);
+    });
+
+    /// Opens the picker on a page of its own; returns what it picks.
+    Future<Future<DateTime?>> open(
+      WidgetTester tester, {
+      CupertinoDatePickerMode mode = CupertinoDatePickerMode.date,
+      int minuteInterval = 1,
+      String? title,
+      Locale? locale,
+    }) async {
+      late BuildContext context;
+      final Widget page = Builder(
+        builder: (c) {
+          context = c;
+          return const SizedBox.expand();
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: locale == null
+              ? page
+              : Localizations(
+                  locale: locale,
+                  delegates: const [
+                    DefaultWidgetsLocalizations.delegate,
+                    DefaultMaterialLocalizations.delegate,
+                  ],
+                  child: page,
+                ),
+        ),
+      );
+      final result = AdaptiveDatePicker.show(
+        context: context,
+        initialDate: DateTime(1990, 5, 17, 10, 38),
+        firstDate: DateTime(1900),
+        lastDate: DateTime(2010),
+        mode: mode,
+        minuteInterval: minuteInterval,
+        title: title,
+        tintColor: const Color(0xFF009DD6),
+      );
+      // The sheet is asked for once the keyboard has been told to go.
+      await tester.pump(Duration.zero);
+      return result;
+    }
+
+    testWidgets('the native sheet gets the dates, tint, language, title and '
+        'button labels, the first date on the minute interval', (tester) async {
+      await open(
+        tester,
+        mode: CupertinoDatePickerMode.dateAndTime,
+        minuteInterval: 15,
+        title: 'Birthday',
+        locale: const Locale('en', 'GB'),
+      );
+
+      final arguments = shown.single;
+      expect(arguments['mode'], 'dateAndTime');
+      expect(arguments['style'], 'inline');
+      expect(
+        arguments['initial'],
+        DateTime(1990, 5, 17, 10, 45).millisecondsSinceEpoch,
+      );
+      expect(arguments['minimum'], DateTime(1900).millisecondsSinceEpoch);
+      expect(arguments['maximum'], DateTime(2010).millisecondsSinceEpoch);
+      expect(arguments['minuteInterval'], 15);
+      expect(arguments['tint'], 0xFF009DD6);
+      expect(arguments['locale'], 'en-GB');
+      expect(arguments['title'], 'Birthday');
+      expect(arguments['closeLabel'], 'Close');
+      expect(arguments['confirmLabel'], 'OK');
+      expect(arguments['isDark'], isFalse);
+      expect(arguments['rtl'], isFalse);
+    });
+
+    testWidgets('the date picked comes back as the mode has it', (
+      tester,
+    ) async {
+      final picked = DateTime(1991, 2, 3, 14, 45);
+      answer = (_) async => picked.millisecondsSinceEpoch.toDouble();
+      final expected = {
+        CupertinoDatePickerMode.date: DateTime(1991, 2, 3),
+        CupertinoDatePickerMode.monthYear: DateTime(1991, 2),
+        CupertinoDatePickerMode.time: picked,
+        CupertinoDatePickerMode.dateAndTime: picked,
+      };
+      for (final MapEntry(key: mode, value: date) in expected.entries) {
+        final result = await open(tester, mode: mode);
+        expect(await result, date, reason: '$mode');
+      }
+      expect(shown.map((arguments) => arguments['mode']), [
+        'date',
+        'yearAndMonth',
+        'time',
+        'dateAndTime',
+      ]);
+    });
+
+    testWidgets('a sheet closed without a date picks nothing', (tester) async {
+      final result = await open(tester);
+      expect(await result, isNull);
+    });
+
+    testWidgets('the page under the sheet stays in front', (tester) async {
+      final picked = Completer<Object?>();
+      answer = (_) => picked.future;
+      final navigator = GlobalKey<NavigatorState>();
       late BuildContext context;
       await tester.pumpWidget(
         MaterialApp(
+          navigatorKey: navigator,
           home: Builder(
             builder: (c) {
               context = c;
-              return const SizedBox.expand();
+              return const Text('Form');
             },
           ),
         ),
       );
       final result = AdaptiveDatePicker.show(
         context: context,
-        initialDate: DateTime(1990, 5, 17, 10, 30),
-        firstDate: DateTime(1900),
-        lastDate: DateTime(2010),
-        title: 'Birthday',
+        initialDate: DateTime(1990, 5, 17),
       );
       await tester.pumpAndSettle();
-      return result;
-    }
 
-    testWidgets('shows the picker in a sheet on glass, with a title', (
-      tester,
-    ) async {
-      final result = open(tester);
-      await result;
+      expect(shown, hasLength(1));
+      // Nothing came over it, so its bar keeps its backdrop.
+      expect(ModalRoute.of(context)!.isCurrent, isTrue);
+      expect(navigator.currentState!.canPop(), isFalse);
 
-      expect(find.byType(IOS26DatePicker), findsOneWidget);
-      expect(find.text('Birthday'), findsOneWidget);
-      expect(
-        find.ancestor(
-          of: find.byType(IOS26DatePicker),
-          matching: find.byType(IOS26GlassSurface),
-        ),
-        findsOneWidget,
-      );
+      picked.complete(DateTime(1991, 2, 3).millisecondsSinceEpoch.toDouble());
+      expect(await result, DateTime(1991, 2, 3));
     });
 
-    testWidgets('the checkmark confirms the day shown, without its time', (
-      tester,
-    ) async {
-      final result = await open(tester);
-
-      await tester.tap(find.bySemanticsLabel('OK'));
-      await tester.pumpAndSettle();
-
-      expect(await result, DateTime(1990, 5, 17));
-    });
-
-    testWidgets('on the month and year wheels, the checkmark goes back to '
-        'the days first; on the days it confirms', (tester) async {
-      IOS26DatePicker.debugHasUIKitOverride = true;
-      final result = await open(tester);
-      var done = false;
-      unawaited(result.then((_) => done = true));
-      final (id, _) = created.single;
-      var wheels = true;
-      final asked = <String>[];
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            MethodChannel('adaptive_platform_ui/ios26_date_picker_$id'),
-            (call) async {
-              asked.add(call.method);
-              final shown = wheels;
-              wheels = false;
-              return shown;
-            },
-          );
-
-      await tester.tap(find.bySemanticsLabel('OK'));
-      await tester.pumpAndSettle();
-      expect(asked, ['showDays']);
-      expect(done, isFalse);
-      expect(find.byType(IOS26DatePicker), findsOneWidget);
-
-      await tester.tap(find.bySemanticsLabel('OK'));
-      await tester.pumpAndSettle();
-      expect(await result, DateTime(1990, 5, 17));
-    });
-
-    testWidgets('a picker taller than the screen gets the room there is, '
-        'below the status bar', (tester) async {
-      IOS26DatePicker.debugHasUIKitOverride = true;
-      tester.view.padding = const FakeViewPadding(top: 150);
-      tester.view.viewPadding = const FakeViewPadding(top: 150);
-      addTearDown(tester.view.reset);
-      await open(tester);
-      final (id, _) = created.single;
-
-      // The largest text sizes on a small display.
-      await fromNative(id, 'height', {'height': 2000.0});
-      await tester.pump();
-
-      expect(tester.takeException(), isNull);
-      final sheet = tester.getRect(find.byType(IOS26GlassSurface));
-      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-      expect(
-        sheet.top,
-        greaterThanOrEqualTo(150 / tester.view.devicePixelRatio),
-      );
-      expect(sheet.bottom, lessThanOrEqualTo(screen.height));
-      expect(
-        tester.getSize(find.byType(IOS26DatePicker)).height,
-        lessThan(2000),
-      );
-    });
-
-    testWidgets('the close button keeps one colour, also while the sheet '
-        'leaves', (tester) async {
-      await open(tester);
-
-      final close = tester.widget<AdaptiveButton>(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is AdaptiveButton && widget.sfSymbol?.name == 'xmark',
-        ),
-      );
-      expect(close.sfSymbol?.color, isNotNull);
-    });
-
-    testWidgets('the close button picks nothing', (tester) async {
-      final result = await open(tester);
-
-      await tester.tap(find.bySemanticsLabel('Close'));
-      await tester.pumpAndSettle();
-
-      expect(await result, isNull);
-    });
-
-    /// The picker opened from a page pushed over home, so a pop too many
-    /// closes that page.
-    Future<Future<DateTime?>> openOverPage(WidgetTester tester) async {
-      final navigator = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(
-        MaterialApp(navigatorKey: navigator, home: const Text('Home')),
-      );
+    testWidgets('a text field gives up the keyboard before the sheet comes '
+        'up', (tester) async {
+      var keyboardUp = true;
+      answer = (_) async {
+        keyboardUp = tester.testTextInput.isVisible;
+        return null;
+      };
       late BuildContext context;
-      navigator.currentState!.push(
-        MaterialPageRoute<void>(
-          builder: (c) {
-            context = c;
-            return const Text('Form');
-          },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const TextField(autofocus: true);
+              },
+            ),
+          ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue);
+
       final result = AdaptiveDatePicker.show(
         context: context,
         initialDate: DateTime(1990, 5, 17),
-        firstDate: DateTime(1900),
-        lastDate: DateTime(2010),
       );
-      await tester.pumpAndSettle();
-      return result;
-    }
+      await tester.pump(Duration.zero);
+      await result;
 
-    testWidgets('a second tap on the checkmark while the first confirms '
-        'closes the sheet once, not the page under it', (tester) async {
-      IOS26DatePicker.debugHasUIKitOverride = true;
-      final result = await openOverPage(tester);
-      final (id, _) = created.single;
-      final answers = <Completer<bool>>[];
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            MethodChannel('adaptive_platform_ui/ios26_date_picker_$id'),
-            (call) {
-              final answer = Completer<bool>();
-              answers.add(answer);
-              return answer.future;
-            },
-          );
-
-      await tester.tap(find.bySemanticsLabel('OK'));
-      await tester.tap(find.bySemanticsLabel('OK'));
-      for (final answer in answers) {
-        answer.complete(false);
-      }
-      await tester.pumpAndSettle();
-
-      expect(await result, DateTime(1990, 5, 17));
-      expect(find.text('Form'), findsOneWidget);
+      expect(shown, hasLength(1));
+      expect(keyboardUp, isFalse);
     });
 
-    testWidgets('a second tap on the close button closes the sheet once, not '
-        'the page under it', (tester) async {
-      final result = await openOverPage(tester);
-
-      await tester.tap(find.bySemanticsLabel('Close'));
-      await tester.tap(find.bySemanticsLabel('Close'));
+    testWidgets('without a native sheet, the Cupertino picker comes up', (
+      tester,
+    ) async {
+      answer = (_) async => throw MissingPluginException();
+      final result = await open(tester);
       await tester.pumpAndSettle();
 
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(await result, DateTime(1990, 5, 17));
+    });
+
+    testWidgets('with nothing to present the native sheet from, the '
+        'Cupertino picker comes up', (tester) async {
+      answer = (_) async => throw PlatformException(code: 'unavailable');
+      final result = await open(tester);
+      await tester.pumpAndSettle();
+
+      expect(shown, hasLength(1));
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       expect(await result, isNull);
-      expect(find.text('Form'), findsOneWidget);
     });
   });
 }

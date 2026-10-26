@@ -33,6 +33,7 @@ class iOS26DatePickerViewFactory: NSObject, FlutterPlatformViewFactory {
 class iOS26DatePickerView: NSObject, FlutterPlatformView {
     private let container: LayoutReportingView
     private let picker = UIDatePicker()
+    private lazy var calendarDays = CalendarDays(picker: picker)
     private let channel: FlutterMethodChannel
 
     /// The width and text size the height was last measured for.
@@ -57,27 +58,7 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
         container.overrideUserInterfaceStyle =
             (params["isDark"] as? Bool ?? false) ? .dark : .light
 
-        picker.datePickerMode = Self.mode(params["mode"] as? String)
-        picker.preferredDatePickerStyle =
-            (params["style"] as? String) == "wheels" ? .wheels : .inline
-        if let locale = params["locale"] as? String {
-            picker.locale = Locale(identifier: locale)
-        }
-        if let interval = params["minuteInterval"] as? Int, interval > 0 {
-            picker.minuteInterval = interval
-        }
-        if let minimum = params["minimum"] as? NSNumber {
-            picker.minimumDate = Self.date(minimum)
-        }
-        if let maximum = params["maximum"] as? NSNumber {
-            picker.maximumDate = Self.date(maximum)
-        }
-        if let initial = params["initial"] as? NSNumber {
-            picker.date = Self.date(initial)
-        }
-        if let tint = params["tint"] as? NSNumber {
-            picker.tintColor = UIColor(argb: tint.intValue)
-        }
+        DatePickerSetup.configure(picker, with: params)
         picker.addTarget(self, action: #selector(changed), for: .valueChanged)
 
         picker.translatesAutoresizingMaskIntoConstraints = false
@@ -94,7 +75,7 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
                 result(FlutterMethodNotImplemented)
                 return
             }
-            result(self.showDays())
+            result(self.calendarDays.show())
         }
     }
 
@@ -105,17 +86,117 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
     @objc private func changed() {
         channel.invokeMethod(
             "changed",
-            arguments: ["date": picker.date.timeIntervalSince1970 * 1000]
+            arguments: ["date": DatePickerSetup.millis(picker.date)]
         )
     }
 
+    /// Measures the height the picker needs at [width] and the text size, once
+    /// for each, and hands it to Flutter, which sizes the view to it. The
+    /// picker fills the view on all sides: left to find its own height, at
+    /// some widths and text sizes the calendar never settled on one and laid
+    /// itself out again and again, which hung the app (the iPhone Duo cover
+    /// display, the largest text sizes).
+    private func reportHeight(for width: CGFloat) {
+        let textSize = container.traitCollection.preferredContentSizeCategory
+        guard width > 0, width != measuredWidth || textSize != measuredTextSize
+        else { return }
+        measuredWidth = width
+        measuredTextSize = textSize
+        let height = DatePickerSetup.height(of: picker, width: width)
+        channel.invokeMethod("height", arguments: ["height": Double(height)])
+    }
+}
+
+/// Sets up the system's date picker from what Dart sends (Dart:
+/// IOS26DatePicker, AdaptiveDatePicker.show): its mode, style, language,
+/// minute interval, earliest, latest and first date, and tint.
+enum DatePickerSetup {
+    static func configure(_ picker: UIDatePicker, with params: [String: Any]) {
+        picker.datePickerMode = mode(params["mode"] as? String)
+        picker.preferredDatePickerStyle =
+            (params["style"] as? String) == "wheels" ? .wheels : .inline
+        if let locale = params["locale"] as? String {
+            picker.locale = appLocale(locale)
+        }
+        if let interval = params["minuteInterval"] as? Int, interval > 0 {
+            picker.minuteInterval = interval
+        }
+        if let minimum = params["minimum"] as? NSNumber {
+            picker.minimumDate = date(minimum)
+        }
+        if let maximum = params["maximum"] as? NSNumber {
+            picker.maximumDate = date(maximum)
+        }
+        if let initial = params["initial"] as? NSNumber {
+            picker.date = date(initial)
+        }
+        if let tint = params["tint"] as? NSNumber {
+            picker.tintColor = UIColor(argb: tint.intValue)
+        }
+    }
+
+    /// The height [picker] needs at [width], with its sides pinned there.
+    static func height(of picker: UIDatePicker, width: CGFloat) -> CGFloat {
+        let size = picker.systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        return ceil(size.height)
+    }
+
+    static func millis(_ date: Date) -> Double {
+        return date.timeIntervalSince1970 * 1000
+    }
+
+    private static func date(_ millis: NSNumber) -> Date {
+        return Date(timeIntervalSince1970: millis.doubleValue / 1000)
+    }
+
+    private static func mode(_ name: String?) -> UIDatePicker.Mode {
+        switch name {
+        case "time": return .time
+        case "dateAndTime": return .dateAndTime
+        case "yearAndMonth":
+            if #available(iOS 17.4, *) { return .yearAndMonth }
+            return .date
+        default: return .date
+        }
+    }
+
+    /// The app's language with the device's region and clock, as the rest of
+    /// the app has them: on its own, a language such as English gave a 12-hour
+    /// clock on a device set to 24 hours.
+    private static func appLocale(_ identifier: String) -> Locale {
+        guard #available(iOS 16, *) else { return Locale(identifier: identifier) }
+        var components = Locale.Components(locale: Locale(identifier: identifier))
+        if components.region == nil {
+            components.region = Locale.current.region
+        }
+        components.hourCycle = Locale.current.hourCycle
+        return Locale(components: components)
+    }
+}
+
+/// Takes the calendar of a date picker from its month and year wheels back
+/// to its days, as a tap on its header does.
+final class CalendarDays {
+    private unowned let picker: UIDatePicker
+
+    /// Set once going back did not work: the wheels are then left alone.
+    private var fails = false
+
+    init(picker: UIDatePicker) {
+        self.picker = picker
+    }
+
     /// While the calendar shows its month and year wheels, goes back to its
-    /// days, as a tap on its header does, and says so. The calendar has no
-    /// API for this: the wheels are a date picker of their own inside it, and
-    /// the header's title is the control that holds a label. Should either
-    /// not be found, nothing happens and the answer is false.
-    private func showDays() -> Bool {
-        guard !showDaysFails,
+    /// days and says so. The calendar has no API for this: the wheels are a
+    /// date picker of their own inside it, and the header's title is the
+    /// control that holds a label. Should either not be found, nothing
+    /// happens and the answer is false.
+    func show() -> Bool {
+        guard !fails,
               picker.preferredDatePickerStyle == .inline,
               monthYearWheels(in: picker) != nil,
               let title = headerTitle(in: picker)
@@ -130,13 +211,11 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self else { return }
             if self.monthYearWheels(in: self.picker) != nil {
-                self.showDaysFails = true
+                self.fails = true
             }
         }
         return true
     }
-
-    private var showDaysFails = false
 
     /// The month and year wheels inside [view], if they are on screen.
     private func monthYearWheels(in view: UIView) -> UIDatePicker? {
@@ -176,41 +255,6 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
 
     private func holdsLabel(_ view: UIView) -> Bool {
         view.subviews.contains { $0 is UILabel || holdsLabel($0) }
-    }
-
-    /// Measures the height the picker needs at [width] and the text size, once
-    /// for each, and hands it to Flutter, which sizes the view to it. The
-    /// picker fills the view on all sides: left to find its own height, at
-    /// some widths and text sizes the calendar never settled on one and laid
-    /// itself out again and again, which hung the app (the iPhone Duo cover
-    /// display, the largest text sizes).
-    private func reportHeight(for width: CGFloat) {
-        let textSize = container.traitCollection.preferredContentSizeCategory
-        guard width > 0, width != measuredWidth || textSize != measuredTextSize
-        else { return }
-        measuredWidth = width
-        measuredTextSize = textSize
-        let size = picker.systemLayoutSizeFitting(
-            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        )
-        channel.invokeMethod("height", arguments: ["height": Double(ceil(size.height))])
-    }
-
-    private static func date(_ millis: NSNumber) -> Date {
-        return Date(timeIntervalSince1970: millis.doubleValue / 1000)
-    }
-
-    private static func mode(_ name: String?) -> UIDatePicker.Mode {
-        switch name {
-        case "time": return .time
-        case "dateAndTime": return .dateAndTime
-        case "yearAndMonth":
-            if #available(iOS 17.4, *) { return .yearAndMonth }
-            return .date
-        default: return .date
-        }
     }
 }
 

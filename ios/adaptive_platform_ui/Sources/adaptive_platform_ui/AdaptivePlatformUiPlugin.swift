@@ -8,7 +8,7 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
     /// The radius of the corners of the app's window, which on a phone are
     /// the display's: measured on a view that fills the window, with corners
     /// concentric with it. 0 before iOS 26 and without a window.
-    private static func displayCornerRadius() -> Double {
+    static func displayCornerRadius() -> Double {
         guard #available(iOS 26.0, *) else { return 0 }
         let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -217,6 +217,10 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             iOS26DatePickerViewFactory(messenger: registrar.messenger()),
             withId: "adaptive_platform_ui/ios26_date_picker"
         )
+
+        // The system's date picker in a sheet of its own (Dart:
+        // AdaptiveDatePicker.show)
+        DatePickerSheet.register(with: registrar)
 
         // Register iOS 26 Switch platform view factory
         let ios26SwitchFactory = iOS26SwitchViewFactory(messenger: registrar.messenger())

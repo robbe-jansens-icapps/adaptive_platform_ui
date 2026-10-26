@@ -1,22 +1,26 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../platform/platform_info.dart';
-import '../style/sf_symbol.dart';
-import 'adaptive_button.dart';
 import 'adaptive_time_picker.dart';
 import 'ios26/ios26_date_picker.dart';
-import 'ios26/ios26_glass_surface.dart';
 import 'minute_interval.dart';
 
 /// An adaptive date picker that renders platform-specific styles
 ///
 /// On iOS 26+: Shows the system's date picker (its calendar by default) in a
-/// sheet floating on Liquid Glass, with a close button and a checkmark that
-/// confirms, as iOS 26 sheets do
+/// native sheet floating on Liquid Glass, with a close button and a checkmark
+/// that confirms, as iOS 26 sheets do. UIKit presents it over the Flutter
+/// view: it slides up with the picker drawn, and the page under it stays as
+/// it is, dimmed
 /// On older iOS: Shows CupertinoDatePicker in a modal bottom sheet
 /// On Android: Shows Material DatePickerDialog
 class AdaptiveDatePicker {
   AdaptiveDatePicker._();
+
+  static const MethodChannel _sheet = MethodChannel(
+    'adaptive_platform_ui/date_picker_sheet',
+  );
 
   /// Shows a platform-adaptive date picker
   ///
@@ -38,19 +42,17 @@ class AdaptiveDatePicker {
     final effectiveLastDate = lastDate ?? DateTime(2100);
 
     if (PlatformInfo.isIOS26OrHigher()) {
-      return showCupertinoModalPopup<DateTime>(
+      return _showNativeSheet(
         context: context,
-        builder: (context) => _IOS26DatePickerSheet(
-          initialDate: initialDate,
-          firstDate: effectiveFirstDate,
-          lastDate: effectiveLastDate,
-          mode: mode,
-          style: iosStyle,
-          title: title,
-          tint: tintColor,
-          minuteInterval: minuteInterval,
-          use24HourFormat: use24HourFormat,
-        ),
+        initialDate: initialDate,
+        firstDate: effectiveFirstDate,
+        lastDate: effectiveLastDate,
+        mode: mode,
+        style: iosStyle,
+        title: title,
+        tint: tintColor,
+        minuteInterval: minuteInterval,
+        use24HourFormat: use24HourFormat,
       );
     }
 
@@ -77,6 +79,89 @@ class AdaptiveDatePicker {
       minuteInterval: minuteInterval,
     );
   }
+
+  /// The system's date picker in a sheet that UIKit presents over the Flutter
+  /// view, rather than in a Flutter route: UIKit makes the picker before the
+  /// sheet moves and slides it up on its own, so it keeps every frame while
+  /// the main thread, which Dart shares, is busy making the picker; and no
+  /// route covers the page, whose bar keeps its backdrop. Where no sheet can
+  /// be presented, the Cupertino picker comes up instead.
+  static Future<DateTime?> _showNativeSheet({
+    required BuildContext context,
+    required DateTime initialDate,
+    required DateTime firstDate,
+    required DateTime lastDate,
+    required CupertinoDatePickerMode mode,
+    required IOS26DatePickerStyle style,
+    required String? title,
+    required Color? tint,
+    required int minuteInterval,
+    required bool use24HourFormat,
+  }) async {
+    final localizations = MaterialLocalizations.of(context);
+    final arguments = <String, Object>{
+      'mode': switch (mode) {
+        CupertinoDatePickerMode.time => 'time',
+        CupertinoDatePickerMode.dateAndTime => 'dateAndTime',
+        CupertinoDatePickerMode.monthYear => 'yearAndMonth',
+        _ => 'date',
+      },
+      'style': style.name,
+      // The picker only offers dates on the interval's grid.
+      'initial': alignDateTimeToInterval(
+        initialDate,
+        minuteInterval,
+      ).millisecondsSinceEpoch,
+      'minimum': firstDate.millisecondsSinceEpoch,
+      'maximum': lastDate.millisecondsSinceEpoch,
+      'tint': (tint ?? CupertinoTheme.of(context).primaryColor).toARGB32(),
+      'minuteInterval': minuteInterval,
+      'locale': ?Localizations.maybeLocaleOf(context)?.toLanguageTag(),
+      'isDark': CupertinoTheme.brightnessOf(context) == Brightness.dark,
+      'rtl': Directionality.of(context) == TextDirection.rtl,
+      'title': ?title,
+      'closeLabel': localizations.closeButtonTooltip,
+      'confirmLabel': localizations.okButtonLabel,
+    };
+    // A route pushed over the page took the focus from a text field there,
+    // and the keyboard with it; a sheet of UIKit's does neither. The
+    // keyboard is told to go a moment after the focus.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(Duration.zero);
+    try {
+      final picked = await _sheet.invokeMethod<num>('show', arguments);
+      if (picked == null) return null;
+      return _asMode(mode, DateTime.fromMillisecondsSinceEpoch(picked.round()));
+    } on MissingPluginException {
+      // No sheet: below.
+    } on PlatformException {
+      // No sheet: below.
+    }
+    if (!context.mounted) return null;
+    final picked = await _showCupertinoDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      mode: mode,
+      use24HourFormat: use24HourFormat,
+      minuteInterval: minuteInterval,
+    );
+    return picked == null ? null : _asMode(mode, picked);
+  }
+
+  /// [date] without what [mode] does not pick: a date has no time of day,
+  /// a month no day.
+  static DateTime _asMode(CupertinoDatePickerMode mode, DateTime date) =>
+      switch (mode) {
+        CupertinoDatePickerMode.date => DateTime(
+          date.year,
+          date.month,
+          date.day,
+        ),
+        CupertinoDatePickerMode.monthYear => DateTime(date.year, date.month),
+        _ => date,
+      };
 
   static Future<DateTime?> _showCupertinoDatePicker({
     required BuildContext context,
@@ -248,222 +333,6 @@ class _CupertinoDatePickerContentState
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The date picker of iOS 26 in a sheet floating 8 points from the edges on
-/// Liquid Glass, its corners concentric with the display's: a close button on
-/// one side, a checkmark that confirms on the other.
-class _IOS26DatePickerSheet extends StatefulWidget {
-  const _IOS26DatePickerSheet({
-    required this.initialDate,
-    required this.firstDate,
-    required this.lastDate,
-    required this.mode,
-    required this.style,
-    required this.title,
-    required this.tint,
-    required this.minuteInterval,
-    required this.use24HourFormat,
-  });
-
-  final DateTime initialDate;
-  final DateTime firstDate;
-  final DateTime lastDate;
-  final CupertinoDatePickerMode mode;
-  final IOS26DatePickerStyle style;
-  final String? title;
-  final Color? tint;
-  final int minuteInterval;
-  final bool use24HourFormat;
-
-  @override
-  State<_IOS26DatePickerSheet> createState() => _IOS26DatePickerSheetState();
-}
-
-class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
-  static const _inset = 8.0;
-  static const _cornerRadius = 34.0;
-
-  late DateTime _selected = alignDateTimeToInterval(
-    widget.initialDate,
-    widget.minuteInterval,
-  );
-
-  final _picker = IOS26DatePickerController();
-
-  /// Whether a tap on the checkmark is being handled: a second tap while the
-  /// native picker answers would pop the page under the sheet too.
-  bool _confirming = false;
-
-  /// Confirms the date, or, while the calendar shows its month and year
-  /// wheels, goes back to its days first: a month and a year are not a date
-  /// yet, and the checkmark is where one would confirm them.
-  Future<void> _onConfirm() async {
-    if (_confirming) return;
-    _confirming = true;
-    if (await _picker.showDays()) {
-      _confirming = false;
-      return;
-    }
-    if (mounted) Navigator.of(context).pop(_result);
-  }
-
-  DateTime get _result => switch (widget.mode) {
-    CupertinoDatePickerMode.date => DateTime(
-      _selected.year,
-      _selected.month,
-      _selected.day,
-    ),
-    CupertinoDatePickerMode.monthYear => DateTime(
-      _selected.year,
-      _selected.month,
-    ),
-    _ => _selected,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    final tint = widget.tint ?? CupertinoTheme.of(context).primaryColor;
-    final title = widget.title;
-    final localizations = MaterialLocalizations.of(context);
-    // The rounder the display's corners, the rounder the sheet's bottom ones,
-    // and the more room the picker keeps above them.
-    final cornerRoom =
-        (IOS26GlassSurface.concentricRadius(
-              inset: _inset,
-              minimum: _cornerRadius,
-            ) -
-            _cornerRadius) *
-        0.4;
-    // Below the status bar, whatever its height: with the largest text sizes
-    // on a small display the picker can take more room than there is.
-    return SafeArea(
-      bottom: false,
-      minimum: const EdgeInsets.symmetric(horizontal: _inset),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: _inset),
-        child: IOS26GlassSurface(
-          cornerRadius: _cornerRadius,
-          corners: GlassSurfaceCorners.concentric,
-          tint: dark
-              ? Colors.black.withValues(alpha: 0.6)
-              : Colors.white.withValues(alpha: 0.9),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
-                child: Row(
-                  children: [
-                    _SheetButton(
-                      label: localizations.closeButtonTooltip,
-                      // In the label's colour throughout: without one the
-                      // button takes the window's tint, system blue, as the
-                      // sheet leaves.
-                      symbol: SFSymbol(
-                        'xmark',
-                        size: 17,
-                        weight: FontWeight.w600,
-                        color: CupertinoColors.label.resolveFrom(context),
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                    Expanded(
-                      child: title == null
-                          ? const SizedBox.shrink()
-                          : Text(
-                              title,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: CupertinoTheme.of(
-                                context,
-                              ).textTheme.navTitleTextStyle,
-                            ),
-                    ),
-                    _SheetButton(
-                      label: localizations.okButtonLabel,
-                      symbol: const SFSymbol(
-                        'checkmark',
-                        size: 17,
-                        weight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                      color: tint,
-                      prominent: true,
-                      onPressed: _onConfirm,
-                    ),
-                  ],
-                ),
-              ),
-              // The room the picker needs, or the room there is.
-              Flexible(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    12,
-                    0,
-                    12,
-                    12 + (cornerRoom > 0 ? cornerRoom : 0),
-                  ),
-                  child: IOS26DatePicker(
-                    initialDate: _selected,
-                    firstDate: widget.firstDate,
-                    lastDate: widget.lastDate,
-                    mode: widget.mode,
-                    style: widget.style,
-                    tint: tint,
-                    minuteInterval: widget.minuteInterval,
-                    use24HourFormat: widget.use24HourFormat,
-                    controller: _picker,
-                    onChanged: (date) => _selected = date,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A round button of the sheet, as tall as a toolbar button.
-class _SheetButton extends StatelessWidget {
-  const _SheetButton({
-    required this.label,
-    required this.symbol,
-    required this.onPressed,
-    this.color,
-    this.prominent = false,
-  });
-
-  final String label;
-  final SFSymbol symbol;
-  final VoidCallback onPressed;
-  final Color? color;
-  final bool prominent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: SizedBox.square(
-        dimension: 44,
-        child: AdaptiveButton.sfSymbol(
-          onPressed: onPressed,
-          sfSymbol: symbol,
-          color: color,
-          style: prominent
-              ? AdaptiveButtonStyle.prominentGlass
-              : AdaptiveButtonStyle.glass,
-          // A capsule, which is a circle at this size.
-          useSmoothRectangleBorder: false,
-        ),
       ),
     );
   }
