@@ -300,25 +300,23 @@ class HostedTopToolbar extends StatelessWidget {
         : content.backdropColor;
     final upperColor = colorOf(upper) ?? systemBackground;
     final lowerColor = colorOf(lower) ?? systemBackground;
-    final driver = blend.driver;
-    // Pages of one colour have nothing to blend, which would redraw the
-    // backdrop on every frame of the transition.
+    // While both pages have one, the backdrop goes from the one page's to the
+    // other's as the pages slide: a page coming back brings its colour and
+    // how far it was scrolled with it, rather than at the end.
+    final slide = upperBackdrop && lowerBackdrop
+        ? _pageSlide(upperEntry)
+        : null;
     final backdropData = upperBackdrop ? upper.data : lower.data;
     final backdropTop = upperBackdrop ? upperTop : lowerTop;
     final backdropEdge = upperBackdrop ? upper.scrollEdge : lower.scrollEdge;
-    final backdropBand = upperBackdrop
-        ? upper.titleBandShown
-        : lower.titleBandShown;
-    Widget backdrop =
-        upperBackdrop &&
-            lowerBackdrop &&
-            driver != null &&
-            upperColor != lowerColor
+    // Pages of one colour have nothing to blend, which would redraw the
+    // backdrop on every frame of the transition.
+    Widget backdrop = slide != null && upperColor != lowerColor
         ? AnimatedBuilder(
-            animation: driver,
+            animation: slide,
             builder: (context, _) => _backdrop(
               context,
-              Color.lerp(lowerColor, upperColor, driver.value)!,
+              Color.lerp(lowerColor, upperColor, slide.value)!,
               backdropData,
               backdropTop,
               backdropEdge,
@@ -338,14 +336,28 @@ class HostedTopToolbar extends StatelessWidget {
       backdrop = const SizedBox.shrink();
     } else {
       // In as soon as the page's content scrolls under the bar.
+      double shown(TopToolbarContent content) {
+        final shown = content.scrollEdge.value * content.titleBandShown.value;
+        return shown.clamp(0.0, 1.0);
+      }
+
+      final owner = upperBackdrop ? upper : lower;
       final child = backdrop;
       backdrop = ListenableBuilder(
-        listenable: Listenable.merge([backdropEdge, backdropBand]),
+        listenable: Listenable.merge([
+          owner.scrollEdge,
+          owner.titleBandShown,
+          if (slide != null) ...[lower.scrollEdge, lower.titleBandShown, slide],
+        ]),
         child: child,
-        builder: (context, child) => Opacity(
-          opacity: (backdropEdge.value * backdropBand.value).clamp(0.0, 1.0),
-          child: child,
-        ),
+        builder: (context, child) {
+          var opacity = shown(owner);
+          if (slide != null) {
+            final from = shown(lower);
+            opacity = from + (opacity - from) * slide.value;
+          }
+          return Opacity(opacity: opacity, child: child);
+        },
       );
     }
 
@@ -541,6 +553,26 @@ class HostedTopToolbar extends StatelessWidget {
       return null;
     }
     return identical(driver, route.animation) ? driver : null;
+  }
+
+  /// How far the blend has gone from [ToolbarBlend.lower] (0) to
+  /// [ToolbarBlend.upper] (1), as far as the pages have slid: the route's
+  /// animation eased as `CupertinoPageTransition` eases the slide, or as
+  /// `CupertinoFullscreenDialogTransition` does for [upperEntry] shown like a
+  /// dialog. A back swipe moves the pages with the finger, and a swap between
+  /// tabs moves nothing, so those follow the blend's driver as it is. Null
+  /// when no blend runs.
+  Animation<double>? _pageSlide(ToolbarEntry? upperEntry) {
+    final driver = blend.driver;
+    if (driver == null) return null;
+    if (blend.isGestureBlend || !blend.routeTransition.value) return driver;
+    final route = upperEntry?.route;
+    return _EasedSlide(
+      driver,
+      route is PageRoute && route.fullscreenDialog
+          ? Curves.linearToEaseOut
+          : Curves.fastEaseInToSlowEaseOut,
+    );
   }
 
   /// One page's bar. The back button is not part of it: the shared one is
@@ -752,6 +784,24 @@ class _DialogSlide extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// [parent] eased by [curve] on its way forward and by the flipped [curve] on
+/// its way back, as a page transition eases its slide.
+class _EasedSlide extends Animation<double>
+    with AnimationWithParentMixin<double> {
+  _EasedSlide(this.parent, this.curve);
+
+  @override
+  final Animation<double> parent;
+
+  final Curve curve;
+
+  @override
+  double get value => switch (parent.status) {
+    AnimationStatus.reverse => curve.flipped,
+    _ => curve,
+  }.transform(parent.value);
 }
 
 /// The soft gradient that keeps the bar readable over scrolling content, in

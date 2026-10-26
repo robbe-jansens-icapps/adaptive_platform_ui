@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **FIX**: The native toolbar's backdrop (`AdaptiveBarBackdrop`) goes from one page's to the next's as the pages slide, both how far it is in and its colour: back from a page that has not scrolled to one that has, it came in only once the page was all the way back, after a back swipe once it had settled too, and then at once. It now comes in as the page slides back, eased as the slide is, and under the finger during a back swipe
 * **NEW**: `IOS26GlassSurface.clipBehavior` cuts the surface's content (`child`) off in the glass's own shape, concentric corners included, where the surface is on the screen, so a list scrolled to the bottom of a sheet ends in the glass's round corners rather than past them. Only the content is clipped, as a clip around the glass breaks it. `Clip.none` by default
 * **FIX**: `AdaptiveSheet` cuts its content off in the shape of its glass (`IOS26GlassSurface.clipBehavior`). Its own clip had the sheet's corner radius on every corner, while the glass's corners near the display's are rounder, concentric with them: content at the bottom of a sheet along the bottom showed past the glass's corners there
 * **FIX**: A floating sheet at its large detent (`AdaptiveSheet`), edge to edge and on past the bottom of the screen, scrolls the end of its content as far clear of the tabs as it does lower down: its bottom padding was worked out for where it rests while floating, 56 points higher, and its last row stayed under the tabs

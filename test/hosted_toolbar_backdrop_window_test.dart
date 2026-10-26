@@ -1,5 +1,6 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,8 +83,143 @@ double backdropOpacity(WidgetTester tester) {
       .fold<double>(1, (opacity, fade) => opacity * fade.opacity.value);
 }
 
+/// The iOS 26 scaffold, which tells the bar how far its page has scrolled,
+/// in a 402 by 874 window below a 62 point status bar.
+void useIOS26Phone(WidgetTester tester) {
+  PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+  PlatformInfo.debugIOSVersionOverride = 26;
+  final views =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  views.setMockMethodCallHandler(
+    SystemChannels.platform_views,
+    (_) async => null,
+  );
+  addTearDown(() {
+    PlatformInfo.debugPlatformOverride = null;
+    PlatformInfo.debugIOSVersionOverride = null;
+    views.setMockMethodCallHandler(SystemChannels.platform_views, null);
+  });
+  useWindow(tester);
+  tester.view.padding = const FakeViewPadding(top: 62);
+  tester.view.viewPadding = const FakeViewPadding(top: 62);
+}
+
+/// An overview scrolled under the bar.
+Future<void> pumpScrolledOverview(
+  WidgetTester tester,
+  GlobalKey<NavigatorState> nav,
+) async {
+  final controller = ScrollController();
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(
+    hostedApp(
+      navigatorKey: nav,
+      home: page(
+        'Overview',
+        backdropColor: _grey,
+        body: ListView(
+          controller: controller,
+          children: [for (var i = 0; i < 40; i++) const SizedBox(height: 60)],
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  controller.jumpTo(200);
+  await tester.pump();
+  expect(frostShown(tester), 1);
+}
+
+/// Pushes a detail page that has not scrolled; returns its route.
+CupertinoPageRoute<void> pushDetail(GlobalKey<NavigatorState> nav) {
+  final detail = CupertinoPageRoute<void>(
+    builder: (_) => page('Detail', backdropColor: _grey),
+  );
+  nav.currentState!.push(detail);
+  return detail;
+}
+
 void main() {
   tearDown(() => PlatformInfo.debugIPadOverride = null);
+
+  group('between a scrolled page and one that is not', () {
+    testWidgets('the backdrop goes as the scrolled page slides away', (
+      tester,
+    ) async {
+      useIOS26Phone(tester);
+      final nav = GlobalKey<NavigatorState>();
+      await pumpScrolledOverview(tester, nav);
+
+      final detail = pushDetail(nav);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      final slid = Curves.fastEaseInToSlowEaseOut.transform(
+        detail.animation!.value,
+      );
+      expect(frostShown(tester), moreOrLessEquals(1 - slid, epsilon: 0.01));
+      expect(frostShown(tester), inExclusiveRange(0, 1));
+
+      await tester.pumpAndSettle();
+      expect(frostShown(tester), 0);
+    });
+
+    testWidgets('the backdrop comes back with the scrolled page', (
+      tester,
+    ) async {
+      useIOS26Phone(tester);
+      final nav = GlobalKey<NavigatorState>();
+      await pumpScrolledOverview(tester, nav);
+      final detail = pushDetail(nav);
+      await tester.pumpAndSettle();
+      expect(frostShown(tester), 0);
+
+      nav.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      // A fifth of the way into the pop, the overview is about half in.
+      expect(frostShown(tester), greaterThan(0.3));
+      await tester.pump(const Duration(milliseconds: 100));
+      final slid = Curves.fastEaseInToSlowEaseOut.flipped.transform(
+        detail.animation!.value,
+      );
+      expect(frostShown(tester), moreOrLessEquals(1 - slid, epsilon: 0.01));
+      expect(frostShown(tester), inExclusiveRange(0, 1));
+
+      await tester.pumpAndSettle();
+      expect(frostShown(tester), 1);
+    });
+
+    testWidgets('the backdrop follows a back swipe, and goes when it is let '
+        'go', (tester) async {
+      useIOS26Phone(tester);
+      final nav = GlobalKey<NavigatorState>();
+      await pumpScrolledOverview(tester, nav);
+      final detail = pushDetail(nav);
+      await tester.pumpAndSettle();
+      expect(frostShown(tester), 0);
+
+      final gesture = await tester.startGesture(const Offset(4, 400));
+      await gesture.moveBy(const Offset(40, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(120, 0));
+      await tester.pump();
+      expect(detail.animation!.value, inExclusiveRange(0, 1));
+      // Under the finger, without easing.
+      expect(
+        frostShown(tester),
+        moreOrLessEquals(1 - detail.animation!.value, epsilon: 0.01),
+      );
+
+      // Back to the start, and let go: the detail page stays.
+      await gesture.moveBy(const Offset(-160, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('body:Detail'), findsOneWidget);
+      expect(frostShown(tester), 0);
+    });
+  });
 
   testWidgets(
     'the backdrop is the content blurred in the colour of the page it sits on, down to the bottom of the bar, once content scrolls under it',
