@@ -294,6 +294,46 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
 
   final _picker = IOS26DatePickerController();
 
+  /// How far in the sheet is when the native picker is made. Making it takes
+  /// UIKit a while, and a sheet that slid up meanwhile skipped most of its
+  /// frames; what is left of the spring by then is a creep of a few points,
+  /// which the stall does not show in.
+  static const _inEnough = 0.97;
+
+  Animation<double>? _entrance;
+  bool _entered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final entrance = ModalRoute.of(context)?.animation;
+    if (identical(entrance, _entrance)) return;
+    _entrance?.removeListener(_onEntrance);
+    _entrance = entrance;
+    if (entrance == null || _isIn(entrance)) {
+      _entered = true;
+    } else if (!_entered) {
+      entrance.addListener(_onEntrance);
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrance?.removeListener(_onEntrance);
+    super.dispose();
+  }
+
+  static bool _isIn(Animation<double> entrance) =>
+      entrance.isCompleted ||
+      entrance.status == AnimationStatus.forward && entrance.value >= _inEnough;
+
+  void _onEntrance() {
+    final entrance = _entrance!;
+    if (!_isIn(entrance)) return;
+    entrance.removeListener(_onEntrance);
+    setState(() => _entered = true);
+  }
+
   /// Whether a tap on the checkmark is being handled: a second tap while the
   /// native picker answers would pop the page under the sheet too.
   bool _confirming = false;
@@ -419,6 +459,7 @@ class _IOS26DatePickerSheetState extends State<_IOS26DatePickerSheet> {
                     minuteInterval: widget.minuteInterval,
                     use24HourFormat: widget.use24HourFormat,
                     controller: _picker,
+                    deferNative: !_entered,
                     onChanged: (date) => _selected = date,
                   ),
                 ),

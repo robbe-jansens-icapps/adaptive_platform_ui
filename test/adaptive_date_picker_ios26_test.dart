@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,11 +12,16 @@ void main() {
   /// The native date pickers created: their ids and creation parameters.
   final created = <(int, Map<Object?, Object?>)>[];
 
+  /// While set, creating a native view takes until it completes.
+  Completer<void>? creating;
+
   setUp(() {
     created.clear();
+    creating = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
           if (call.method != 'create') return null;
+          await creating?.future;
           final args = call.arguments as Map<Object?, Object?>;
           if (args['viewType'] == 'adaptive_platform_ui/ios26_date_picker') {
             final params = args['params']! as Uint8List;
@@ -137,6 +143,137 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    double sheetShown(WidgetTester tester) => ModalRoute.of(
+      tester.element(find.byType(IOS26DatePicker)),
+    )!.animation!.value;
+
+    Future<void> showOnly(
+      WidgetTester tester, {
+      IOS26DatePickerStyle style = IOS26DatePickerStyle.inline,
+    }) async {
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (c) {
+              context = c;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+      unawaited(
+        AdaptiveDatePicker.show(
+          context: context,
+          initialDate: DateTime(2026),
+          iosStyle: style,
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('the sheet slides up at once, the native picker made only '
+        'once it is in: making it meanwhile would skip most of its frames', (
+      tester,
+    ) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      await showOnly(tester);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(sheetShown(tester), greaterThan(0));
+      expect(created, isEmpty);
+
+      await tester.pumpAndSettle();
+      expect(sheetShown(tester), 1);
+      expect(created, hasLength(1));
+    });
+
+    testWidgets("the system's wheels take over from Flutter's once they are "
+        'drawn at their height', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      await showOnly(tester, style: IOS26DatePickerStyle.wheels);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      await tester.pumpAndSettle();
+      final (id, params) = created.single;
+      expect(params['style'], 'wheels');
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+
+      await fromNative(id, 'height', {'height': 216.0});
+      await tester.pumpAndSettle();
+      expect(find.byType(CupertinoDatePicker), findsNothing);
+    });
+
+    testWidgets('a native picker that does not say its height shows all the '
+        'same', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      await showOnly(tester, style: IOS26DatePickerStyle.wheels);
+      await tester.pumpAndSettle();
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(find.byType(CupertinoDatePicker), findsNothing);
+    });
+
+    testWidgets('the calendar starts at the height an earlier one needed, '
+        'rather than growing to it as it shows', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      await showOnly(tester);
+      await tester.pumpAndSettle();
+      await fromNative(created.single.$1, 'height', {'height': 388.0});
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(IOS26DatePicker)).height, 388);
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+
+      await showOnly(tester);
+      expect(tester.getSize(find.byType(IOS26DatePicker)).height, 388);
+    });
+
+    testWidgets('a tap beside the sheet closes it, also while it comes up, '
+        'rather than reaching the page under it', (tester) async {
+      IOS26DatePicker.debugHasUIKitOverride = true;
+      creating = Completer<void>();
+      var fieldTaps = 0;
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (c) {
+              context = c;
+              return Align(
+                alignment: Alignment.topCenter,
+                child: GestureDetector(
+                  onTap: () => fieldTaps++,
+                  child: const SizedBox(width: 300, height: 100),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      var closed = false;
+      unawaited(
+        AdaptiveDatePicker.show(
+          context: context,
+          initialDate: DateTime(2026),
+        ).then((date) => closed = date == null),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      await tester.tapAt(const Offset(400, 50));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(fieldTaps, 0);
+      expect(closed, isTrue);
+      creating!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(IOS26DatePicker), findsNothing);
     });
 
     testWidgets('the checkmark confirms the day shown, without its time', (

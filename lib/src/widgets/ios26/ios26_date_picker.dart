@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 /// How [IOS26DatePicker] shows its dates.
@@ -42,6 +44,7 @@ class IOS26DatePicker extends StatefulWidget {
     this.minuteInterval = 1,
     this.use24HourFormat = false,
     this.controller,
+    this.deferNative = false,
   });
 
   final DateTime initialDate;
@@ -60,6 +63,13 @@ class IOS26DatePicker extends StatefulWidget {
 
   final IOS26DatePickerController? controller;
 
+  /// While true, a Flutter stand-in takes the native picker's place and the
+  /// native picker is not made yet: UIKit takes a while to make it, which
+  /// stalls an animation running meanwhile, such as the sheet it comes up in.
+  /// Once false, it is made and fades in over the stand-in: the system's
+  /// wheels over Flutter's, the calendar into its room.
+  final bool deferNative;
+
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
   static bool? debugHasUIKitOverride;
@@ -69,10 +79,27 @@ class IOS26DatePicker extends StatefulWidget {
 }
 
 class _IOS26DatePickerState extends State<IOS26DatePicker> {
+  static const _fade = Duration(milliseconds: 150);
+
+  /// How long the native picker may take to say its height before it shows
+  /// all the same.
+  static const _heightAtLatest = Duration(milliseconds: 300);
+
+  /// The heights native pickers needed, by style, mode, display width and
+  /// text size: the next one starts at its height rather than growing to it.
+  static final _knownHeights = <String, double>{};
+
   MethodChannel? _channel;
 
   /// The height the native picker needs at the width it has, once it said.
   double? _height;
+
+  /// Whether the native picker is made, and whether it shows, drawn at its
+  /// height: until then the stand-in does.
+  bool _made = false;
+  bool _shown = false;
+  bool _standInGone = false;
+  Timer? _showAtLatest;
 
   static bool get _hasUIKit =>
       IOS26DatePicker.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
@@ -98,7 +125,21 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   void dispose() {
     if (widget.controller?._state == this) widget.controller?._state = null;
     _channel?.setMethodCallHandler(null);
+    _showAtLatest?.cancel();
     super.dispose();
+  }
+
+  String _heightKey(BuildContext context) =>
+      '${widget.style.name} $_mode ${MediaQuery.sizeOf(context).width.round()} '
+      '${MediaQuery.textScalerOf(context).scale(17)}';
+
+  /// Shows the native picker once the frame with it at its height is drawn.
+  void _show() {
+    _showAtLatest?.cancel();
+    if (_shown) return;
+    SchedulerBinding.instance.endOfFrame.then((_) {
+      if (mounted && !_shown) setState(() => _shown = true);
+    });
   }
 
   Future<bool> _showDays() async {
@@ -123,6 +164,7 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   };
 
   void _onCreated(int id) {
+    _showAtLatest = Timer(_heightAtLatest, _show);
     _channel = MethodChannel('adaptive_platform_ui/ios26_date_picker_$id')
       ..setMethodCallHandler((call) async {
         final arguments = call.arguments as Map<Object?, Object?>?;
@@ -135,54 +177,88 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
           case 'height':
             final height = (arguments?['height'] as num?)?.toDouble();
             if (mounted && height != null && height > 0 && height != _height) {
+              _knownHeights[_heightKey(context)] = height;
               setState(() => _height = height);
             }
+            if (mounted) _show();
         }
       });
   }
 
+  /// The wheels as Flutter draws them, where there is no UIKit, and in place
+  /// of the system's wheels until they show.
+  Widget _cupertinoWheels() => SizedBox(
+    height: 216,
+    child: CupertinoDatePicker(
+      initialDateTime: widget.initialDate,
+      minimumDate: widget.firstDate,
+      maximumDate: widget.lastDate,
+      mode: widget.mode,
+      minuteInterval: widget.minuteInterval,
+      use24hFormat: widget.use24HourFormat,
+      onDateTimeChanged: widget.onChanged,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    if (!_hasUIKit) {
-      return SizedBox(
-        height: 216,
-        child: CupertinoDatePicker(
-          initialDateTime: widget.initialDate,
-          minimumDate: widget.firstDate,
-          maximumDate: widget.lastDate,
-          mode: widget.mode,
-          minuteInterval: widget.minuteInterval,
-          use24hFormat: widget.use24HourFormat,
-          onDateTimeChanged: widget.onChanged,
-        ),
-      );
-    }
+    if (!_hasUIKit) return _cupertinoWheels();
+    _made = _made || !widget.deferNative;
     final tint = widget.tint;
     final firstDate = widget.firstDate;
     final lastDate = widget.lastDate;
+    final inline = widget.style == IOS26DatePickerStyle.inline;
     return SizedBox(
       height:
-          _height ?? (widget.style == IOS26DatePickerStyle.inline ? 360 : 216),
-      child: UiKitView(
-        viewType: 'adaptive_platform_ui/ios26_date_picker',
-        creationParams: <String, Object>{
-          'mode': _mode,
-          'style': widget.style.name,
-          'initial': widget.initialDate.millisecondsSinceEpoch,
-          'minimum': ?firstDate?.millisecondsSinceEpoch,
-          'maximum': ?lastDate?.millisecondsSinceEpoch,
-          'tint': ?tint?.toARGB32(),
-          'minuteInterval': widget.minuteInterval,
-          'locale': ?Localizations.maybeLocaleOf(context)?.toLanguageTag(),
-          'isDark':
-              MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark,
-        },
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: _onCreated,
-        // Its wheels and its calendar take every touch on them.
-        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-          Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-        },
+          _height ?? _knownHeights[_heightKey(context)] ?? (inline ? 360 : 216),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_made)
+            AnimatedOpacity(
+              key: const ValueKey('native'),
+              // Faint rather than out until it shows: iOS lays it out, and
+              // it says its height, only once it is on screen.
+              opacity: _shown ? 1 : 0.01,
+              duration: _fade,
+              child: UiKitView(
+                viewType: 'adaptive_platform_ui/ios26_date_picker',
+                creationParams: <String, Object>{
+                  'mode': _mode,
+                  'style': widget.style.name,
+                  'initial': widget.initialDate.millisecondsSinceEpoch,
+                  'minimum': ?firstDate?.millisecondsSinceEpoch,
+                  'maximum': ?lastDate?.millisecondsSinceEpoch,
+                  'tint': ?tint?.toARGB32(),
+                  'minuteInterval': widget.minuteInterval,
+                  'locale': ?Localizations.maybeLocaleOf(
+                    context,
+                  )?.toLanguageTag(),
+                  'isDark':
+                      MediaQuery.maybePlatformBrightnessOf(context) ==
+                      Brightness.dark,
+                },
+                creationParamsCodec: const StandardMessageCodec(),
+                onPlatformViewCreated: _onCreated,
+                // Its wheels and its calendar take every touch on them.
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<OneSequenceGestureRecognizer>(
+                    EagerGestureRecognizer.new,
+                  ),
+                },
+              ),
+            ),
+          if (!_standInGone)
+            IgnorePointer(
+              key: const ValueKey('stand-in'),
+              child: AnimatedOpacity(
+                opacity: _shown ? 0 : 1,
+                duration: _fade,
+                onEnd: () => setState(() => _standInGone = true),
+                child: inline ? const SizedBox.shrink() : _cupertinoWheels(),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -60,8 +60,20 @@ class iOS26DatePickerView: NSObject, FlutterPlatformView {
         picker.datePickerMode = Self.mode(params["mode"] as? String)
         picker.preferredDatePickerStyle =
             (params["style"] as? String) == "wheels" ? .wheels : .inline
+        // The app's language with the device's region and clock, as the rest
+        // of the app has them: on its own, a language such as English gave a
+        // 12-hour clock on a device set to 24 hours.
         if let locale = params["locale"] as? String {
-            picker.locale = Locale(identifier: locale)
+            if #available(iOS 16, *) {
+                var components = Locale.Components(locale: Locale(identifier: locale))
+                if components.region == nil {
+                    components.region = Locale.current.region
+                }
+                components.hourCycle = Locale.current.hourCycle
+                picker.locale = Locale(components: components)
+            } else {
+                picker.locale = Locale(identifier: locale)
+            }
         }
         if let interval = params["minuteInterval"] as? Int, interval > 0 {
             picker.minuteInterval = interval
