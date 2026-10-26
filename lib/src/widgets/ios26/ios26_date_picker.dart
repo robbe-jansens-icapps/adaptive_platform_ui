@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 /// How [IOS26DatePicker] shows its dates.
@@ -43,7 +42,6 @@ class IOS26DatePicker extends StatefulWidget {
     this.minuteInterval = 1,
     this.use24HourFormat = false,
     this.controller,
-    this.onReady,
   });
 
   final DateTime initialDate;
@@ -62,11 +60,6 @@ class IOS26DatePicker extends StatefulWidget {
 
   final IOS26DatePickerController? controller;
 
-  /// Called once the native picker is drawn at the height it needs, for a
-  /// sheet to slide up with it rather than while UIKit makes it, which takes
-  /// a few frames that would freeze the sheet. Right away for the stand-in.
-  final VoidCallback? onReady;
-
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
   static bool? debugHasUIKitOverride;
@@ -76,16 +69,10 @@ class IOS26DatePicker extends StatefulWidget {
 }
 
 class _IOS26DatePickerState extends State<IOS26DatePicker> {
-  /// The heights native pickers needed, by style, mode, display width and
-  /// text size: the next one starts at its height.
-  static final _knownHeights = <String, double>{};
-
   MethodChannel? _channel;
 
   /// The height the native picker needs at the width it has, once it said.
   double? _height;
-
-  bool _ready = false;
 
   static bool get _hasUIKit =>
       IOS26DatePicker.debugHasUIKitOverride ?? (!kIsWeb && Platform.isIOS);
@@ -94,7 +81,6 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
   void initState() {
     super.initState();
     widget.controller?._state = this;
-    if (!_hasUIKit) _onDrawn();
   }
 
   @override
@@ -113,21 +99,6 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
     if (widget.controller?._state == this) widget.controller?._state = null;
     _channel?.setMethodCallHandler(null);
     super.dispose();
-  }
-
-  String _heightKey(BuildContext context) =>
-      '${widget.style.name} $_mode ${MediaQuery.sizeOf(context).width.round()} '
-      '${MediaQuery.textScalerOf(context).scale(17)}';
-
-  /// Says the picker is ready once the frame with it at its height is drawn.
-  void _onDrawn() {
-    if (_ready) return;
-    _ready = true;
-    SchedulerBinding.instance
-      ..addPostFrameCallback((_) {
-        if (mounted) widget.onReady?.call();
-      })
-      ..ensureVisualUpdate();
   }
 
   Future<bool> _showDays() async {
@@ -164,10 +135,8 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
           case 'height':
             final height = (arguments?['height'] as num?)?.toDouble();
             if (mounted && height != null && height > 0 && height != _height) {
-              _knownHeights[_heightKey(context)] = height;
               setState(() => _height = height);
             }
-            if (mounted) _onDrawn();
         }
       });
   }
@@ -191,10 +160,9 @@ class _IOS26DatePickerState extends State<IOS26DatePicker> {
     final tint = widget.tint;
     final firstDate = widget.firstDate;
     final lastDate = widget.lastDate;
-    final inline = widget.style == IOS26DatePickerStyle.inline;
     return SizedBox(
       height:
-          _height ?? _knownHeights[_heightKey(context)] ?? (inline ? 360 : 216),
+          _height ?? (widget.style == IOS26DatePickerStyle.inline ? 360 : 216),
       child: UiKitView(
         viewType: 'adaptive_platform_ui/ios26_date_picker',
         creationParams: <String, Object>{
