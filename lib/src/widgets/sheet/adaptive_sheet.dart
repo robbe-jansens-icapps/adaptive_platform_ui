@@ -1509,15 +1509,13 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
           ? GlassSurfaceCorners.fixed
           : GlassSurfaceCorners.concentric,
       fill: widget.glassFill,
-      // The content is clipped on its own, as a sibling of the glass: a clip
-      // around the glass would break it.
-      child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(sidePanel ? 28 : radius),
-        child: _ClearOfAccessory(
-          bottom: _accessoryEdge(metrics),
-          moves: _accessoryEdgeMoves,
-          child: content,
-        ),
+      // In the glass's own shape, whose corners near the display's are
+      // rounder than radius.
+      clipBehavior: Clip.antiAlias,
+      child: _ClearOfAccessory(
+        bottom: _accessoryEdge(metrics),
+        moves: _accessoryEdgeMoves,
+        child: content,
       ),
     );
   }

@@ -88,6 +88,27 @@ void main() {
     expect(glass.bottom, _phone.height - 8);
   });
 
+  testWidgets('cuts its content off in the shape of its glass', (tester) async {
+    usePhone(tester);
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<IOS26GlassSurface>(find.byType(IOS26GlassSurface)),
+      isA<IOS26GlassSurface>()
+          .having(
+            (glass) => glass.corners,
+            'corners',
+            GlassSurfaceCorners.concentric,
+          )
+          .having(
+            (glass) => glass.clipBehavior,
+            'clipBehavior',
+            Clip.antiAlias,
+          ),
+    );
+  });
+
   testWidgets('keeps clear of the iPhone Duo vertical bar', (tester) async {
     usePhone(tester);
     // The strip pose: no top inset, the system strip on one side only.
