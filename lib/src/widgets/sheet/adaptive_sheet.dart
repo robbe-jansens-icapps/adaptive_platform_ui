@@ -709,6 +709,17 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     return _contentBottom(m) + widget.padding.bottom + m.ownAccessoryRoom;
   }
 
+  /// How far the frame reaches below where a floating sheet rests: growing
+  /// to its large detent it goes edge to edge, and on past the bottom, and
+  /// its content keeps that much more room at its end to scroll clear of the
+  /// tabs.
+  double _belowFloating(_Metrics m) => m.material || m.sidePanel
+      ? 0
+      : math.max(
+          0.0,
+          _frame(_extent.value, m).bottom - (m.size.height - _bottomGap(m)),
+        );
+
   double _collapsedExtent(_Metrics m) =>
       _grabberHeight +
       (_headerHeight ?? 0) +
@@ -1427,13 +1438,19 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
                                       metrics.padding.bottom +
                                       metrics.accessoryBand),
                             ),
-                      child: SingleChildScrollView(
-                        controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: contentPadding,
-                        // Scrolled, on under the top; the sheet clips it.
-                        clipBehavior: underTop ? Clip.none : Clip.hardEdge,
-                        child: measuredChild,
+                      child: AnimatedBuilder(
+                        animation: _extent,
+                        builder: (context, _) => SingleChildScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: contentPadding.copyWith(
+                            bottom:
+                                contentPadding.bottom + _belowFloating(metrics),
+                          ),
+                          // Scrolled, on under the top; the sheet clips it.
+                          clipBehavior: underTop ? Clip.none : Clip.hardEdge,
+                          child: measuredChild,
+                        ),
                       ),
                     ),
                   )

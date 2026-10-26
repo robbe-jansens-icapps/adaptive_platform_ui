@@ -114,6 +114,58 @@ void main() {
     expect(tester.widget<Opacity>(fade).opacity, 1);
   });
 
+  testWidgets('at its tallest, edge to edge and on past the bottom, its '
+      'content still scrolls its end as far clear of the tabs as lower down', (
+    tester,
+  ) async {
+    usePhone(tester);
+    tester.view.padding = const FakeViewPadding(top: 60, bottom: 100);
+    tester.view.viewPadding = const FakeViewPadding(top: 60, bottom: 100);
+    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+    PlatformInfo.debugIOSVersionOverride = 26;
+    addTearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      PlatformInfo.debugIOSVersionOverride = null;
+    });
+    const tabsTop = 800.0 - 100;
+
+    /// How far above the tabs the end of the content rests, scrolled to it,
+    /// at [detent].
+    Future<double> roomAtEnd(AdaptiveSheetDetent detent) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdaptiveSheet(
+            detents: const [
+              AdaptiveSheetDetent.fraction(0.5),
+              AdaptiveSheetDetent.large,
+            ],
+            initialDetent: detent,
+            child: Column(
+              children: [
+                for (var i = 0; i < 30; i++)
+                  SizedBox(key: ValueKey(i), height: 60, child: Text('row $i')),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Scrolled to its end, the content ends its bottom padding above the
+      // bottom of the scroll view.
+      final scrollView = find.byType(SingleChildScrollView);
+      final padding = tester
+          .widget<SingleChildScrollView>(scrollView)
+          .padding!
+          .resolve(TextDirection.ltr);
+      return tabsTop - (tester.getRect(scrollView).bottom - padding.bottom);
+    }
+
+    final lower = await roomAtEnd(const AdaptiveSheetDetent.fraction(0.5));
+    expect(lower, greaterThanOrEqualTo(0));
+    expect(await roomAtEnd(AdaptiveSheetDetent.large), closeTo(lower, 0.5));
+  });
+
   testWidgets('content kept clear of the bars fades out as it runs on under '
       'the tabs alone, on glass of their own, but ends at a clean edge above an '
       'accessory on the sheet, which has none', (tester) async {
