@@ -861,7 +861,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         widget.controller?._onDetentChanged();
       });
     }
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+    // Out of view, as on a tab not shown, the ticker is muted: a spring would
+    // stand still at its start until the sheet shows, for a frame, and then
+    // jump to its end.
+    if ((MediaQuery.maybeDisableAnimationsOf(context) ?? false) ||
+        !TickerMode.getValuesNotifier(context).value.enabled) {
       _extent.value = to;
       return Future<void>.value();
     }

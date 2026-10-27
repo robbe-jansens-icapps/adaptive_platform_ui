@@ -75,6 +75,28 @@ void main() {
     expect(settled.last, EdgeInsets.only(bottom: fitExtent(200)));
   });
 
+  testWidgets('built out of view, it is in place on the frame it first shows', (
+    tester,
+  ) async {
+    usePhone(tester);
+    final inView = ValueNotifier(false);
+    addTearDown(inView.dispose);
+    await tester.pumpWidget(
+      ValueListenableBuilder(
+        valueListenable: inView,
+        builder: (context, value, child) =>
+            TickerMode(enabled: value, child: child!),
+        child: sheetApp(),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    inView.value = true;
+    await tester.pump();
+
+    expect(sheetTop(tester), closeTo(_phone.height - fitExtent(200), 0.5));
+  });
+
   testWidgets('floats inset from the edges below the large detent', (
     tester,
   ) async {
