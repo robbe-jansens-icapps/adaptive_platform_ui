@@ -157,6 +157,8 @@ void main() {
 
     test('is measured on iOS, and measured again on request', () async {
       PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      addTearDown(() => PlatformInfo.debugIOSVersionOverride = null);
       expect(PlatformInfo.displayCornerRadius, 0);
 
       measured = 55.0;
@@ -167,6 +169,45 @@ void main() {
       measured = 38.0;
       await PlatformInfo.loadDisplayCornerRadius();
       expect(PlatformInfo.displayCornerRadius, 38);
+    });
+
+    test('on iOS 27, which does not tell, an iPhone takes the corners most '
+        'iPhones have; an iPad and a foldable keep to their glass', () async {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 27;
+      addTearDown(() {
+        PlatformInfo.debugIOSVersionOverride = null;
+        PlatformInfo.debugIPadOverride = null;
+        PlatformInfo.debugFoldableOverride = null;
+      });
+      measured = 0.0;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(
+        PlatformInfo.displayCornerRadius,
+        PlatformInfo.assumedIPhoneDisplayCornerRadius,
+      );
+      expect(IOS26GlassSurface.concentricRadius(inset: 8, minimum: 34), 54);
+
+      PlatformInfo.debugIPadOverride = true;
+      expect(PlatformInfo.displayCornerRadius, 0);
+      PlatformInfo.debugIPadOverride = false;
+      PlatformInfo.debugFoldableOverride = true;
+      expect(PlatformInfo.displayCornerRadius, 0);
+
+      // Should it tell again.
+      PlatformInfo.debugFoldableOverride = false;
+      measured = 55.0;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(PlatformInfo.displayCornerRadius, 55);
+    });
+
+    test('on iOS 26 a radius that could not be measured stays 0', () async {
+      PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+      PlatformInfo.debugIOSVersionOverride = 26;
+      addTearDown(() => PlatformInfo.debugIOSVersionOverride = null);
+      measured = 0.0;
+      await PlatformInfo.loadDisplayCornerRadius();
+      expect(PlatformInfo.displayCornerRadius, 0);
     });
 
     test('is square elsewhere', () async {

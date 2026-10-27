@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:foldable/foldable.dart';
 
 /// Provides platform detection and iOS version information
 ///
@@ -27,7 +28,17 @@ class PlatformInfo {
   @visibleForTesting
   static double? debugDisplayCornerRadiusOverride;
 
+  /// Replaces whether the device folds (the iPhone Duo) in tests.
+  @visibleForTesting
+  static bool? debugFoldableOverride;
+
+  /// What an iPhone takes as [displayCornerRadius] where iOS does not tell
+  /// (iOS 27): the corners of the iPhones it runs on most, so a sheet 8
+  /// points in from them rounds by 54 points, as the system's glass draws it.
+  static const double assumedIPhoneDisplayCornerRadius = 62;
+
   static bool _isIPad = false;
+  static bool _isFoldable = false;
   static double _displayCornerRadius = 0;
   static Future<void>? _deviceLoad;
 
@@ -42,8 +53,22 @@ class PlatformInfo {
   /// from the display's edges. Read from the device once [loadDevice]
   /// completes, and again by [loadDisplayCornerRadius]; 0 until then, before
   /// iOS 26 and off iOS.
-  static double get displayCornerRadius =>
-      debugDisplayCornerRadiusOverride ?? (isIOS ? _displayCornerRadius : 0);
+  ///
+  /// iOS 27 no longer tells (a view's concentric radius reads as 0), while
+  /// its glass still follows the display's corners: an iPhone takes
+  /// [assumedIPhoneDisplayCornerRadius] there. An iPad, whose glass keeps to
+  /// its own radius so far in from its gentle corners, and the iPhone Duo,
+  /// where iOS 27 draws it so too, keep 0.
+  static double get displayCornerRadius {
+    final override = debugDisplayCornerRadiusOverride;
+    if (override != null) return override;
+    if (!isIOS) return 0;
+    if (_displayCornerRadius > 0 || iOSVersion < 27) {
+      return _displayCornerRadius;
+    }
+    final foldable = debugFoldableOverride ?? _isFoldable;
+    return isIPad || foldable ? 0 : assumedIPhoneDisplayCornerRadius;
+  }
 
   static const _device = MethodChannel('adaptive_platform_ui/device');
 
@@ -56,6 +81,11 @@ class PlatformInfo {
       _isIPad = await _device.invokeMethod<bool>('isPad') ?? false;
     } catch (_) {
       // Without the native side (tests, other hosts) it is no iPad.
+    }
+    try {
+      _isFoldable = await Foldable.isFoldable;
+    } catch (_) {
+      // Without the native side it does not fold.
     }
     await loadDisplayCornerRadius();
   }

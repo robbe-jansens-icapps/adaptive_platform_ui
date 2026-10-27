@@ -10,10 +10,13 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
     /// concentric with it. 0 before iOS 26 and without a window.
     static func displayCornerRadius() -> Double {
         guard #available(iOS 26.0, *) else { return 0 }
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
+        // The key window, or else one of the app's windows: asked as the app
+        // starts, it may have one that is not key yet.
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.flatMap { $0.windows }
+        let window = windows.first { $0.isKeyWindow }
+            ?? scenes.first { $0.activationState == .foregroundActive }?.windows.first
+            ?? windows.first
         guard let window else { return 0 }
         let probe = UIView(frame: window.bounds)
         probe.isHidden = true

@@ -122,6 +122,8 @@ class AdaptiveDatePicker {
       'title': ?title,
       'closeLabel': localizations.closeButtonTooltip,
       'confirmLabel': localizations.okButtonLabel,
+      // How much room the picker keeps from the sheet's round bottom corners.
+      'displayCornerRadius': PlatformInfo.displayCornerRadius,
     };
     // A route pushed over the page took the focus from a text field there,
     // and the keyboard with it; a sheet of UIKit's does neither. The

@@ -92,7 +92,10 @@ final class DatePickerSheetController: UIViewController,
     private init(params: [String: Any], result: @escaping FlutterResult) {
         self.params = params
         reply = result
-        let concentric = max(34, CGFloat(AdaptivePlatformUiPlugin.displayCornerRadius()) - 8)
+        // As Dart has it: iOS 27 does not tell.
+        let display = (params["displayCornerRadius"] as? NSNumber)?.doubleValue
+            ?? AdaptivePlatformUiPlugin.displayCornerRadius()
+        let concentric = max(34, CGFloat(display) - 8)
         bottomRoom = 12 + max(0, (concentric - 34) * 0.4)
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .formSheet

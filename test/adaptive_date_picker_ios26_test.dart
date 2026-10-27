@@ -164,6 +164,8 @@ void main() {
 
     testWidgets('the native sheet gets the dates, tint, language, title and '
         'button labels, the first date on the minute interval', (tester) async {
+      PlatformInfo.debugDisplayCornerRadiusOverride = 62;
+      addTearDown(() => PlatformInfo.debugDisplayCornerRadiusOverride = null);
       await open(
         tester,
         mode: CupertinoDatePickerMode.dateAndTime,
@@ -189,6 +191,7 @@ void main() {
       expect(arguments['confirmLabel'], 'OK');
       expect(arguments['isDark'], isFalse);
       expect(arguments['rtl'], isFalse);
+      expect(arguments['displayCornerRadius'], 62);
     });
 
     testWidgets('the date picked comes back as the mode has it', (
