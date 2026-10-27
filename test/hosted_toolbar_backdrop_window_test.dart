@@ -1,4 +1,5 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/toolbar/chrome_barrier.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
@@ -65,6 +66,13 @@ double frostShown(WidgetTester tester) => tester
       find.ancestor(of: frost, matching: find.byType(Opacity)).first,
     )
     .opacity;
+
+/// The barrier laid over the backdrop while a dialog or a sheet covers the
+/// page.
+Finder get backdropBarrier => find.descendant(
+  of: find.byKey(const ValueKey<String>('adaptive_toolbar_backdrop')),
+  matching: find.byType(ChromeBarrierBox),
+);
 
 /// The opacity the backdrop is drawn at, all fades around it together.
 double backdropOpacity(WidgetTester tester) {
@@ -273,9 +281,89 @@ void main() {
     },
   );
 
-  testWidgets('the backdrop fades out while a sheet covers the page', (
-    tester,
-  ) async {
+  testWidgets(
+    'under a dialog the bar keeps its strength, its controls under the '
+    'dialog\'s barrier as the page is',
+    (tester) async {
+      useIOS26Phone(tester);
+      final nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        hostedApp(navigatorKey: nav, home: page('Overview')),
+      );
+      await tester.pump();
+      nav.currentState!.push(
+        CupertinoPageRoute<void>(
+          builder: (_) => AdaptiveScaffold(
+            appBar: AdaptiveAppBar(
+              useNativeToolbar: true,
+              titleWidget: const Text('Detail'),
+              actions: [
+                AdaptiveAppBarAction(iosSymbol: 'plus', onPressed: () {}),
+              ],
+            ),
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bar, matching: find.byType(ChromeBarrierBox)),
+        findsNothing,
+      );
+
+      showDialog<void>(
+        context: nav.currentContext!,
+        builder: (_) => const AlertDialog(title: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+
+      final chrome = tester
+          .widget<FadeTransition>(
+            find
+                .descendant(of: bar, matching: find.byType(FadeTransition))
+                .first,
+          )
+          .opacity
+          .value;
+      expect(chrome, 1);
+      // Over the glass of the back button and of the action, lighter by as
+      // much as the glass lets the dimmed page show through.
+      const barrier = 0x8A / 0xFF;
+      const overGlass = 1 - (1 - barrier) / (1 - kGlassShowsThrough * barrier);
+      final glass = tester
+          .widgetList<ChromeBarrierBox>(
+            find.descendant(of: bar, matching: find.byType(ChromeBarrierBox)),
+          )
+          .where((box) => box.shape is! RoundedRectangleBorder)
+          .toList();
+      expect(glass.map((box) => box.shape.runtimeType).toSet(), {
+        CircleBorder,
+        StadiumBorder,
+      });
+      for (final box in glass) {
+        expect(box.barrier.value!.a, closeTo(overGlass, 0.005));
+      }
+      // The title, drawn by Flutter, on its own pixels, as the page is.
+      final title = tester.widget<ChromeBarrierTint>(
+        find.ancestor(
+          of: find.text('Detail'),
+          matching: find.byType(ChromeBarrierTint),
+        ),
+      );
+      expect(title.barrier!.value!.a, closeTo(barrier, 0.005));
+
+      nav.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bar, matching: find.byType(ChromeBarrierBox)),
+        findsNothing,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets('the backdrop stays while a sheet covers the page, under the '
+      'sheet\'s barrier as the page is', (tester) async {
     useWindow(tester);
     tester.view.padding = const FakeViewPadding(top: 62);
     tester.view.viewPadding = const FakeViewPadding(top: 62);
@@ -288,17 +376,27 @@ void main() {
     );
     await tester.pump();
     expect(backdropOpacity(tester), 1);
+    expect(backdropBarrier, findsNothing);
 
     showModalBottomSheet<void>(
       context: nav.currentContext!,
       builder: (_) => const SizedBox(height: 200),
     );
     await tester.pumpAndSettle();
-    expect(backdropOpacity(tester), 0);
+    expect(backdropOpacity(tester), 1);
+    // The sheet's black54, lighter by as much as the frost lets the page,
+    // which is under it already, show through its tint.
+    const barrier = 0x8A / 0xFF;
+    const showsThrough = 1 - AdaptiveBarBackdrop.defaultTint;
+    expect(
+      tester.widget<ChromeBarrierBox>(backdropBarrier).barrier.value!.a,
+      closeTo(1 - (1 - barrier) / (1 - showsThrough * barrier), 0.005),
+    );
 
     nav.currentState!.pop();
     await tester.pumpAndSettle();
     expect(backdropOpacity(tester), 1);
+    expect(backdropBarrier, findsNothing);
   });
 
   testWidgets(

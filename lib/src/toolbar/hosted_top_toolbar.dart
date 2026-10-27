@@ -17,6 +17,7 @@ import '../widgets/adaptive_button.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
+import 'chrome_barrier.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -300,6 +301,13 @@ class HostedTopToolbar extends StatelessWidget {
         : content.backdropColor;
     final upperColor = colorOf(upper) ?? systemBackground;
     final lowerColor = colorOf(lower) ?? systemBackground;
+    // Under a dialog or a sheet the native bar stays as it is, under the
+    // barrier with the page, as UIKit's does under its dimming: it sits above
+    // the navigator, out of the barrier's reach, so it lays the barrier over
+    // its backdrop and controls itself. Custom chrome and the iPhone Duo's
+    // title band fade instead.
+    final dimsInPlace = !custom && !titleOnly;
+    final coveredBy = dimsInPlace ? blend.coveringRoute : null;
     // While both pages have one, the backdrop goes from the one page's to the
     // other's as the pages slide: a page coming back brings its colour and
     // how far it was scrolled with it, rather than at the end.
@@ -320,6 +328,7 @@ class HostedTopToolbar extends StatelessWidget {
               backdropData,
               backdropTop,
               backdropEdge,
+              coveredBy: coveredBy,
             ),
           )
         : _backdrop(
@@ -328,6 +337,7 @@ class HostedTopToolbar extends StatelessWidget {
             backdropData,
             backdropTop,
             backdropEdge,
+            coveredBy: coveredBy,
           );
     if (custom) {
       // Custom chrome draws the background under its bars as the scroll edge
@@ -372,7 +382,9 @@ class HostedTopToolbar extends StatelessWidget {
         child: IgnorePointer(
           ignoring: blend.ownerIsCovered,
           child: FadeTransition(
-            opacity: blend.chromeOpacity,
+            opacity: dimsInPlace
+                ? kAlwaysCompleteAnimation
+                : blend.chromeOpacity,
             // Every layer is keyed, so a page's native bar survives the start
             // and the end of a blend instead of being torn down and rebuilt.
             child: Stack(
@@ -382,10 +394,13 @@ class HostedTopToolbar extends StatelessWidget {
                 FadeTransition(
                   key: const ValueKey<String>('adaptive_toolbar_backdrop'),
                   opacity: backdropOpacity,
-                  // Gone while a dialog or a sheet covers the page: over the
-                  // page's dimmed barrier it would show as a lighter band.
+                  // Gone while a dialog or a sheet covers the page where
+                  // nothing dims it: over the page's dimmed barrier it would
+                  // show as a lighter band.
                   child: FadeTransition(
-                    opacity: ReverseAnimation(blend.cover),
+                    opacity: dimsInPlace
+                        ? kAlwaysCompleteAnimation
+                        : ReverseAnimation(blend.cover),
                     child: _DialogSlide(
                       driver: backdropSlide,
                       child: _BesideSidebar(
@@ -405,6 +420,7 @@ class HostedTopToolbar extends StatelessWidget {
                     interactive: !upperOwns,
                     top: lowerTop,
                     besideSidebar: lowerBeside,
+                    coveredBy: coveredBy,
                   ),
                 if (upperEntry != null && !upper.isEmpty)
                   _layer(
@@ -416,6 +432,7 @@ class HostedTopToolbar extends StatelessWidget {
                     slide: upperSlide,
                     top: upperTop,
                     besideSidebar: upperBeside,
+                    coveredBy: coveredBy,
                   ),
                 // One back button of each look, always in place: shown when a
                 // page has one, kept alive but off stage otherwise, so its
@@ -432,6 +449,7 @@ class HostedTopToolbar extends StatelessWidget {
                       // The back button belongs to the page in front, or to
                       // the one leaving with it.
                       besideSidebar: upperOwns ? upperBeside : lowerBeside,
+                      coveredBy: coveredBy,
                     ),
               ],
             ),
@@ -454,6 +472,7 @@ class HostedTopToolbar extends StatelessWidget {
     back,
     required double topInset,
     bool besideSidebar = false,
+    Route<Object?>? coveredBy,
   }) {
     final top = back?.$5 ?? topInset;
     // Beside the status cluster only while the bar is in the strip.
@@ -492,6 +511,7 @@ class HostedTopToolbar extends StatelessWidget {
                       content: back?.$1 ?? TopToolbarContent(backStyle: style),
                       chrome: chrome,
                       placement: placement,
+                      coveredBy: coveredBy,
                       // While pages are pushed, popped or swiped back, also one
                       // that both pages show and that stays put, so all of them
                       // look the same; and one fading or sliding otherwise.
@@ -517,8 +537,9 @@ class HostedTopToolbar extends StatelessWidget {
     Color color,
     Object? data,
     double topInset,
-    ValueListenable<double> scrollEdge,
-  ) {
+    ValueListenable<double> scrollEdge, {
+    Route<Object?>? coveredBy,
+  }) {
     final builder = chrome?.barBackgroundBuilder;
     if (builder != null) {
       return builder(
@@ -539,10 +560,30 @@ class HostedTopToolbar extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: SizedBox(
               height: topInset + _toolbarHeight + _bottomPadding(context),
-              child: IgnorePointer(child: AdaptiveBarBackdrop(color: color)),
+              child: IgnorePointer(
+                child: _backdropUnder(
+                  AdaptiveBarBackdrop(color: color),
+                  // The frost shows the dimmed page through its tint.
+                  chromeBarrierOf(
+                    coveredBy,
+                    showsThrough: 1 - AdaptiveBarBackdrop.tintFor(color),
+                  ),
+                ),
+              ),
             ),
           );
   }
+
+  /// [backdrop] with [barrier] over it, built the same with and without one,
+  /// so the backdrop lives on when a dialog or a sheet comes or goes.
+  static Widget _backdropUnder(Widget backdrop, Animation<Color?>? barrier) =>
+      Stack(
+        fit: StackFit.expand,
+        children: [
+          backdrop,
+          if (barrier != null) ChromeBarrierBox(barrier: barrier),
+        ],
+      );
 
   /// While [entry] is a page shown like a dialog that comes up or goes down:
   /// its route's animation, which the blend follows. Null otherwise.
@@ -586,6 +627,7 @@ class HostedTopToolbar extends StatelessWidget {
     required double top,
     bool besideSidebar = false,
     Animation<double>? slide,
+    Route<Object?>? coveredBy,
   }) {
     // alwaysIncludeSemantics: a layer that fades to zero during a back swipe
     // must not drop its semantics and restore them when the swipe comes back;
@@ -661,6 +703,7 @@ class HostedTopToolbar extends StatelessWidget {
                             actions: content.actions,
                             tintColor: content.tint,
                             showsGradient: false,
+                            coveredBy: coveredBy,
                             // A native bar only for what only it can show: its
                             // own title or bar buttons. Most pages have a
                             // Flutter title and no buttons, and a platform view
@@ -823,11 +866,16 @@ class _BackButton extends StatefulWidget {
     required this.moving,
     this.chrome,
     this.placement = AdaptiveChromePlacement.bottom,
+    this.coveredBy,
   });
 
   final TopToolbarContent content;
   final AdaptiveChrome? chrome;
   final AdaptiveChromePlacement placement;
+
+  /// A dialog or a sheet over the page, whose barrier the button lays over
+  /// its glass, as it lies over the page.
+  final Route<Object?>? coveredBy;
 
   /// Whether pages move right now, or the button fades or slides with one.
   final bool moving;
@@ -982,6 +1030,10 @@ class _BackButtonState extends State<_BackButton>
 
   Widget _nativeButton(VoidCallback onBack, GlassButtonGlyph? glyph) {
     final content = widget.content;
+    final barrier = chromeBarrierOf(
+      widget.coveredBy,
+      showsThrough: kGlassShowsThrough,
+    );
     // A circle as tall as the bar, as the system's back button.
     return SizedBox.square(
       dimension: kHostedToolbarHeight,
@@ -1010,6 +1062,8 @@ class _BackButtonState extends State<_BackButton>
                 onPressed: onBack,
               ),
             ),
+          if (barrier != null)
+            ChromeBarrierBox(barrier: barrier, shape: const CircleBorder()),
         ],
       ),
     );

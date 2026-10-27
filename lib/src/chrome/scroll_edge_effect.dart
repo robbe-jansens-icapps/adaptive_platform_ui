@@ -547,14 +547,20 @@ class AdaptiveBarBackdrop extends StatelessWidget {
   /// The line along the bottom edge, one pixel thick; none if null.
   final Color? hairline;
 
+  /// How much of [color] the backdrop lays over the blurred content when it
+  /// is not told ([tint]): [defaultTint], or [colouredTint] for a strong
+  /// colour.
+  static double tintFor(Color? color) {
+    final base = (color ?? const Color(0xFFFFFFFF)).withValues(alpha: 1);
+    return HSLColor.fromColor(base).saturation > 0.3
+        ? colouredTint
+        : defaultTint;
+  }
+
   @override
   Widget build(BuildContext context) {
     final base = (color ?? const Color(0xFFFFFFFF)).withValues(alpha: 1);
-    final tint =
-        this.tint ??
-        (HSLColor.fromColor(base).saturation > 0.3
-            ? colouredTint
-            : defaultTint);
+    final tint = this.tint ?? tintFor(color);
     final surface = Stack(
       fit: StackFit.expand,
       children: [

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart'
     show DefaultMaterialLocalizations, MaterialLocalizations;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import '../../toolbar/chrome_barrier.dart';
 import '../../toolbar/duo_top_strip.dart';
 import '../../utils/animation.dart';
 import '../adaptive_app_bar_action.dart';
@@ -28,6 +29,7 @@ class IOS26NativeToolbar extends StatefulWidget {
     this.showsGradient = true,
     this.reservesLeading,
     this.leadingInset = 0,
+    this.coveredBy,
   });
 
   final String? title;
@@ -66,6 +68,12 @@ class IOS26NativeToolbar extends StatefulWidget {
   /// How much further in than usual the leading control sits, such as clear
   /// of the window controls of an iPad window.
   final double leadingInset;
+
+  /// A dialog or a sheet over the page, whose barrier the bar lays over its
+  /// items, as it lies over the page: the bar sits above the navigator, out
+  /// of the barrier's reach. A title the native bar draws itself, without
+  /// glass, is left as it is.
+  final Route<Object?>? coveredBy;
 
   @override
   State<IOS26NativeToolbar> createState() => _IOS26NativeToolbarState();
@@ -268,7 +276,10 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 widthFactor: 1,
-                child: widget.leading!,
+                child: ChromeBarrierTint(
+                  barrier: chromeBarrierOf(widget.coveredBy),
+                  child: widget.leading!,
+                ),
               ),
             ),
           if (widget.titleWidget != null)
@@ -277,7 +288,12 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
               right: titleInset,
               top: safePadding,
               bottom: 0,
-              child: Center(child: widget.titleWidget!),
+              child: Center(
+                child: ChromeBarrierTint(
+                  barrier: chromeBarrierOf(widget.coveredBy),
+                  child: widget.titleWidget!,
+                ),
+              ),
             ),
         ],
       ),
@@ -317,6 +333,14 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
               MaterialLocalizations,
             ) ??
             const DefaultMaterialLocalizations();
+        // Over each native item's glass, which Flutter cannot dim itself.
+        final barrier = chromeBarrierOf(
+          widget.coveredBy,
+          showsThrough: kGlassShowsThrough,
+        );
+        final item = barrier == null
+            ? const SizedBox.expand()
+            : ChromeBarrierBox(barrier: barrier, shape: const StadiumBorder());
         final leadingRect = leadingText == null
             ? null
             : items?.leading ??
@@ -361,7 +385,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
                       ? localizations.backButtonTooltip
                       : leadingText,
                   onTap: widget.onLeadingTap,
-                  child: const SizedBox.expand(),
+                  child: item,
                 ),
               ),
             for (var i = 0; i < actions.length; i++)
@@ -376,7 +400,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
                   button: true,
                   label: actions[i].effectiveLabel,
                   onTap: () => _activate(i),
-                  child: const SizedBox.expand(),
+                  child: item,
                 ),
               ),
           ],
