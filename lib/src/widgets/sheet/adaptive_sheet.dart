@@ -26,6 +26,7 @@ import '../adaptive_accessory_scope.dart';
 import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
+import '../ios26/native_chrome/native_chrome_occluder.dart';
 import '../material_tab_accessory.dart' show MaterialTabAccessoryLink;
 import 'adaptive_sheet_detent.dart';
 
@@ -1507,19 +1508,23 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
         child: content,
       );
     }
-    return IOS26GlassSurface(
-      cornerRadius: sidePanel ? 28 : radius,
-      corners: sidePanel
-          ? GlassSurfaceCorners.fixed
-          : GlassSurfaceCorners.concentric,
-      fill: widget.glassFill,
-      // In the glass's own shape, whose corners near the display's are
-      // rounder than radius.
-      clipBehavior: Clip.antiAlias,
-      child: _ClearOfAccessory(
-        bottom: _accessoryEdge(metrics),
-        moves: _accessoryEdgeMoves,
-        child: content,
+    // Over the page's native views shown over the Flutter view, such as
+    // glass controls on a map: they leave the screen where it covers them.
+    return NativeChromeOccluder(
+      child: IOS26GlassSurface(
+        cornerRadius: sidePanel ? 28 : radius,
+        corners: sidePanel
+            ? GlassSurfaceCorners.fixed
+            : GlassSurfaceCorners.concentric,
+        fill: widget.glassFill,
+        // In the glass's own shape, whose corners near the display's are
+        // rounder than radius.
+        clipBehavior: Clip.antiAlias,
+        child: _ClearOfAccessory(
+          bottom: _accessoryEdge(metrics),
+          moves: _accessoryEdgeMoves,
+          child: content,
+        ),
       ),
     );
   }

@@ -262,9 +262,41 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   }
 }
 
-/// What shows for the glass while its page moves: a light, translucent fill
-/// in the glass's shape and tint, cheap to draw on every frame of a
-/// transition.
+/// What shows for glass while its page moves: a light, translucent fill in
+/// the glass's [tint] (and [fill]) with corners of [borderRadius], cheap to
+/// draw on every frame of a transition.
+ShapeDecoration glassStandInDecoration(
+  BuildContext context, {
+  required BorderRadius borderRadius,
+  Color? tint,
+  Color? fill,
+}) {
+  final dark = MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
+  final base = dark ? const Color(0xE6303034) : const Color(0xE6FAFAFC);
+  // A tint is what the glass mostly shows; a light one lets it through.
+  final tinted = tint == null
+      ? base
+      : Color.alphaBlend(
+          tint.withValues(alpha: tint.a < 0.5 ? tint.a : 0.92),
+          base,
+        );
+  return ShapeDecoration(
+    color: fill == null ? tinted : Color.alphaBlend(fill, tinted),
+    shape: RoundedSuperellipseBorder(
+      borderRadius: borderRadius,
+      side: BorderSide(
+        color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
+        width: 0.5,
+      ),
+    ),
+    shadows: const [
+      BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 2)),
+    ],
+  );
+}
+
+/// What shows for the glass while its page moves ([glassStandInDecoration]),
+/// in its shape.
 class _StandIn extends StatelessWidget {
   const _StandIn({required this.widget});
 
@@ -272,36 +304,13 @@ class _StandIn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark =
-        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
-    final base = dark ? const Color(0xE6303034) : const Color(0xE6FAFAFC);
-    final tint = widget.tint;
-    // A tint is what the glass mostly shows; a light one lets it through.
-    final tinted = tint == null
-        ? base
-        : Color.alphaBlend(
-            tint.withValues(alpha: tint.a < 0.5 ? tint.a : 0.92),
-            base,
-          );
-    final fill = widget.fill;
-    final color = fill == null ? tinted : Color.alphaBlend(fill, tinted);
-    ShapeDecoration decorationFor(BorderRadius radius) => ShapeDecoration(
-      color: color,
-      shape: RoundedSuperellipseBorder(
-        borderRadius: radius,
-        side: BorderSide(
-          color: const Color(0xFFFFFFFF).withValues(alpha: 0.6),
-          width: 0.5,
-        ),
-      ),
-      shadows: const [
-        BoxShadow(
-          color: Color(0x14000000),
-          blurRadius: 12,
-          offset: Offset(0, 2),
-        ),
-      ],
-    );
+    ShapeDecoration decorationFor(BorderRadius radius) =>
+        glassStandInDecoration(
+          context,
+          tint: widget.tint,
+          fill: widget.fill,
+          borderRadius: radius,
+        );
     // In the glass's shape where it is on the screen, as the glass's own
     // corners follow the display's: they would change as the stand-in makes
     // way for it otherwise, the tray's and a sheet's along the bottom.

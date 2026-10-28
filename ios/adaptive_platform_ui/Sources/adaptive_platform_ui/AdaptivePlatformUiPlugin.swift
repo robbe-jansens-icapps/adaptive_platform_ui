@@ -302,9 +302,18 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             withId: "adaptive_platform_ui/ios26_glass_surface"
         )
 
+        // A glass capsule with its icons and label, shown over the Flutter
+        // view (Dart: IOS26GlassControl)
+        let ios26GlassControlFactory = iOS26GlassControlFactory(messenger: registrar.messenger())
+        registrar.register(
+            ios26GlassControlFactory,
+            withId: "adaptive_platform_ui/ios26_glass_control"
+        )
+
         // The same views over the Flutter view instead of as platform views
         // (Dart: AdaptiveNativeView with `chrome: true`)
         NativeChromeHost.register(with: registrar, factories: [
+            "adaptive_platform_ui/ios26_glass_control": ios26GlassControlFactory,
             "adaptive_platform_ui/ios26_button": ios26ButtonFactory,
             "adaptive_platform_ui/ios26_switch": ios26SwitchFactory,
             "adaptive_platform_ui/ios26_segmented_control": ios26SegmentedControlFactory,
