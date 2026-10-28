@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_view_settle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -213,6 +214,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sheetTop(tester), closeTo(_phone.height - fitExtent(200), 0.5));
+  });
+
+  testWidgets('the native views on it leave it to their stand-ins while it '
+      'is dragged and springs to a detent', (tester) async {
+    usePhone(tester);
+    final settled = <bool>[];
+    await tester.pumpWidget(
+      sheetApp(
+        child: SizedBox(
+          height: 200,
+          child: Builder(
+            builder: (context) {
+              settled.add(NativeViewSettleScope.maybeOf(context)!.value);
+              return const Text('content');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(settled.last, isTrue);
+
+    final drag = await tester.startGesture(
+      tester.getCenter(find.text('header')),
+    );
+    await drag.moveBy(const Offset(0, 20));
+    await drag.moveBy(const Offset(0, 20));
+    await tester.pump();
+    expect(settled.last, isFalse);
+
+    await drag.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(settled.last, isFalse);
+
+    await tester.pumpAndSettle();
+    expect(settled.last, isTrue);
   });
 
   testWidgets('dragging the content moves the sheet while it is at its top', (

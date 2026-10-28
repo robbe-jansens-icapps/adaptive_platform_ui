@@ -27,6 +27,7 @@ import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
 import '../ios26/native_chrome/native_chrome_occluder.dart';
+import '../ios26/native_view_settle.dart';
 import '../material_tab_accessory.dart' show MaterialTabAccessoryLink;
 import 'adaptive_sheet_detent.dart';
 
@@ -366,6 +367,10 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   );
   final ValueNotifier<bool> _scrolled = ValueNotifier<bool>(false);
 
+  /// Whether the sheet is dragged or springs to a detent, for the native
+  /// views on it to leave it to their stand-ins meanwhile.
+  final ValueNotifier<bool> _moving = ValueNotifier<bool>(false);
+
   _Metrics? _metrics;
   double? _headerHeight;
   double? _contentHeight;
@@ -471,8 +476,11 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _scrollController.addListener(_onScroll);
     _extent.addListener(_updateCovered);
     _extent.addListener(_reportUp);
+    _extent.addStatusListener((_) => _updateMoving());
     _opensFromAccessory.addStatusListener((_) => _syncLink());
   }
+
+  void _updateMoving() => _moving.value = _dragging || _extent.isAnimating;
 
   @override
   void didUpdateWidget(AdaptiveSheet oldWidget) {
@@ -534,6 +542,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _attachedTo = null;
     _scrollController.dispose();
     _scrolled.dispose();
+    _moving.dispose();
     _extent.dispose();
     _opensFromAccessory.dispose();
     _covered.dispose();
@@ -1018,11 +1027,13 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
 
   void _interrupt() {
     if (_extent.isAnimating) _extent.stop();
+    _updateMoving();
   }
 
   void _onDragStart() {
     _interrupt();
     _dragging = true;
+    _updateMoving();
     _hangContentFromTop();
   }
 
@@ -1041,6 +1052,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   void _onDragEnd(double velocity) {
     _dragging = false;
     _settle(velocity: velocity);
+    _updateMoving();
   }
 
   /// [child], with vertical drags on it moving the sheet. A touch only takes
@@ -1482,6 +1494,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     // Content scrolled on under the top goes no further than the sheet's
     // edge, whatever the sheet's own shape clips.
     if (underTop) content = ClipRect(child: content);
+    content = NativeViewSettleScope(moving: _moving, child: content);
 
     if (material) {
       final scheme = Theme.of(context).colorScheme;

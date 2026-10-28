@@ -249,12 +249,19 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
 class NativeViewSettleScope extends StatefulWidget {
   const NativeViewSettleScope({
     super.key,
-    required this.fade,
+    this.fade = kAlwaysCompleteAnimation,
+    this.moving,
     required this.child,
   });
 
   /// The opacity of what holds the native views.
   final Animation<double> fade;
+
+  /// Whether what holds the native views moves, such as a sheet that is
+  /// dragged or springs to a detent: a native view moved on every frame costs
+  /// the engine work on the main thread for each one, where the stand-in
+  /// costs nothing.
+  final ValueListenable<bool>? moving;
 
   final Widget child;
 
@@ -278,6 +285,7 @@ class _NativeViewSettleScopeState extends State<NativeViewSettleScope> {
   void initState() {
     super.initState();
     _listen(widget.fade);
+    widget.moving?.addListener(_update);
   }
 
   @override
@@ -295,11 +303,17 @@ class _NativeViewSettleScopeState extends State<NativeViewSettleScope> {
       _listen(widget.fade);
       _update();
     }
+    if (oldWidget.moving != widget.moving) {
+      oldWidget.moving?.removeListener(_update);
+      widget.moving?.addListener(_update);
+      _update();
+    }
   }
 
   @override
   void dispose() {
     _unlisten(widget.fade);
+    widget.moving?.removeListener(_update);
     _settled.dispose();
     super.dispose();
   }
@@ -321,7 +335,10 @@ class _NativeViewSettleScopeState extends State<NativeViewSettleScope> {
   void _update() {
     final fade = widget.fade;
     _settled.value =
-        (_outer?.value ?? true) && fade.value >= 1 && !fade.isAnimating;
+        (_outer?.value ?? true) &&
+        fade.value >= 1 &&
+        !fade.isAnimating &&
+        !(widget.moving?.value ?? false);
   }
 
   @override
