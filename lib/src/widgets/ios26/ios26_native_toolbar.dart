@@ -10,6 +10,8 @@ import '../../toolbar/chrome_barrier.dart';
 import '../../toolbar/duo_top_strip.dart';
 import '../../utils/animation.dart';
 import '../adaptive_app_bar_action.dart';
+import 'native_chrome/adaptive_native_chrome.dart';
+import 'native_chrome/adaptive_native_view.dart';
 
 /// Native iOS 26 UINavigationBar widget using platform views
 /// Implements Liquid Glass design with native blur effects
@@ -30,6 +32,7 @@ class IOS26NativeToolbar extends StatefulWidget {
     this.reservesLeading,
     this.leadingInset = 0,
     this.coveredBy,
+    this.chrome = false,
   });
 
   final String? title;
@@ -74,6 +77,12 @@ class IOS26NativeToolbar extends StatefulWidget {
   /// of the barrier's reach. A title the native bar draws itself, without
   /// glass, is left as it is.
   final Route<Object?>? coveredBy;
+
+  /// Whether the native bar is shown over the Flutter view rather than as a
+  /// platform view, with [AdaptiveNativeChrome.enabled]. Flutter's [leading]
+  /// and [titleWidget] then lie under it, where it is clear, and a dialog's
+  /// barrier over its items is laid on by iOS.
+  final bool chrome;
 
   @override
   State<IOS26NativeToolbar> createState() => _IOS26NativeToolbarState();
@@ -195,6 +204,10 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
     return true;
   }
 
+  /// Whether the bar is shown over the Flutter view, where Flutter cannot
+  /// draw over its items.
+  bool get _overChrome => widget.chrome && AdaptiveNativeChrome.enabled;
+
   @override
   Widget build(BuildContext context) {
     if (defaultTargetPlatform != TargetPlatform.iOS) {
@@ -245,12 +258,18 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
                   // list scrolled under the bar: the items' own nodes take
                   // the native bar's place.
                   ExcludeSemantics(
-                    child: UiKitView(
+                    child: AdaptiveNativeView(
                       viewType: 'adaptive_platform_ui/ios26_toolbar',
                       creationParams: creationParams,
-                      creationParamsCodec: const StandardMessageCodec(),
                       onPlatformViewCreated: _onPlatformViewCreated,
                       hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+                      chrome: widget.chrome,
+                      dim: _overChrome
+                          ? chromeBarrierOf(
+                              widget.coveredBy,
+                              showsThrough: kGlassShowsThrough,
+                            )
+                          : null,
                     ),
                   ),
                   ValueListenableBuilder(
@@ -338,7 +357,7 @@ class _IOS26NativeToolbarState extends State<IOS26NativeToolbar> {
           widget.coveredBy,
           showsThrough: kGlassShowsThrough,
         );
-        final item = barrier == null
+        final item = barrier == null || _overChrome
             ? const SizedBox.expand()
             : ChromeBarrierBox(barrier: barrier, shape: const StadiumBorder());
         final leadingRect = leadingText == null

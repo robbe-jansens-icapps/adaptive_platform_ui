@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
@@ -38,7 +39,9 @@ class AdaptiveButton extends StatelessWidget {
   }) : child = null,
        icon = null,
        iconColor = null,
-       sfSymbol = null;
+       sfSymbol = null,
+       chrome = false,
+       dim = null;
 
   /// Creates an adaptive button with a custom child widget
   const AdaptiveButton.child({
@@ -58,7 +61,9 @@ class AdaptiveButton extends StatelessWidget {
        textColor = null,
        icon = null,
        iconColor = null,
-       sfSymbol = null;
+       sfSymbol = null,
+       chrome = false,
+       dim = null;
 
   /// Creates an adaptive button with an icon
   const AdaptiveButton.icon({
@@ -78,7 +83,9 @@ class AdaptiveButton extends StatelessWidget {
   }) : label = null,
        textColor = null,
        child = null,
-       sfSymbol = null;
+       sfSymbol = null,
+       chrome = false,
+       dim = null;
 
   /// Creates an adaptive button with a native SF Symbol icon (iOS only)
   const AdaptiveButton.sfSymbol({
@@ -94,6 +101,8 @@ class AdaptiveButton extends StatelessWidget {
     this.enabled = true,
     this.useSmoothRectangleBorder = true,
     this.useNative = true,
+    this.chrome = false,
+    this.dim,
   }) : label = null,
        textColor = null,
        child = null,
@@ -156,6 +165,13 @@ class AdaptiveButton extends StatelessWidget {
   /// Android always uses Material button regardless of this setting
   final bool useNative;
 
+  /// Whether the native iOS 26 button is shown over the Flutter view rather
+  /// than as a platform view ([IOS26Button.chrome]): SF Symbol buttons only.
+  final bool chrome;
+
+  /// See [IOS26Button.dim].
+  final ValueListenable<Color?>? dim;
+
   @override
   Widget build(BuildContext context) {
     // iOS 26+ - Use native iOS 26 button design (only if useNative is true)
@@ -174,6 +190,8 @@ class AdaptiveButton extends StatelessWidget {
             borderRadius: borderRadius,
             minSize: minSize,
             useSmoothRectangleBorder: useSmoothRectangleBorder,
+            chrome: chrome,
+            dim: dim,
           ),
         );
       }

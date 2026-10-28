@@ -470,6 +470,18 @@ class iOS26ButtonView: NSObject, FlutterPlatformView {
 }
 
 /// UIColor extension to parse hex color strings and ARGB integers
+/// Over the Flutter view, a dialog's barrier dims the button's glass, a
+/// capsule as wide as its bounds are short.
+extension iOS26ButtonView: ChromeDimmable {
+    func chromeDimPath() -> UIBezierPath? {
+        let bounds = view().bounds
+        return UIBezierPath(
+            roundedRect: bounds,
+            cornerRadius: min(bounds.width, bounds.height) / 2
+        )
+    }
+}
+
 extension UIColor {
     convenience init?(hexString: String) {
         let hex = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)

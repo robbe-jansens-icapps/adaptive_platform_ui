@@ -1,12 +1,19 @@
 import Flutter
 import UIKit
 
-/// A native view hosted over the Flutter view can claim only parts of its
-/// bounds for touches (Dart: AdaptiveNativeView with `chrome: true`), such as
-/// a bar's items, leaving the rest to the Flutter content around them. Nil
-/// claims the whole view.
+/// A native view hosted over the Flutter view can take only some touches on
+/// it (Dart: AdaptiveNativeView with `chrome: true`), such as those on a
+/// bar's items, leaving the rest to the Flutter content around them: the view
+/// to take the touch at `point` (in its own coordinates), or nil.
 protocol ChromeHitRegion: AnyObject {
-    func chromeHitRects() -> [CGRect]?
+    func chromeHitTest(_ point: CGPoint, with event: UIEvent?) -> UIView?
+}
+
+/// The shape a dialog's barrier dims on a native view hosted over the Flutter
+/// view, which the barrier cannot reach: its glass rather than its bounds.
+/// Nil dims the whole view.
+protocol ChromeDimmable: AnyObject {
+    func chromeDimPath() -> UIBezierPath?
 }
 
 /// Native views shown over the Flutter view instead of inside it as platform
@@ -105,8 +112,8 @@ final class NativeChromeHost: NSObject {
     }
 
     private func apply(_ data: FlutterStandardTypedData) {
-        guard let root = attachedRoot() else { return }
         let count = Int(data.elementCount)
+        guard count > 0, let root = attachedRoot() else { return }
         var reorder = false
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -178,12 +185,12 @@ final class NativeChromeHost: NSObject {
             }
             let hosted = slot.hosted
             let local = root.convert(point, to: hosted)
-            let regions = (slot.platformView as? ChromeHitRegion)?.chromeHitRects()
-                ?? [hosted.bounds]
-            guard regions.contains(where: { $0.contains(local) }),
-                  let hit = hosted.hitTest(local, with: event)
-            else { continue }
-            return hit
+            let hit = if let region = slot.platformView as? ChromeHitRegion {
+                region.chromeHitTest(local, with: event)
+            } else {
+                hosted.hitTest(local, with: event)
+            }
+            if let hit { return hit }
         }
         return nil
     }
@@ -231,6 +238,7 @@ private final class NativeChromeSlot {
     let hosted: UIView
     let clipView = NativeChromeClipView()
     let transformView = NativeChromeTouchSink()
+    private let dimLayer = CAShapeLayer()
 
     private(set) var z: Double = -1
     private(set) var interactive = false
@@ -244,6 +252,8 @@ private final class NativeChromeSlot {
         hosted.frame = .zero
         hosted.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         transformView.addSubview(hosted)
+        dimLayer.isHidden = true
+        transformView.layer.addSublayer(dimLayer)
         clipView.addSubview(transformView)
     }
 
@@ -293,11 +303,27 @@ private final class NativeChromeSlot {
             matrix, CATransform3DMakeTranslation(-clip.minX, -clip.minY, 0)
         )
         clipView.alpha = value(19)
+        applyDim(Int(values[offset + 28]))
         clipView.isHidden = false
 
         let newZ = values[offset + 26]
         defer { z = newZ }
         return newZ != z
+    }
+
+    /// Lays a dialog's barrier over the view, in its colour as Flutter worked
+    /// it out for the glass under it; 0 for none.
+    private func applyDim(_ argb: Int) {
+        guard argb != 0 else {
+            dimLayer.isHidden = true
+            return
+        }
+        dimLayer.isHidden = false
+        dimLayer.frame = transformView.bounds
+        dimLayer.fillColor = UIColor(argb: argb).cgColor
+        let path = (platformView as? ChromeDimmable)?.chromeDimPath()
+            ?? UIBezierPath(rect: transformView.bounds)
+        dimLayer.path = path.cgPath
     }
 }
 

@@ -15,6 +15,7 @@ import '../widgets/adaptive_app_bar.dart';
 import '../widgets/adaptive_app_bar_action.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/ios26/ios26_native_toolbar.dart';
+import '../widgets/ios26/native_chrome/adaptive_native_chrome.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'chrome_barrier.dart';
@@ -704,6 +705,7 @@ class HostedTopToolbar extends StatelessWidget {
                             tintColor: content.tint,
                             showsGradient: false,
                             coveredBy: coveredBy,
+                            chrome: true,
                             // A native bar only for what only it can show: its
                             // own title or bar buttons. Most pages have a
                             // Flutter title and no buttons, and a platform view
@@ -1050,6 +1052,10 @@ class _BackButtonState extends State<_BackButton>
               onPressed: onBack,
               // In the bar's tint where it takes it, as its actions are.
               sfSymbol: _tinted(_symbol, content.backTint),
+              chrome: true,
+              // Over the Flutter view, the barrier box below would lie under
+              // the button: iOS lays the barrier over its glass itself.
+              dim: AdaptiveNativeChrome.enabled ? barrier : null,
             ),
           ),
           if (glyph != null && (_standingIn || _standIn.value > 0))
@@ -1062,7 +1068,7 @@ class _BackButtonState extends State<_BackButton>
                 onPressed: onBack,
               ),
             ),
-          if (barrier != null)
+          if (barrier != null && !AdaptiveNativeChrome.enabled)
             ChromeBarrierBox(barrier: barrier, shape: const CircleBorder()),
         ],
       ),

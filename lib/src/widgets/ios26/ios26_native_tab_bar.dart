@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../adaptive_scaffold.dart';
+import 'native_chrome/adaptive_native_chrome.dart';
+import 'native_chrome/adaptive_native_view.dart';
 
 /// Native iOS 26 tab bar using UITabBar platform view
 class IOS26NativeTabBar extends StatefulWidget {
@@ -20,6 +22,8 @@ class IOS26NativeTabBar extends StatefulWidget {
     this.showNativeView = true,
     this.hidden = false,
     this.onCapsuleChanged,
+    this.chrome = false,
+    this.dim,
   });
 
   final List<AdaptiveNavigationDestination> destinations;
@@ -48,6 +52,15 @@ class IOS26NativeTabBar extends StatefulWidget {
   /// whenever that changes; null where it has none. It is what the bar
   /// shows of itself: the rest of it lets the page show through.
   final ValueChanged<Rect?>? onCapsuleChanged;
+
+  /// Whether the native bar is shown over the Flutter view rather than as a
+  /// platform view, with [AdaptiveNativeChrome.enabled]: only for a bar that
+  /// stays in place while pages slide under it, as the hosted one does.
+  final bool chrome;
+
+  /// A dialog's barrier over the bar shown over the Flutter view ([chrome]),
+  /// which Flutter cannot draw over it: iOS dims the capsule in this colour.
+  final ValueListenable<Color?>? dim;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -294,11 +307,12 @@ class _IOS26NativeTabBarState extends State<IOS26NativeTabBar> {
               // the map rather than the tabs. The tabs' own nodes take the
               // native bar's place.
               ExcludeSemantics(
-                child: UiKitView(
+                child: AdaptiveNativeView(
                   viewType: 'adaptive_platform_ui/ios26_tab_bar',
                   creationParams: creationParams,
-                  creationParamsCodec: const StandardMessageCodec(),
                   onPlatformViewCreated: _onCreated,
+                  chrome: widget.chrome,
+                  dim: widget.dim,
                   // Every touch on the bar is the bar's, at once: with a tap
                   // recognizer it only got them when the finger lifted, so a
                   // finger held on a tab (the large content viewer of the

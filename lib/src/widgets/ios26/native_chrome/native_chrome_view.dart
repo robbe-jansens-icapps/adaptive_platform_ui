@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -18,6 +19,7 @@ class NativeChromeView extends StatefulWidget {
     this.creationParams,
     this.onPlatformViewCreated,
     this.interactive = true,
+    this.dim,
   });
 
   final String viewType;
@@ -27,6 +29,9 @@ class NativeChromeView extends StatefulWidget {
   /// Whether the native view takes touches where it claims them; touches
   /// elsewhere reach the Flutter content under it.
   final bool interactive;
+
+  /// See [NativeChromeSlot.dim].
+  final ValueListenable<Color?>? dim;
 
   @override
   State<NativeChromeView> createState() => _NativeChromeViewState();
@@ -38,12 +43,14 @@ class _NativeChromeViewState extends State<NativeChromeView> {
     creationParams: widget.creationParams,
     interactive: widget.interactive,
     onCreated: (id) => widget.onPlatformViewCreated?.call(id),
-  );
+  )..dim = widget.dim;
 
   @override
   void didUpdateWidget(NativeChromeView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _slot.interactive = widget.interactive;
+    _slot
+      ..interactive = widget.interactive
+      ..dim = widget.dim;
   }
 
   @override

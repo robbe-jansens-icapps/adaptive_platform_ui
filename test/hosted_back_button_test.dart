@@ -2,7 +2,10 @@ import 'dart:convert';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/style/glass_button_glyph.dart';
+import 'package:adaptive_platform_ui/src/toolbar/chrome_barrier.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_top_toolbar.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -300,5 +303,93 @@ void main() {
       expect(back.sfSymbol?.name, 'chevron.left');
       expect(back.sfSymbol?.color, tints ? green : null);
     }
+  });
+
+  group('shown over the Flutter view', () {
+    const buttonType = 'adaptive_platform_ui/ios26_button';
+
+    /// The native views made over the Flutter view by id, and the values of
+    /// the last layout iOS got for each.
+    final made = <int, String>{};
+    final layouts = <int, List<double>>{};
+
+    setUp(() {
+      made.clear();
+      layouts.clear();
+      AdaptiveNativeChrome.enabled = true;
+      IOS26Button.debugHasUIKitOverride = true;
+      NativeChromeCoordinator.instance.debugReset();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, (
+            call,
+          ) async {
+            if (call.method == 'create') {
+              final args = call.arguments as Map<Object?, Object?>;
+              made[args['id']! as int] = args['viewType']! as String;
+            } else if (call.method == 'layout') {
+              final values = call.arguments as Float64List;
+              for (
+                var i = 0;
+                i < values.length;
+                i += NativeChromeCoordinator.stride
+              ) {
+                layouts[values[i].toInt()] = values.sublist(
+                  i,
+                  i + NativeChromeCoordinator.stride,
+                );
+              }
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      AdaptiveNativeChrome.enabled = false;
+      IOS26Button.debugHasUIKitOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, null);
+    });
+
+    /// The values of the native buttons on screen.
+    List<List<double>> shownButtons() => [
+      for (final MapEntry(key: id, value: type) in made.entries)
+        if (type == buttonType &&
+            layouts[id] != null &&
+            layouts[id]![27].toInt() & NativeChromeCoordinator.hiddenFlag == 0)
+          layouts[id]!,
+    ];
+
+    testWidgets('the back button is a native button over the Flutter view, '
+        'whose glass iOS dims under a dialog', (tester) async {
+      final navigator = await start(tester);
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => page('Detail')),
+      );
+      await tester.pumpAndSettle();
+      expect(shownButtons(), hasLength(1));
+      expect(shownButtons().single[28], 0);
+
+      showDialog<void>(
+        context: navigator.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      // Over the button's glass Flutter lays none: it would lie under it.
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is ChromeBarrierBox && widget.shape is CircleBorder,
+        ),
+        findsNothing,
+      );
+      expect(shownButtons(), hasLength(1));
+      final dim = Color(shownButtons().single[28].toInt());
+      expect(dim.withValues(alpha: 1), Colors.black);
+      expect(dim.a, greaterThan(0));
+
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(shownButtons().single[28], 0);
+    }, variant: ios);
   });
 }

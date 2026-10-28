@@ -1210,6 +1210,25 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     }
 }
 
+/// Over the Flutter view, the bar takes touches on its capsule and its tabs
+/// only, as UIKit's does: beside them they reach the page. A dialog's barrier
+/// dims the capsule.
+extension iOS26TabBarPlatformView: ChromeHitRegion, ChromeDimmable {
+    func chromeHitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let capsule = lastCapsule ?? capsuleFrame() {
+            let tabs = (lastTabFrames ?? []).compactMap { $0 }
+            guard capsule.contains(point) || tabs.contains(where: { $0.contains(point) })
+            else { return nil }
+        }
+        return container.hitTest(point, with: event)
+    }
+
+    func chromeDimPath() -> UIBezierPath? {
+        guard let capsule = lastCapsule ?? capsuleFrame() else { return nil }
+        return UIBezierPath(roundedRect: capsule, cornerRadius: capsule.height / 2)
+    }
+}
+
 class iOS26TabBarViewFactory: NSObject, FlutterPlatformViewFactory {
     private let messenger: FlutterBinaryMessenger
 

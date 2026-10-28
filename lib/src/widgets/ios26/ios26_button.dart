@@ -80,6 +80,7 @@ class IOS26Button extends StatefulWidget {
     this.minSize,
     this.useSmoothRectangleBorder = true,
     this.chrome = false,
+    this.dim,
   }) : child = null,
        isChildMode = false,
        sfSymbol = null;
@@ -102,7 +103,8 @@ class IOS26Button extends StatefulWidget {
        textColor = null,
        isChildMode = true,
        sfSymbol = null,
-       chrome = false;
+       chrome = false,
+       dim = null;
 
   /// Creates an iOS 26 style button with a native SF Symbol icon
   const IOS26Button.sfSymbol({
@@ -118,6 +120,7 @@ class IOS26Button extends StatefulWidget {
     this.minSize,
     this.useSmoothRectangleBorder = true,
     this.chrome = false,
+    this.dim,
   }) : label = '',
        textColor = null,
        child = null,
@@ -171,6 +174,11 @@ class IOS26Button extends StatefulWidget {
   /// a platform view, with [AdaptiveNativeChrome.enabled]. Not for a button
   /// with a Flutter [child], which Flutter draws on top of it.
   final bool chrome;
+
+  /// A dialog's barrier over a button shown over the Flutter view ([chrome]),
+  /// which Flutter cannot draw over it: iOS lays it over the button's glass in
+  /// this colour.
+  final ValueListenable<Color?>? dim;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -439,6 +447,7 @@ class _IOS26ButtonState extends State<IOS26Button>
             viewType: 'adaptive_platform_ui/ios26_button',
             creationParams: _buildCreationParams(),
             chrome: widget.chrome,
+            dim: widget.dim,
           ),
         ),
       );

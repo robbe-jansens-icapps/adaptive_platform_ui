@@ -1,4 +1,6 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_occluder.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_view.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -285,5 +287,53 @@ void main() {
     await tester.pumpWidget(const SizedBox());
 
     expect(host.calls, contains('dispose'));
+  });
+
+  group('an occluder', () {
+    setUp(() => AdaptiveNativeChrome.enabled = true);
+    tearDown(() => AdaptiveNativeChrome.enabled = false);
+
+    Widget scene({required double occluderTop, bool occluderFirst = false}) {
+      final occluder = Positioned(
+        left: 0,
+        right: 0,
+        top: occluderTop,
+        height: 60,
+        child: const NativeChromeOccluder(child: SizedBox.expand()),
+      );
+      final native = Positioned(
+        left: 20,
+        top: 40,
+        width: 100,
+        height: 44,
+        child: view(),
+      );
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: Stack(
+          children: occluderFirst ? [occluder, native] : [native, occluder],
+        ),
+      );
+    }
+
+    testWidgets('painted after a view and over it sends it away', (
+      tester,
+    ) async {
+      await tester.pumpWidget(scene(occluderTop: 300));
+      expect(_Host.hidden(host.only), isFalse);
+
+      await tester.pumpWidget(scene(occluderTop: 30));
+      await tester.pump();
+      expect(_Host.hidden(host.only), isTrue);
+
+      await tester.pumpWidget(scene(occluderTop: 300));
+      expect(_Host.hidden(host.only), isFalse);
+    });
+
+    testWidgets('painted before a view leaves it alone', (tester) async {
+      await tester.pumpWidget(scene(occluderTop: 30, occluderFirst: true));
+      await tester.pump();
+      expect(_Host.hidden(host.only), isFalse);
+    });
   });
 }

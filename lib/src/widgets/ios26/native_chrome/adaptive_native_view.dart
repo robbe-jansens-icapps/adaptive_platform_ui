@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'adaptive_native_chrome.dart';
+import 'native_chrome_coordinator.dart';
 import 'native_chrome_view.dart';
 
 /// A native iOS view: over the Flutter view when [chrome] is asked for and
@@ -24,6 +25,7 @@ class AdaptiveNativeView extends StatelessWidget {
     this.gestureRecognizers = const <Factory<OneSequenceGestureRecognizer>>{},
     this.chrome = false,
     this.interactive = true,
+    this.dim,
   });
 
   final String viewType;
@@ -36,6 +38,9 @@ class AdaptiveNativeView extends StatelessWidget {
   /// See [NativeChromeView.interactive].
   final bool interactive;
 
+  /// See [NativeChromeSlot.dim].
+  final ValueListenable<Color?>? dim;
+
   @override
   Widget build(BuildContext context) {
     if (chrome && AdaptiveNativeChrome.enabled) {
@@ -45,6 +50,7 @@ class AdaptiveNativeView extends StatelessWidget {
         creationParams: creationParams,
         onPlatformViewCreated: onPlatformViewCreated,
         interactive: interactive,
+        dim: dim,
       );
     }
     return UiKitView(

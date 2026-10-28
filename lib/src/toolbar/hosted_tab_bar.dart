@@ -21,6 +21,7 @@ import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
 import '../widgets/ios26/ios26_native_tab_bar.dart';
+import '../widgets/ios26/native_chrome/adaptive_native_chrome.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -574,10 +575,20 @@ class _HostedTabBarState extends State<HostedTabBar>
                         unselectedItemTint: bar.unselectedItemColor,
                         onCapsuleChanged: (capsule) =>
                             _onCapsuleChanged(entry.id, capsule),
+                        chrome: true,
+                        // Over the Flutter view, the bar is above anything
+                        // Flutter lays over it, the tray's barrier too: iOS
+                        // dims its capsule itself.
+                        dim: AdaptiveNativeChrome.enabled
+                            ? _BarrierOverTabs.overGlassOf(dialog)
+                            : null,
                       ),
                       Positioned.fill(
                         child: _BarrierOverTabs(
-                          route: onTray && ownGlass ? null : dialog,
+                          route:
+                              onTray && ownGlass || AdaptiveNativeChrome.enabled
+                              ? null
+                              : dialog,
                           capsule: _capsules[entry.id],
                         ),
                       ),
@@ -1859,25 +1870,29 @@ class _BarrierOverTabs extends StatelessWidget {
     alpha: 1 - (1 - color.a) / (1 - _glassShowsThrough * color.a),
   );
 
-  @override
-  Widget build(BuildContext context) {
-    final route = this.route;
-    final capsule = this.capsule;
+  /// [route]'s barrier as laid over the native bar's glass, as it comes and
+  /// goes with the dialog; null without one.
+  static Animation<Color?>? overGlassOf(ModalRoute<Object?>? route) {
     final color = route?.barrierColor;
     final animation = route?.animation;
-    if (route == null ||
-        (capsule == null && !fills) ||
-        color == null ||
-        color.a == 0 ||
-        animation == null) {
-      return const SizedBox.shrink();
+    if (route == null || color == null || color.a == 0 || animation == null) {
+      return null;
     }
-    final barrier = animation.drive(
+    return animation.drive(
       ColorTween(
         begin: color.withValues(alpha: 0),
         end: _overGlass(color),
       ).chain(CurveTween(curve: route.barrierCurve)),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final capsule = this.capsule;
+    final barrier = overGlassOf(route);
+    if (barrier == null || (capsule == null && !fills)) {
+      return const SizedBox.shrink();
+    }
     final dim = LayoutBuilder(
       builder: (context, constraints) => AnimatedBuilder(
         animation: barrier,

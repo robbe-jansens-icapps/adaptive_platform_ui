@@ -517,3 +517,49 @@ class iOS26ToolbarPlatformView: NSObject, FlutterPlatformView {
         return UIColor(red: r, green: g, blue: b, alpha: a)
     }
 }
+
+/// Over the Flutter view, the bar takes touches on its buttons only: the rest
+/// of it is clear, with Flutter's title and leading widget under it. A
+/// dialog's barrier dims the glass of its items.
+extension iOS26ToolbarPlatformView: ChromeHitRegion, ChromeDimmable {
+    func chromeHitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let hit = containerView.hitTest(point, with: event) else { return nil }
+        var view: UIView? = hit
+        while let current = view, current !== containerView {
+            if current is UIControl || Self.isButton(current) { return hit }
+            view = current.superview
+        }
+        return nil
+    }
+
+    func chromeDimPath() -> UIBezierPath? {
+        let path = UIBezierPath()
+        func collect(_ view: UIView) {
+            for subview in view.subviews where !subview.isHidden && subview.alpha > 0.01 {
+                if Self.isGlass(subview) {
+                    let rect = subview.convert(subview.bounds, to: containerView)
+                    path.append(UIBezierPath(
+                        roundedRect: rect,
+                        cornerRadius: min(rect.width, rect.height) / 2
+                    ))
+                    continue
+                }
+                collect(subview)
+            }
+        }
+        collect(navigationBar)
+        return path
+    }
+
+    /// UIKit has no API for the views of bar items: they are found by class.
+    private static func isButton(_ view: UIView) -> Bool {
+        String(describing: type(of: view)).contains("Button")
+    }
+
+    /// The glass an item or a group of items floats on, or an item's button
+    /// where there is none.
+    private static func isGlass(_ view: UIView) -> Bool {
+        let name = String(describing: type(of: view))
+        return name.contains("Platter") || name.contains("ButtonBarButton")
+    }
+}

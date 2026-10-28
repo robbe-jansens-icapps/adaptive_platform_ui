@@ -3,7 +3,9 @@ import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart';
 import 'package:adaptive_platform_ui/src/toolbar/toolbar_blend.dart';
 import 'package:adaptive_platform_ui/src/toolbar/hosted_tab_bar.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1041,4 +1043,133 @@ void main() {
     expect(tabBarsMade(), hasLength(1));
     expect(tabBarsThrownAway(), isEmpty);
   }, variant: ios);
+
+  group('shown over the Flutter view', () {
+    /// The tab bars made over the Flutter view, by id, and the values of the
+    /// last layout iOS got for each.
+    final chromeMade = <int>[];
+    final chromeLayout = <int, List<double>>{};
+
+    setUp(() {
+      chromeMade.clear();
+      chromeLayout.clear();
+      AdaptiveNativeChrome.enabled = true;
+      NativeChromeCoordinator.instance.debugReset();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, (
+            call,
+          ) async {
+            final args = call.arguments;
+            if (call.method == 'create' &&
+                (args as Map<Object?, Object?>)['viewType'] == tabBarType) {
+              chromeMade.add(args['id']! as int);
+            } else if (call.method == 'layout') {
+              final values = args as Float64List;
+              for (
+                var i = 0;
+                i < values.length;
+                i += NativeChromeCoordinator.stride
+              ) {
+                chromeLayout[values[i].toInt()] = values.sublist(
+                  i,
+                  i + NativeChromeCoordinator.stride,
+                );
+              }
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      AdaptiveNativeChrome.enabled = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, null);
+    });
+
+    List<double> barLayout() => chromeLayout[chromeMade.single]!;
+    bool barHidden() =>
+        barLayout()[27].toInt() & NativeChromeCoordinator.hiddenFlag != 0;
+
+    testWidgets('the bar is made once over the Flutter view, as no platform '
+        'view, and leaves the screen while a page without tabs covers it', (
+      tester,
+    ) async {
+      usePhone(tester);
+      final tabs = Tabs();
+      addTearDown(tabs.dispose);
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(hostedApp(navigator, tabsPage(tabs)));
+      await tester.pumpAndSettle();
+
+      expect(tabBarsMade(), isEmpty);
+      expect(chromeMade, hasLength(1));
+      expect(barHidden(), isFalse);
+      expect(barLayout()[19], 1);
+
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('no tabs')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(barHidden(), isTrue);
+
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(barHidden(), isFalse);
+      expect(barLayout()[19], 1);
+      expect(chromeMade, hasLength(1));
+    }, variant: ios);
+
+    testWidgets('under a dialog iOS dims the capsule, as Flutter cannot draw '
+        'over the bar; a sheet still sends it away', (tester) async {
+      usePhone(tester);
+      final tabs = Tabs();
+      addTearDown(tabs.dispose);
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(hostedApp(navigator, tabsPage(tabs)));
+      await tester.pumpAndSettle();
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        '${tabBarType}_${chromeMade.single}',
+        const StandardMethodCodec().encodeMethodCall(
+          const MethodCall('capsuleChanged', {
+            'x': 21.0,
+            'y': 0.0,
+            'width': 360.0,
+            'height': 62.0,
+          }),
+        ),
+        (_) {},
+      );
+      await tester.pump();
+      expect(barLayout()[28], 0);
+
+      showDialog<void>(
+        context: navigator.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(barrierOverTabs, findsNothing);
+      expect(barHidden(), isFalse);
+      final dim = Color(barLayout()[28].toInt());
+      expect(dim.withValues(alpha: 1), Colors.black);
+      expect(dim.a, closeTo(0.414, 0.01));
+
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(barLayout()[28], 0);
+
+      showCupertinoModalPopup<void>(
+        context: navigator.currentContext!,
+        builder: (_) => const SizedBox(height: 300, child: Text('Sheet')),
+      );
+      await tester.pumpAndSettle();
+      expect(barHidden(), isTrue);
+
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(barHidden(), isFalse);
+      expect(chromeMade, hasLength(1));
+    }, variant: ios);
+  });
 }

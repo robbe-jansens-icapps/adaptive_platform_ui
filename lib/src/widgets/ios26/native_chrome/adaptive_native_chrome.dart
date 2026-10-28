@@ -7,7 +7,8 @@
 /// Flutter view cost nothing per frame: Flutter keeps an empty placeholder in
 /// their place and tells iOS where they are only when that changes.
 ///
-/// Set it once, before `runApp`.
+/// Set it once, before `runApp`. Off unless the app is built with
+/// `--dart-define=adaptive_native_chrome=true`.
 abstract final class AdaptiveNativeChrome {
-  static bool enabled = false;
+  static bool enabled = const bool.fromEnvironment('adaptive_native_chrome');
 }
