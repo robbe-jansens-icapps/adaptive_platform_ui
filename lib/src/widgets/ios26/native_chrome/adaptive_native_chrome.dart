@@ -1,0 +1,13 @@
+/// Whether the bars and controls that support it show their native views over
+/// the Flutter view on iOS, rather than as platform views inside it.
+///
+/// With a platform view on screen, iOS draws every Flutter frame through an
+/// extra surface per view, presented on the main thread that Dart shares; on
+/// older iPhones that costs frames on every transition. Views shown over the
+/// Flutter view cost nothing per frame: Flutter keeps an empty placeholder in
+/// their place and tells iOS where they are only when that changes.
+///
+/// Set it once, before `runApp`.
+abstract final class AdaptiveNativeChrome {
+  static bool enabled = false;
+}

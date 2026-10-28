@@ -302,6 +302,17 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             withId: "adaptive_platform_ui/ios26_glass_surface"
         )
 
+        // The same views over the Flutter view instead of as platform views
+        // (Dart: AdaptiveNativeView with `chrome: true`)
+        NativeChromeHost.register(with: registrar, factories: [
+            "adaptive_platform_ui/ios26_button": ios26ButtonFactory,
+            "adaptive_platform_ui/ios26_switch": ios26SwitchFactory,
+            "adaptive_platform_ui/ios26_segmented_control": ios26SegmentedControlFactory,
+            "adaptive_platform_ui/ios26_tab_bar": ios26TabBarFactory,
+            "adaptive_platform_ui/ios26_toolbar": ios26ToolbarFactory,
+            "adaptive_platform_ui/ios26_glass_surface": ios26GlassSurfaceFactory,
+        ])
+
         // iPhone Duo: where the system puts its vertical bar (iOS 27.1)
         let verticalBarEdgeChannel = FlutterEventChannel(
             name: "adaptive_platform_ui/vertical_bar_edge",

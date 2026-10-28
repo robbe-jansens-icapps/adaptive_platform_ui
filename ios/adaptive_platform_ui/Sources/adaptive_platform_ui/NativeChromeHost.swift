@@ -1,0 +1,338 @@
+import Flutter
+import UIKit
+
+/// A native view hosted over the Flutter view can claim only parts of its
+/// bounds for touches (Dart: AdaptiveNativeView with `chrome: true`), such as
+/// a bar's items, leaving the rest to the Flutter content around them. Nil
+/// claims the whole view.
+protocol ChromeHitRegion: AnyObject {
+    func chromeHitRects() -> [CGRect]?
+}
+
+/// Native views shown over the Flutter view instead of inside it as platform
+/// views (Dart: AdaptiveNativeView with `chrome: true`).
+///
+/// With a platform view on screen the engine draws every frame through extra
+/// Metal surfaces presented in a Core Animation transaction on the main
+/// thread, which Dart shares, and it pays for that per view. Views hosted
+/// here are plain subviews of one root view above the Flutter content: Flutter
+/// keeps an empty placeholder in their place and sends where each one is,
+/// once per frame something changed, so the engine stays on its fast path.
+///
+/// The views are made by the same factories as the platform views, so each
+/// keeps its own channel and native logic.
+final class NativeChromeHost: NSObject {
+    /// Values per view in a `layout` batch (Dart: NativeChromeCoordinator).
+    private static let stride = 29
+    fileprivate static let hiddenFlag = 1
+    fileprivate static let interactiveFlag = 2
+
+    private static let attachInterval: TimeInterval = 0.05
+
+    private let registrar: FlutterPluginRegistrar
+    private let factories: [String: FlutterPlatformViewFactory]
+    private var slots: [Int64: NativeChromeSlot] = [:]
+    private var root: NativeChromeRootView?
+    private var attachScheduled = false
+
+    private init(
+        registrar: FlutterPluginRegistrar,
+        factories: [String: FlutterPlatformViewFactory]
+    ) {
+        self.registrar = registrar
+        self.factories = factories
+        super.init()
+    }
+
+    static func register(
+        with registrar: FlutterPluginRegistrar,
+        factories: [String: FlutterPlatformViewFactory]
+    ) {
+        let host = NativeChromeHost(registrar: registrar, factories: factories)
+        let channel = FlutterMethodChannel(
+            name: "adaptive_platform_ui/native_chrome",
+            binaryMessenger: registrar.messenger()
+        )
+        // The channel holds the host for as long as the engine runs.
+        channel.setMethodCallHandler { call, result in
+            host.handle(call, result: result)
+        }
+    }
+
+    private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let args = call.arguments as? [String: Any] ?? [:]
+        switch call.method {
+        case "create":
+            guard let id = (args["id"] as? NSNumber)?.int64Value,
+                  let viewType = args["viewType"] as? String,
+                  let factory = factories[viewType]
+            else {
+                result(FlutterError(code: "unknown_view_type", message: nil, details: nil))
+                return
+            }
+            slots[id]?.remove()
+            let platformView = factory.create(
+                withFrame: .zero,
+                viewIdentifier: id,
+                arguments: args["params"]
+            )
+            let slot = NativeChromeSlot(platformView: platformView)
+            slots[id] = slot
+            if let root = attachedRoot() {
+                root.addSubview(slot.clipView)
+            }
+            result(nil)
+        case "dispose":
+            if let id = (args["id"] as? NSNumber)?.int64Value {
+                slots.removeValue(forKey: id)?.remove()
+            }
+            result(nil)
+        case "layout":
+            if let data = call.arguments as? FlutterStandardTypedData {
+                apply(data)
+            }
+            result(nil)
+        case "reset":
+            // A hot restart: the views of the isolate before are gone in Dart.
+            for slot in slots.values {
+                slot.remove()
+            }
+            slots.removeAll()
+            result(nil)
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func apply(_ data: FlutterStandardTypedData) {
+        guard let root = attachedRoot() else { return }
+        let count = Int(data.elementCount)
+        var reorder = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        data.data.withUnsafeBytes { raw in
+            let values = raw.bindMemory(to: Float64.self)
+            var i = 0
+            while i + Self.stride <= count {
+                let id = Int64(values[i])
+                if let slot = slots[id] {
+                    reorder = slot.apply(values, at: i, in: root.bounds) || reorder
+                }
+                i += Self.stride
+            }
+        }
+        if reorder {
+            for slot in slots.values.sorted(by: { $0.z < $1.z }) {
+                root.bringSubviewToFront(slot.clipView)
+            }
+        }
+        if let host = root.superview, host.subviews.last !== root {
+            host.bringSubviewToFront(root)
+        }
+        CATransaction.commit()
+    }
+
+    /// The root view over the Flutter view, put in place once the Flutter view
+    /// controller has a view: with an implicit engine that comes after the
+    /// plugins register, so it is tried again until then.
+    private func attachedRoot() -> NativeChromeRootView? {
+        if let root, root.superview != nil { return root }
+        guard let host = registrar.viewController?.view else {
+            scheduleAttach()
+            return nil
+        }
+        let root = root ?? NativeChromeRootView(host: self)
+        root.frame = host.bounds
+        host.addSubview(root)
+        Self.keepLast(in: host)
+        self.root = root
+        for slot in slots.values.sorted(by: { $0.z < $1.z }) {
+            root.addSubview(slot.clipView)
+        }
+        return root
+    }
+
+    private func scheduleAttach() {
+        guard !attachScheduled, !slots.isEmpty else { return }
+        attachScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.attachInterval) { [weak self] in
+            guard let self else { return }
+            self.attachScheduled = false
+            _ = self.attachedRoot()
+        }
+    }
+
+    /// The topmost view that takes the touch at `point`: the views are tried
+    /// from the top, each only where it is shown, takes touches and claims the
+    /// point. Nil lets the touch through to Flutter.
+    fileprivate func hitTest(
+        _ point: CGPoint, in root: UIView, with event: UIEvent?
+    ) -> UIView? {
+        for case let clipView as NativeChromeClipView in root.subviews.reversed() {
+            guard let slot = clipView.slot, slot.interactive,
+                  !clipView.isHidden, clipView.alpha > 0.01
+            else { continue }
+            if clipView.clipsToBounds,
+               !clipView.bounds.contains(root.convert(point, to: clipView)) {
+                continue
+            }
+            let hosted = slot.hosted
+            let local = root.convert(point, to: hosted)
+            let regions = (slot.platformView as? ChromeHitRegion)?.chromeHitRects()
+                ?? [hosted.bounds]
+            guard regions.contains(where: { $0.contains(local) }),
+                  let hit = hosted.hitTest(local, with: event)
+            else { continue }
+            return hit
+        }
+        return nil
+    }
+
+    private static var hookedClasses = Set<ObjectIdentifier>()
+
+    /// Keeps the root view last among the Flutter view's subviews, where
+    /// touches are tried first. The engine adds its platform views and their
+    /// overlays to the Flutter view as they come, and a map filling the screen
+    /// would otherwise take every touch meant for the views above it.
+    private static func keepLast(in host: UIView) {
+        let cls: AnyClass = type(of: host)
+        guard hookedClasses.insert(ObjectIdentifier(cls)).inserted,
+              let superclass = class_getSuperclass(cls),
+              let method = class_getInstanceMethod(UIView.self, #selector(UIView.didAddSubview(_:)))
+        else { return }
+        let selector = #selector(UIView.didAddSubview(_:))
+        typealias DidAddSubview = @convention(c) (UIView, Selector, UIView) -> Void
+        let callSuper = unsafeBitCast(
+            class_getMethodImplementation(superclass, selector),
+            to: DidAddSubview.self
+        )
+        let block: @convention(block) (UIView, UIView) -> Void = { view, subview in
+            callSuper(view, selector, subview)
+            guard !(subview is NativeChromeRootView),
+                  let root = view.subviews.last(where: { $0 is NativeChromeRootView }),
+                  view.subviews.last !== root
+            else { return }
+            view.bringSubviewToFront(root)
+        }
+        // Fails if the class has its own didAddSubview; then `apply` raises the
+        // root view on each layout instead.
+        class_addMethod(
+            cls, selector, imp_implementationWithBlock(block),
+            method_getTypeEncoding(method)
+        )
+    }
+}
+
+/// One hosted view: a clip view for the clip of its Flutter placeholder, in
+/// it a view taking the placeholder's size and transform, and in that the
+/// view the factory made.
+private final class NativeChromeSlot {
+    let platformView: FlutterPlatformView
+    let hosted: UIView
+    let clipView = NativeChromeClipView()
+    let transformView = NativeChromeTouchSink()
+
+    private(set) var z: Double = -1
+    private(set) var interactive = false
+
+    init(platformView: FlutterPlatformView) {
+        self.platformView = platformView
+        hosted = platformView.view()
+        clipView.slot = self
+        clipView.isHidden = true
+        transformView.layer.anchorPoint = .zero
+        hosted.frame = .zero
+        hosted.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        transformView.addSubview(hosted)
+        clipView.addSubview(transformView)
+    }
+
+    func remove() {
+        clipView.removeFromSuperview()
+    }
+
+    /// Applies one view's values of a `layout` batch; true when its place
+    /// among the other views changed.
+    func apply(
+        _ values: UnsafeBufferPointer<Float64>, at offset: Int, in rootBounds: CGRect
+    ) -> Bool {
+        func value(_ index: Int) -> CGFloat { CGFloat(values[offset + index]) }
+        let flags = Int(values[offset + 27])
+        interactive = flags & NativeChromeHost.interactiveFlag != 0
+        if flags & NativeChromeHost.hiddenFlag != 0 {
+            clipView.isHidden = true
+            return false
+        }
+
+        let size = CGSize(width: value(1), height: value(2))
+        if transformView.bounds.size != size {
+            transformView.bounds = CGRect(origin: .zero, size: size)
+        }
+        let matrix = CATransform3D(
+            m11: value(3), m12: value(4), m13: value(5), m14: value(6),
+            m21: value(7), m22: value(8), m23: value(9), m24: value(10),
+            m31: value(11), m32: value(12), m33: value(13), m34: value(14),
+            m41: value(15), m42: value(16), m43: value(17), m44: value(18)
+        )
+        let clip: CGRect
+        if values[offset + 20] != 0 {
+            clip = CGRect(
+                x: value(21), y: value(22),
+                width: value(23) - value(21), height: value(24) - value(22)
+            )
+            clipView.clipsToBounds = true
+            clipView.layer.cornerRadius = value(25)
+        } else {
+            clip = rootBounds
+            clipView.clipsToBounds = false
+            clipView.layer.cornerRadius = 0
+        }
+        clipView.frame = clip
+        transformView.layer.position = .zero
+        transformView.layer.transform = CATransform3DConcat(
+            matrix, CATransform3DMakeTranslation(-clip.minX, -clip.minY, 0)
+        )
+        clipView.alpha = value(19)
+        clipView.isHidden = false
+
+        let newZ = values[offset + 26]
+        defer { z = newZ }
+        return newZ != z
+    }
+}
+
+/// Takes the touches that reach it and passes none on: a touch on a hosted
+/// view that the view itself does not use would otherwise go up the responder
+/// chain to the Flutter view, and Flutter would see a touch under the view.
+private class NativeChromeTouchSink: UIView {
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {}
+}
+
+private final class NativeChromeClipView: NativeChromeTouchSink {
+    weak var slot: NativeChromeSlot?
+}
+
+/// Lies over the Flutter content and takes only the touches its views claim.
+/// Hidden from VoiceOver: Flutter lays its own semantics over each view.
+private final class NativeChromeRootView: NativeChromeTouchSink {
+    private weak var host: NativeChromeHost?
+
+    init(host: NativeChromeHost) {
+        self.host = host
+        super.init(frame: .zero)
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // Over the platform views and their overlays, under the snapshot the
+        // engine shows of the keyboard while it hides (z NSIntegerMax).
+        layer.zPosition = 1e6
+        accessibilityElementsHidden = true
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        host?.hitTest(point, in: self, with: event)
+    }
+}

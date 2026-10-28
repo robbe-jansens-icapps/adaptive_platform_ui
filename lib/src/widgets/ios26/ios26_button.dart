@@ -5,6 +5,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import '../../style/glass_button_glyph.dart';
 import '../../style/sf_symbol.dart';
+import 'native_chrome/adaptive_native_chrome.dart';
+import 'native_chrome/adaptive_native_view.dart';
 import 'native_view_settle.dart';
 
 /// iOS 26 native button styles (Liquid Glass design)
@@ -77,6 +79,7 @@ class IOS26Button extends StatefulWidget {
     this.borderRadius,
     this.minSize,
     this.useSmoothRectangleBorder = true,
+    this.chrome = false,
   }) : child = null,
        isChildMode = false,
        sfSymbol = null;
@@ -98,7 +101,8 @@ class IOS26Button extends StatefulWidget {
   }) : label = '',
        textColor = null,
        isChildMode = true,
-       sfSymbol = null;
+       sfSymbol = null,
+       chrome = false;
 
   /// Creates an iOS 26 style button with a native SF Symbol icon
   const IOS26Button.sfSymbol({
@@ -113,6 +117,7 @@ class IOS26Button extends StatefulWidget {
     this.borderRadius,
     this.minSize,
     this.useSmoothRectangleBorder = true,
+    this.chrome = false,
   }) : label = '',
        textColor = null,
        child = null,
@@ -161,6 +166,11 @@ class IOS26Button extends StatefulWidget {
   /// When false, uses perfectly circular/capsule shape
   /// Default is true for smooth rectangle, set to false for circular
   final bool useSmoothRectangleBorder;
+
+  /// Whether the native button is shown over the Flutter view rather than as
+  /// a platform view, with [AdaptiveNativeChrome.enabled]. Not for a button
+  /// with a Flutter [child], which Flutter draws on top of it.
+  final bool chrome;
 
   /// Takes the native path (or not) whatever the platform, for tests.
   @visibleForTesting
@@ -425,10 +435,10 @@ class _IOS26ButtonState extends State<IOS26Button>
         ignoring: !settled,
         child: Opacity(
           opacity: settled ? 1 : 0,
-          child: UiKitView(
+          child: AdaptiveNativeView(
             viewType: 'adaptive_platform_ui/ios26_button',
             creationParams: _buildCreationParams(),
-            creationParamsCodec: const StandardMessageCodec(),
+            chrome: widget.chrome,
           ),
         ),
       );

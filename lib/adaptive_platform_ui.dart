@@ -31,6 +31,7 @@ library;
 export 'src/platform/adaptive_brightness_lock.dart';
 export 'src/platform/adaptive_native_fonts.dart';
 export 'src/platform/platform_info.dart';
+export 'src/widgets/ios26/native_chrome/adaptive_native_chrome.dart';
 
 // Animation utilities
 export 'src/utils/animation.dart';
