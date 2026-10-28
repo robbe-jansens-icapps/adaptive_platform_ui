@@ -26,6 +26,14 @@ protocol ChromeDimmable: AnyObject {
 /// keeps an empty placeholder in their place and sends where each one is,
 /// once per frame something changed, so the engine stays on its fast path.
 ///
+/// Flutter's message for a frame arrives before the frame's pixels, which the
+/// engine sets on the Flutter view's layer once the frame is rendered. Moved
+/// at once, a view would be a frame ahead of the content around it whenever
+/// the two landed on either side of a refresh. So each frame's message waits
+/// for that frame's pixels, and is applied in the same Core Animation
+/// transaction: Flutter sends one for every frame while views are shown, in
+/// the order of the frames, and the frames come in the same order.
+///
 /// The views are made by the same factories as the platform views, so each
 /// keeps its own channel and native logic.
 final class NativeChromeHost: NSObject {
@@ -36,11 +44,25 @@ final class NativeChromeHost: NSObject {
 
     private static let attachInterval: TimeInterval = 0.05
 
+    /// Messages that wait for their frame's pixels, oldest first. More than
+    /// this many means frames went by without pixels (the engine left one
+    /// out), and the oldest are applied at once.
+    private static let maxPending = 2
+
+    /// How long a message waits for its frame's pixels before it is applied
+    /// all the same, about two refreshes: for a frame the engine never shows.
+    private static let pendingTimeout: TimeInterval = 0.034
+
     private let registrar: FlutterPluginRegistrar
     private let factories: [String: FlutterPlatformViewFactory]
     private var slots: [Int64: NativeChromeSlot] = [:]
     private var root: NativeChromeRootView?
     private var attachScheduled = false
+
+    private var pending: [(serial: Int, data: FlutterStandardTypedData)] = []
+    private var nextSerial = 0
+    private var framesObservation: NSKeyValueObservation?
+    private weak var observedLayer: CALayer?
 
     private init(
         registrar: FlutterPluginRegistrar,
@@ -96,7 +118,7 @@ final class NativeChromeHost: NSObject {
             result(nil)
         case "layout":
             if let data = call.arguments as? FlutterStandardTypedData {
-                apply(data)
+                enqueue(data)
             }
             result(nil)
         case "reset":
@@ -105,9 +127,50 @@ final class NativeChromeHost: NSObject {
                 slot.remove()
             }
             slots.removeAll()
-            result(nil)
+            pending.removeAll()
+            // Each frame's message is applied with its pixels.
+            result(["frameLocked": true])
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    private func enqueue(_ data: FlutterStandardTypedData) {
+        // Placed over the Flutter view, the root view watches its frames.
+        guard attachedRoot() != nil, observedLayer != nil else {
+            apply(data)
+            return
+        }
+        let serial = nextSerial
+        nextSerial += 1
+        pending.append((serial, data))
+        while pending.count > Self.maxPending {
+            apply(pending.removeFirst().data)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pendingTimeout) { [weak self] in
+            self?.applyPending(through: serial)
+        }
+    }
+
+    /// The engine set the pixels of the next frame on the Flutter view: its
+    /// message goes with them.
+    private func framePresented() {
+        guard !pending.isEmpty else { return }
+        apply(pending.removeFirst().data)
+    }
+
+    private func applyPending(through serial: Int) {
+        while let first = pending.first, first.serial <= serial {
+            pending.removeFirst()
+            apply(first.data)
+        }
+    }
+
+    private func observeFrames(of host: UIView) {
+        guard observedLayer !== host.layer else { return }
+        observedLayer = host.layer
+        framesObservation = host.layer.observe(\.contents, options: []) { [weak self] _, _ in
+            self?.framePresented()
         }
     }
 
@@ -152,6 +215,7 @@ final class NativeChromeHost: NSObject {
         root.frame = host.bounds
         host.addSubview(root)
         Self.keepLast(in: host)
+        observeFrames(of: host)
         self.root = root
         for slot in slots.values.sorted(by: { $0.z < $1.z }) {
             root.addSubview(slot.clipView)

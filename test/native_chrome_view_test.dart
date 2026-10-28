@@ -9,12 +9,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// What iOS was told about each view, by id: the values of its last `layout`.
 class _Host {
+  _Host({this.frameLocked = false});
+
+  /// Whether the host applies each frame's message with its pixels.
+  final bool frameLocked;
+
   final List<String> calls = <String>[];
   final Map<int, Float64List> views = <int, Float64List>{};
   int layouts = 0;
 
   Future<Object?> handle(MethodCall call) async {
     calls.add(call.method);
+    if (call.method == 'reset' && frameLocked) {
+      return <String, Object?>{'frameLocked': true};
+    }
     if (call.method == 'layout') {
       layouts++;
       final values = call.arguments as Float64List;
@@ -335,5 +343,34 @@ void main() {
       await tester.pump();
       expect(_Host.hidden(host.only), isFalse);
     });
+  });
+
+  testWidgets('frame locked, it sends a message for every frame and hides a '
+      'view with the frame its stand-in comes in', (tester) async {
+    host = _Host(frameLocked: true);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(NativeChromeCoordinator.channel, host.handle);
+    final offstage = ValueNotifier<bool>(false);
+    addTearDown(offstage.dispose);
+    await tester.pumpWidget(
+      placed(
+        ValueListenableBuilder<bool>(
+          valueListenable: offstage,
+          builder: (context, value, child) =>
+              Opacity(opacity: value ? 0 : 1, child: child),
+          child: view(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final layouts = host.layouts;
+    tester.binding.scheduleFrame();
+    await tester.pump();
+    expect(host.layouts, layouts + 1);
+
+    offstage.value = true;
+    await tester.pump();
+    expect(_Host.hidden(host.only), isTrue);
   });
 }

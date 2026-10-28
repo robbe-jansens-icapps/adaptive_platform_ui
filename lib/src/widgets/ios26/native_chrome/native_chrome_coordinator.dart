@@ -35,6 +35,10 @@ class NativeChromeCoordinator {
   bool _started = false;
   bool _flushing = false;
 
+  /// Whether iOS applies each frame's message with that frame's pixels
+  /// (Swift: NativeChromeHost), which takes one for every frame, changes or
+  /// not. Otherwise it applies them as they come, before the pixels.
+  bool _frameLocked = false;
   int _z = 0;
 
   /// Makes the native view of [viewType] for a placeholder, through the same
@@ -73,7 +77,9 @@ class NativeChromeCoordinator {
     if (_started) return;
     _started = true;
     // Views made before a hot restart are still on screen.
-    unawaited(channel.invokeMethod<void>('reset'));
+    channel.invokeMethod<Object?>('reset').then((reply) {
+      _frameLocked = reply is Map && reply['frameLocked'] == true;
+    });
     if (_flushing) return;
     _flushing = true;
     final scheduler = SchedulerBinding.instance;
@@ -119,7 +125,7 @@ class NativeChromeCoordinator {
       occluder._composited = false;
     }
     _z = 0;
-    if (changes.isNotEmpty) {
+    if (changes.isNotEmpty || _frameLocked) {
       unawaited(
         channel.invokeMethod<void>('layout', Float64List.fromList(changes)),
       );
@@ -138,6 +144,7 @@ class NativeChromeCoordinator {
 
   @visibleForTesting
   void debugReset() {
+    _frameLocked = false;
     _slots.clear();
     _occluders.clear();
     _started = false;
@@ -201,11 +208,11 @@ class NativeChromeSlot {
     _current = _measure(layer as OffsetLayer, box.size);
   }
 
-  /// The values to send for this frame. A placeholder that is no longer
-  /// composited stays on screen one frame more, without taking touches: iOS
-  /// gets the message before Flutter's pixels of the same frame, so hiding
-  /// the view at once would leave a frame with neither it nor the stand-in
-  /// that Flutter paints in its place.
+  /// The values to send for this frame. Where iOS applies them before
+  /// Flutter's pixels of the same frame (not frame locked), a placeholder that
+  /// is no longer composited stays on screen one frame more, without taking
+  /// touches: hiding the view at once would leave a frame with neither it nor
+  /// the stand-in that Flutter paints in its place.
   Float64List _valuesForFrame() {
     final sent = _sent;
     if (_composited && _current != null) {
@@ -223,7 +230,7 @@ class NativeChromeSlot {
     final visible =
         sent != null &&
         sent[27].toInt() & NativeChromeCoordinator.hiddenFlag == 0;
-    if (visible && !_hiding) {
+    if (visible && !_hiding && !_coordinator._frameLocked) {
       _hiding = true;
       return Float64List.fromList(sent)
         ..[27] = (sent[27].toInt() & ~NativeChromeCoordinator.interactiveFlag)
