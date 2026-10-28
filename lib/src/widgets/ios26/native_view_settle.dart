@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 
 import '../../toolbar/toolbar_blend.dart';
 import '../../utils/bar_frost.dart';
+import 'native_chrome/adaptive_native_chrome.dart';
+import 'native_chrome/native_chrome_navigator_observer.dart';
 
 /// Follows whether the page a native view is on holds still in front
 /// ([settled]), for the view to be on screen only then.
@@ -66,6 +68,22 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   /// build follows when [followRoute] asked for one.
   @protected
   void didChangeSettled(bool settled);
+
+  /// Whether the native view is shown over the Flutter view
+  /// ([AdaptiveNativeChrome]) on a page whose navigator says what is over it
+  /// ([NativeChromeNavigatorObserver]), or outside a page: it then moves and
+  /// fades with its page, a page sliding over it cuts it off at its edge and
+  /// a dialog's barrier is laid over it, so it stays on screen while pages
+  /// move or something covers its page. Only a bar's frost still sends it
+  /// away, as iOS cannot blur it with the content there.
+  @protected
+  bool get followsRouteOverFlutter => false;
+
+  /// For [followsRouteOverFlutter]: whether the view is outside a page, or on
+  /// one whose navigator says what is over it.
+  @protected
+  bool get routeIsFollowed =>
+      _route == null || NativeChromeNavigatorObserver.tracks(_route);
 
   /// Looks at the page the view is on again: from `didChangeDependencies`,
   /// as the route's status (`isCurrent`) is a dependency.
@@ -216,11 +234,23 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
   }
 
   void _updateSettled({bool rebuild = true}) {
+    final settled =
+        !_underFrost && (followsRouteOverFlutter || _pageHoldsStill());
+    if (settled == _settled && !_firstSettle) return;
+    _firstSettle = false;
+    _settled = settled;
+    didChangeSettled(settled);
+    if (rebuild && mounted) setState(() {});
+  }
+
+  /// Whether the page the view is on holds still in front, with nothing over
+  /// it.
+  bool _pageHoldsStill() {
     final animation = _animation;
     final secondary = _secondaryAnimation;
     final route = _route;
-    final settled =
-        (animation == null || animation.status == AnimationStatus.completed) &&
+    return (animation == null ||
+            animation.status == AnimationStatus.completed) &&
         (secondary == null || secondary.status == AnimationStatus.dismissed) &&
         // Under a dialog, a sheet or a page that slides up over it.
         (route == null || route.isCurrent) &&
@@ -229,13 +259,7 @@ mixin NativeViewSettle<T extends StatefulWidget> on State<T> {
         (route == null || !route.offstage) &&
         !(_routeTransition?.value ?? false) &&
         // Faded as a whole, as the tab accessory over the native tab bar is.
-        (_scope?.value ?? true) &&
-        !_underFrost;
-    if (settled == _settled && !_firstSettle) return;
-    _firstSettle = false;
-    _settled = settled;
-    didChangeSettled(settled);
-    if (rebuild && mounted) setState(() {});
+        (_scope?.value ?? true);
   }
 }
 

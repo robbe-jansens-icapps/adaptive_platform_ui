@@ -964,7 +964,8 @@ class _BackButtonState extends State<_BackButton>
   @override
   void didUpdateWidget(_BackButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.moving && !_standingIn) {
+    // Over the Flutter view, the native button moves and fades with the bar.
+    if (widget.moving && !_standingIn && !AdaptiveNativeChrome.enabled) {
       // Only with the glyph in hand: an empty button would be worse than the
       // native one.
       if (_glyph == null) return;

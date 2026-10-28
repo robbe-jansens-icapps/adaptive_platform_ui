@@ -4,6 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+
+import '../../../toolbar/chrome_barrier.dart';
+import 'native_chrome_navigator_observer.dart';
 
 /// Tells iOS where the native views shown over the Flutter view are
 /// ([NativeChromeView]), once per frame in which any of them changed.
@@ -14,6 +18,12 @@ import 'package:flutter/services.dart';
 /// placeholders were composited in gives the order of the views. That holds
 /// for a page sliding in or a bar fading out too, where only a layer above
 /// the placeholder changes and the placeholder itself does not paint again.
+///
+/// The views are above all Flutter content. What Flutter draws over one, a
+/// page sliding over its page ([NativeChromeNavigatorObserver]) or a sheet
+/// rising over it ([NativeChromeOccluder]), cuts it off at its edge, or takes
+/// it off the screen where it covers it otherwise; a dialog's barrier over
+/// its page is laid over it by iOS.
 class NativeChromeCoordinator {
   NativeChromeCoordinator._();
 
@@ -99,20 +109,12 @@ class NativeChromeCoordinator {
     }
     final occluders = [
       for (final occluder in _occluders)
-        if (occluder._composited) occluder,
+        if (occluder._composited) (z: occluder._z, rect: occluder._rect),
     ];
     final changes = <double>[];
     var again = false;
     for (final slot in _slots.values) {
-      final bounds = slot._bounds;
-      if (slot._composited && bounds != null) {
-        for (final occluder in occluders) {
-          if (occluder._z > slot._z && occluder._rect.overlaps(bounds)) {
-            slot._composited = false;
-            break;
-          }
-        }
-      }
+      slot._findCover(occluders);
       final values = slot._valuesForFrame();
       if (slot._hiding) again = true;
       if (!_listEquals(values, slot._sent)) {
@@ -168,6 +170,17 @@ class NativeChromeSlot {
   /// lays it over the view's glass in this colour.
   ValueListenable<Color?>? dim;
 
+  /// The page the view is on, whose navigator says what is over it
+  /// ([NativeChromeNavigatorObserver]).
+  Route<Object?>? route;
+
+  /// What of the view nothing covers this frame, how much of it shows
+  /// through pages that fade over it, and the barrier over its page
+  /// ([_findCover]).
+  Rect? _uncovered;
+  double _showsThrough = 1;
+  Color? _routeDim;
+
   RenderBox? _box;
   bool _disposed = false;
 
@@ -218,8 +231,27 @@ class NativeChromeSlot {
     if (_composited && _current != null) {
       _hiding = false;
       final values = Float64List.fromList(_current!);
-      final dim = this.dim?.value;
+      values[19] *= _showsThrough;
+      final dim = this.dim?.value ?? _routeDim;
       if (dim != null && dim.a > 0) values[28] = dim.toARGB32().toDouble();
+      final uncovered = _uncovered;
+      if (uncovered != null && uncovered != _bounds) {
+        final clip = values[20] == 0
+            ? uncovered
+            : Rect.fromLTRB(
+                values[21],
+                values[22],
+                values[23],
+                values[24],
+              ).intersect(uncovered);
+        values
+          ..[20] = 1
+          ..[21] = clip.left
+          ..[22] = clip.top
+          ..[23] = clip.right
+          ..[24] = clip.bottom
+          ..[25] = 0;
+      }
       if (!_interactive || _ignoresPointer(_box)) {
         values[27] =
             (values[27].toInt() & ~NativeChromeCoordinator.interactiveFlag)
@@ -277,6 +309,110 @@ class NativeChromeSlot {
     }
     values[27] = flags.toDouble();
     return values;
+  }
+
+  /// Finds what Flutter draws over the view this frame: the [occluders]
+  /// composited after it, the pages over its page, and the barrier of a
+  /// dialog over its page. A view they cover all of, or in the middle, is
+  /// taken off the screen; one they cover along a side is cut off there.
+  void _findCover(List<({int z, Rect rect})> occluders) {
+    _uncovered = null;
+    _showsThrough = 1;
+    _routeDim = null;
+    final bounds = _bounds;
+    if (!_composited || bounds == null) return;
+    final covers = [
+      for (final occluder in occluders)
+        if (occluder.z > _z) occluder.rect,
+    ];
+    final route = this.route;
+    final above = route == null
+        ? null
+        : NativeChromeNavigatorObserver.routesAbove(route);
+    for (final page in above ?? const <Route<dynamic>>[]) {
+      if (page is! ModalRoute<dynamic> || page.offstage) continue;
+      if (page is PopupRoute<dynamic> ||
+          (!page.opaque && (page.barrierColor?.a ?? 0) > 0)) {
+        _routeDim =
+            chromeBarrierOf(page, showsThrough: kGlassShowsThrough)?.value ??
+            _routeDim;
+        continue;
+      }
+      final box = page.subtreeContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final rect = MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+      // A page that fades in or out over it: the view, above it, fades out
+      // as much as the page comes in, about as it looks under the page.
+      final opacity = _opacityOf(box);
+      if (opacity < 0.99) {
+        if (rect.overlaps(bounds)) _showsThrough *= 1 - opacity;
+        continue;
+      }
+      covers.add(rect);
+    }
+    var uncovered = bounds;
+    for (final cover in covers) {
+      final left = _uncoveredBy(uncovered, cover);
+      if (left == null) {
+        _composited = false;
+        return;
+      }
+      uncovered = left;
+    }
+    _uncovered = uncovered;
+  }
+
+  /// How opaque [box] is drawn, by the opacities above it, such as a page's
+  /// fade transition.
+  static double _opacityOf(RenderObject box) {
+    var opacity = 1.0;
+    for (RenderObject? node = box; node != null; node = node.parent) {
+      if (node is RenderAnimatedOpacity) opacity *= node.opacity.value;
+      if (node is RenderOpacity) opacity *= node.opacity;
+    }
+    return opacity;
+  }
+
+  /// What of [visible] [cover] leaves, where that is a rectangle: null where
+  /// it covers all of it, its middle or a corner.
+  static Rect? _uncoveredBy(Rect visible, Rect cover) {
+    if (!cover.overlaps(visible)) return visible;
+    final acrossHeight =
+        cover.top <= visible.top && cover.bottom >= visible.bottom;
+    final acrossWidth =
+        cover.left <= visible.left && cover.right >= visible.right;
+    if (acrossHeight && acrossWidth) return null;
+    if (acrossHeight && cover.left <= visible.left) {
+      return Rect.fromLTRB(
+        cover.right,
+        visible.top,
+        visible.right,
+        visible.bottom,
+      );
+    }
+    if (acrossHeight && cover.right >= visible.right) {
+      return Rect.fromLTRB(
+        visible.left,
+        visible.top,
+        cover.left,
+        visible.bottom,
+      );
+    }
+    if (acrossWidth && cover.top <= visible.top) {
+      return Rect.fromLTRB(
+        visible.left,
+        cover.bottom,
+        visible.right,
+        visible.bottom,
+      );
+    }
+    if (acrossWidth && cover.bottom >= visible.bottom) {
+      return Rect.fromLTRB(visible.left, visible.top, visible.right, cover.top);
+    }
+    return null;
   }
 
   static bool _contains(Rect outer, Rect inner) =>

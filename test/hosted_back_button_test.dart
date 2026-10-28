@@ -359,6 +359,26 @@ void main() {
           layouts[id]!,
     ];
 
+    testWidgets('over the Flutter view the native back button moves and '
+        'fades with the pages, with no stand-in', (tester) async {
+      final navigator = await start(tester);
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => page('Detail')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(standIn, findsNothing);
+      expect(shownButtons(), hasLength(1));
+      expect(shownButtons().single[19], allOf(greaterThan(0), lessThan(1)));
+
+      await tester.pumpAndSettle();
+      navigator.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(standIn, findsNothing);
+      await tester.pumpAndSettle();
+    }, variant: ios);
+
     testWidgets('the back button is a native button over the Flutter view, '
         'whose glass iOS dims under a dialog', (tester) async {
       final navigator = await start(tester);

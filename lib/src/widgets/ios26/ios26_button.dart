@@ -236,6 +236,13 @@ class _IOS26ButtonState extends State<IOS26Button>
   }
 
   @override
+  bool get followsRouteOverFlutter =>
+      widget.chrome &&
+      !widget.isChildMode &&
+      AdaptiveNativeChrome.enabled &&
+      routeIsFollowed;
+
+  @override
   void didChangeSettled(bool settled) {
     if (!settled) {
       _standIn.value = 1;

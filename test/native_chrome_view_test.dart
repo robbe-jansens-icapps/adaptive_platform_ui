@@ -1,7 +1,9 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_navigator_observer.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_occluder.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_view.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -338,6 +340,19 @@ void main() {
       expect(_Host.hidden(host.only), isFalse);
     });
 
+    testWidgets('along one side cuts the view off there', (tester) async {
+      // Over the lower half of the view, across its width: a sheet rising.
+      await tester.pumpWidget(scene(occluderTop: 62));
+
+      final values = host.only;
+      expect(_Host.hidden(values), isFalse);
+      expect(values[20], 1);
+      expect(
+        Rect.fromLTRB(values[21], values[22], values[23], values[24]),
+        const Rect.fromLTRB(20, 40, 120, 62),
+      );
+    });
+
     testWidgets('painted before a view leaves it alone', (tester) async {
       await tester.pumpWidget(scene(occluderTop: 30, occluderFirst: true));
       await tester.pump();
@@ -372,5 +387,97 @@ void main() {
     offstage.value = true;
     await tester.pump();
     expect(_Host.hidden(host.only), isTrue);
+  });
+
+  group('on a page whose navigator is followed', () {
+    late NativeChromeNavigatorObserver observer;
+    final navigator = GlobalKey<NavigatorState>();
+
+    setUp(() => observer = NativeChromeNavigatorObserver());
+
+    Widget app() => CupertinoApp(
+      navigatorKey: navigator,
+      navigatorObservers: [observer],
+      home: Stack(
+        children: [
+          Positioned(left: 20, top: 40, width: 760, height: 44, child: view()),
+        ],
+      ),
+    );
+
+    Rect clipOf(List<double> values) =>
+        Rect.fromLTRB(values[21], values[22], values[23], values[24]);
+
+    testWidgets('a page sliding over it cuts it off at its edge, and it '
+        'leaves the screen once the page is all the way in', (tester) async {
+      await tester.pumpWidget(app());
+      expect(host.only[20], 0);
+
+      navigator.currentState!.push(
+        CupertinoPageRoute<void>(
+          builder: (_) => const ColoredBox(color: Color(0xFFFFFFFF)),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      final page = tester.getTopLeft(find.byType(ColoredBox).last);
+      final sliding = host.only;
+      expect(_Host.hidden(sliding), isFalse);
+      expect(sliding[20], 1);
+      expect(clipOf(sliding).right, closeTo(page.dx, 0.5));
+      expect(clipOf(sliding).right, lessThan(780));
+
+      await tester.pumpAndSettle();
+      expect(_Host.hidden(host.only), isTrue);
+
+      navigator.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_Host.hidden(host.only), isFalse);
+      expect(host.only[20], 1);
+
+      await tester.pumpAndSettle();
+      expect(_Host.hidden(host.only), isFalse);
+      expect(host.only[20], 0);
+    });
+
+    testWidgets('a page fading in over it fades it out as much', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app());
+
+      navigator.currentState!.push(
+        PageRouteBuilder<void>(
+          transitionDuration: const Duration(milliseconds: 400),
+          pageBuilder: (_, _, _) => const ColoredBox(color: Color(0xFFFFFFFF)),
+          transitionsBuilder: (_, animation, _, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(_Host.hidden(host.only), isFalse);
+      expect(host.only[20], 0);
+      expect(host.only[19], closeTo(0.75, 0.02));
+
+      await tester.pumpAndSettle();
+      expect(_Host.hidden(host.only), isTrue);
+    });
+
+    testWidgets('under a dialog iOS lays its barrier over it', (tester) async {
+      await tester.pumpWidget(app());
+
+      showCupertinoDialog<void>(
+        context: navigator.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(_Host.hidden(host.only), isFalse);
+      expect(Color(host.only[28].toInt()).a, greaterThan(0));
+
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(host.only[28], 0);
+    });
   });
 }

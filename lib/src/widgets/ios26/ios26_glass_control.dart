@@ -111,6 +111,9 @@ class _IOS26GlassControlState extends State<IOS26GlassControl>
   }
 
   @override
+  bool get followsRouteOverFlutter => _native && routeIsFollowed;
+
+  @override
   void didChangeSettled(bool settled) => setState(() {});
 
   @override

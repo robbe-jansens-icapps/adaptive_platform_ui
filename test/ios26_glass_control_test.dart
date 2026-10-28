@@ -1,5 +1,6 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_navigator_observer.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -77,16 +78,20 @@ void main() {
         (_) {},
       );
 
-  Widget app(Widget control, {GlobalKey<NavigatorState>? navigator}) =>
-      MaterialApp(
-        navigatorKey: navigator,
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(height: 44, child: control),
-          ),
-        ),
-      );
+  Widget app(
+    Widget control, {
+    GlobalKey<NavigatorState>? navigator,
+    List<NavigatorObserver> observers = const [],
+  }) => MaterialApp(
+    navigatorKey: navigator,
+    navigatorObservers: observers,
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(height: 44, child: control),
+      ),
+    ),
+  );
 
   testWidgets('iOS draws the glass, the label and the icons where Flutter '
       'lays them out, and taps on it reach the callbacks', (tester) async {
@@ -187,4 +192,49 @@ void main() {
     await tester.tap(find.text('E-bike'));
     expect(pressed, 1);
   });
+
+  testWidgets('on a page whose navigator is followed, iOS keeps drawing it '
+      'while a page comes over it and under a dialog, which it dims', (
+    tester,
+  ) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      app(
+        IOS26GlassControl(onPressed: () {}, label: 'City bike'),
+        navigator: navigator,
+        observers: [NativeChromeNavigatorObserver()],
+      ),
+    );
+    await tester.pump();
+    final id = made.single;
+    bool hidden() =>
+        layouts[id]![27].toInt() & NativeChromeCoordinator.hiddenFlag != 0;
+    final standIn = find.descendant(
+      of: find.byType(IOS26GlassControl),
+      matching: find.byType(DecoratedBox),
+    );
+
+    showDialog<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Center(child: Text('Sure?')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    // No stand-in: the row stays out of sight.
+    expect(standIn, findsNothing);
+    expect(hidden(), isFalse);
+    await tester.pumpAndSettle();
+    expect(hidden(), isFalse);
+    expect(Color(layouts[id]![28].toInt()).a, greaterThan(0));
+
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('Detail')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(standIn, findsNothing);
+    expect(made, hasLength(1));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }

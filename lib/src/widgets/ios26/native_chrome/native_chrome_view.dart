@@ -46,6 +46,12 @@ class _NativeChromeViewState extends State<NativeChromeView> {
   )..dim = widget.dim;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _slot.route = ModalRoute.of(context);
+  }
+
+  @override
   void didUpdateWidget(NativeChromeView oldWidget) {
     super.didUpdateWidget(oldWidget);
     _slot
