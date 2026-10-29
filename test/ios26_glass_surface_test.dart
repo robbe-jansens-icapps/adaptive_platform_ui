@@ -1,5 +1,9 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_view_settle.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -94,6 +98,93 @@ void main() {
       color,
       Color.alphaBlend(const Color(0x80FFFFFF), const Color(0xB3FFFFFF)),
     );
+  });
+
+  testWidgets('drawn by Flutter on iOS, it blurs what is behind it in its '
+      'shape and makes no native view', (tester) async {
+    IOS26GlassSurface.debugHasUIKitOverride = true;
+    addTearDown(() => IOS26GlassSurface.debugHasUIKitOverride = null);
+    var taps = 0;
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: SizedBox(
+            width: 200,
+            height: 100,
+            child: IOS26GlassSurface(
+              cornerRadius: 24,
+              fill: const Color(0x80FFFFFF),
+              drawnByFlutter: true,
+              child: GestureDetector(
+                onTap: () => taps++,
+                child: const Text('content'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(UiKitView), findsNothing);
+    final blur = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
+    expect(blur.filter, ImageFilter.blur(sigmaX: 20, sigmaY: 20));
+    final clip = tester.layers.whereType<ClipRSuperellipseLayer>().single;
+    expect(
+      clip.clipRSuperellipse,
+      BorderRadius.circular(
+        24,
+      ).toRSuperellipse(tester.getRect(find.byType(IOS26GlassSurface))),
+    );
+    await tester.tap(find.text('content'));
+    expect(taps, 1);
+  });
+
+  testWidgets('drawn by Flutter, it shows the stand-in rather than the blur '
+      'while what holds it moves, and blurs again once it rests', (
+    tester,
+  ) async {
+    IOS26GlassSurface.debugHasUIKitOverride = true;
+    addTearDown(() => IOS26GlassSurface.debugHasUIKitOverride = null);
+    final moving = ValueNotifier<bool>(false);
+    addTearDown(moving.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: NativeViewSettleScope(
+          moving: moving,
+          child: const Center(
+            child: SizedBox(
+              width: 200,
+              height: 100,
+              child: IOS26GlassSurface(cornerRadius: 24, drawnByFlutter: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    final blur = find.byType(BackdropFilter);
+    final standIn = find.descendant(
+      of: find.byType(FadeTransition),
+      matching: find.byType(DecoratedBox),
+    );
+    expect(blur, findsOneWidget);
+    expect(standIn, findsNothing);
+
+    moving.value = true;
+    await tester.pump();
+    expect(blur, findsNothing);
+    expect(standIn, findsOneWidget);
+
+    moving.value = false;
+    await tester.pump();
+    // The stand-in fades out over the blur.
+    expect(blur, findsOneWidget);
+    expect(standIn, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(standIn, findsNothing);
+    expect(find.byType(UiKitView), findsNothing);
   });
 
   testWidgets('hands its fill to the native glass', (tester) async {

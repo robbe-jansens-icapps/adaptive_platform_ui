@@ -50,6 +50,7 @@ class IOS26GlassSurface extends StatefulWidget {
     this.interactive = false,
     this.clipBehavior = Clip.none,
     this.chrome = false,
+    this.drawnByFlutter = false,
     this.child,
   });
 
@@ -86,6 +87,16 @@ class IOS26GlassSurface extends StatefulWidget {
   /// two late, and content that keeps moving (a list scrolling, a spinner)
   /// would be taken as an image every frame.
   final bool chrome;
+
+  /// Flutter draws the glass, with no native view: what is behind it blurred
+  /// in its shape (concentric corners included), under its tint and [fill],
+  /// with a light edge. iOS blurs a platform view under it, such as a map,
+  /// with the same blur. It lacks the native glass's refraction and its
+  /// response to touches ([interactive]), and costs no platform view. While
+  /// it moves (its page, or what holds it in a [NativeViewSettleScope], such
+  /// as a sheet), the stand-in takes the blur's place, faded out over it once
+  /// it rests: a blur drawn on every frame of a move costs far more.
+  final bool drawnByFlutter;
 
   final Widget? child;
 
@@ -139,6 +150,9 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   /// Whether the glass over the Flutter view has had an image of the child.
   bool _contentSent = false;
 
+  /// Whether the glass Flutter draws has moved: until then it blurs at once.
+  bool _movedBefore = false;
+
   // Gone once faded out.
   void _onStandInStatus(AnimationStatus status) {
     if (status == AnimationStatus.dismissed && mounted) setState(() {});
@@ -190,6 +204,19 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   @override
   void didChangeSettled(bool settled) {
     if (_chrome) {
+      setState(() {});
+      return;
+    }
+    if (widget.drawnByFlutter) {
+      if (!settled) {
+        _standIn.value = 1;
+      } else if (!_movedBefore ||
+          (MediaQuery.maybeDisableAnimationsOf(context) ?? false)) {
+        _standIn.value = 0;
+      } else {
+        _standIn.reverse(from: 1);
+      }
+      _movedBefore = _movedBefore || !settled;
       setState(() {});
       return;
     }
@@ -273,6 +300,23 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(child: _Frosted(widget: widget)),
+          ?_content,
+        ],
+      );
+    }
+    if (widget.drawnByFlutter) {
+      return Stack(
+        alignment: Alignment.center,
+        fit: StackFit.passthrough,
+        children: [
+          if (settled) Positioned.fill(child: _FlutterGlass(widget: widget)),
+          if (!settled || _standIn.isAnimating)
+            Positioned.fill(
+              child: FadeTransition(
+                opacity: _standIn,
+                child: _StandIn(widget: widget),
+              ),
+            ),
           ?_content,
         ],
       );
@@ -391,14 +435,82 @@ class _StandIn extends StatelessWidget {
   final IOS26GlassSurface widget;
 
   @override
+  Widget build(BuildContext context) => _InGlassShape(
+    widget: widget,
+    decorationFor: (radius) => glassStandInDecoration(
+      context,
+      tint: widget.tint,
+      fill: widget.fill,
+      borderRadius: radius,
+    ),
+  );
+}
+
+/// The glass Flutter draws ([IOS26GlassSurface.drawnByFlutter]).
+class _FlutterGlass extends StatelessWidget {
+  const _FlutterGlass({required this.widget});
+
+  final IOS26GlassSurface widget;
+
+  @override
   Widget build(BuildContext context) {
-    ShapeDecoration decorationFor(BorderRadius radius) =>
-        glassStandInDecoration(
-          context,
-          tint: widget.tint,
-          fill: widget.fill,
-          borderRadius: radius,
-        );
+    final dark =
+        MediaQuery.maybePlatformBrightnessOf(context) == Brightness.dark;
+    final base = dark ? const Color(0x73262629) : const Color(0x73FAFAFC);
+    final tint = widget.tint;
+    final tinted = tint == null
+        ? base
+        : Color.alphaBlend(tint.withValues(alpha: tint.a * 0.6), base);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _ShapeClip(
+          corners: widget.corners,
+          cornerRadius: widget.cornerRadius,
+          window: widget.corners == GlassSurfaceCorners.concentric
+              ? MediaQuery.sizeOf(context)
+              : Size.zero,
+          clipBehavior: Clip.antiAlias,
+          child: BackdropFilter(
+            // A blur alone, which iOS can apply to a platform view under it.
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: ColoredBox(
+              color: Color.alphaBlend(
+                widget.fill ?? const Color(0x00000000),
+                tinted,
+              ),
+            ),
+          ),
+        ),
+        _InGlassShape(
+          widget: widget,
+          decorationFor: (radius) => ShapeDecoration(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: radius,
+              side: BorderSide(
+                color: const Color(
+                  0xFFFFFFFF,
+                ).withValues(alpha: dark ? 0.16 : 0.7),
+                width: 0.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// What [decorationFor] gives, in the shape of [widget]'s glass where it is on
+/// the screen.
+class _InGlassShape extends StatelessWidget {
+  const _InGlassShape({required this.widget, required this.decorationFor});
+
+  final IOS26GlassSurface widget;
+  final ShapeDecoration Function(BorderRadius radius) decorationFor;
+
+  @override
+  Widget build(BuildContext context) {
     // In the glass's shape where it is on the screen, as the glass's own
     // corners follow the display's: they would change as the stand-in makes
     // way for it otherwise, the tray's and a sheet's along the bottom.

@@ -4,6 +4,7 @@ import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_view_settle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _phone = Size(400, 800);
@@ -65,6 +66,50 @@ double fitExtent(double content) => 8 + 16 + 60 + content + 42;
 double collapsedExtent() => 16 + 60 + 34;
 
 void main() {
+  testWidgets('on iOS Flutter draws its glass, with no platform view, unless '
+      'drawsGlassInFlutter is off', (tester) async {
+    usePhone(tester);
+    PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
+    IOS26GlassSurface.debugHasUIKitOverride = true;
+    final created = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform_views,
+      (call) async {
+        if (call.method == 'create') {
+          created.add((call.arguments as Map)['viewType']);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      PlatformInfo.debugPlatformOverride = null;
+      IOS26GlassSurface.debugHasUIKitOverride = null;
+      AdaptiveSheet.drawsGlassInFlutter = true;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        null,
+      );
+    });
+    const glass = 'adaptive_platform_ui/ios26_glass_surface';
+
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+    expect(created, isNot(contains(glass)));
+    expect(
+      find.descendant(
+        of: find.byType(AdaptiveSheet),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+
+    AdaptiveSheet.drawsGlassInFlutter = false;
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(sheetApp());
+    await tester.pumpAndSettle();
+    expect(created, contains(glass));
+  });
+
   testWidgets('slides in and rests where the content fits', (tester) async {
     usePhone(tester);
     final settled = <EdgeInsets>[];

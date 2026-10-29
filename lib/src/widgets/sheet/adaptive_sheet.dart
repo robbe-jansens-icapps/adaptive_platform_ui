@@ -256,6 +256,14 @@ class AdaptiveSheet extends StatefulWidget {
   /// From this width on the sheet becomes a side panel by default.
   static const double sidePanelMinWidth = 600;
 
+  /// Whether Flutter draws the glass of sheets on iOS 26
+  /// ([IOS26GlassSurface.drawnByFlutter]) rather than a native Liquid Glass
+  /// view: a platform view under the sheet makes the engine draw every frame
+  /// of the page through extra surfaces on the main thread, which a sheet
+  /// over a map, moving with it, pays for on older iPhones. On by default;
+  /// set it before the first sheet is built.
+  static bool drawsGlassInFlutter = true;
+
   @override
   State<AdaptiveSheet> createState() => _AdaptiveSheetState();
 }
@@ -1523,22 +1531,28 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     }
     // Over the page's native views shown over the Flutter view, such as
     // glass controls on a map: they leave the screen where it covers them.
-    return NativeChromeOccluder(
-      child: IOS26GlassSurface(
-        cornerRadius: sidePanel ? 28 : radius,
-        corners: sidePanel
-            ? GlassSurfaceCorners.fixed
-            : GlassSurfaceCorners.concentric,
-        fill: widget.glassFill,
-        // In the glass's own shape, whose corners near the display's are
-        // rounder than radius.
-        clipBehavior: Clip.antiAlias,
-        child: _ClearOfAccessory(
-          bottom: _accessoryEdge(metrics),
-          moves: _accessoryEdgeMoves,
-          child: content,
-        ),
+    final Widget glass = IOS26GlassSurface(
+      cornerRadius: sidePanel ? 28 : radius,
+      corners: sidePanel
+          ? GlassSurfaceCorners.fixed
+          : GlassSurfaceCorners.concentric,
+      fill: widget.glassFill,
+      // In the glass's own shape, whose corners near the display's are
+      // rounder than radius.
+      clipBehavior: Clip.antiAlias,
+      drawnByFlutter: AdaptiveSheet.drawsGlassInFlutter,
+      child: _ClearOfAccessory(
+        bottom: _accessoryEdge(metrics),
+        moves: _accessoryEdgeMoves,
+        child: content,
       ),
+    );
+    return NativeChromeOccluder(
+      // Glass Flutter draws blurs only while the sheet rests: a blur on every
+      // frame of a drag or a spring costs more than its stand-in.
+      child: AdaptiveSheet.drawsGlassInFlutter
+          ? NativeViewSettleScope(moving: _moving, child: glass)
+          : glass,
     );
   }
 
