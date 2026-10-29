@@ -1,9 +1,6 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -11,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'ios26_glass_surface.dart';
 import 'native_chrome/adaptive_native_chrome.dart';
 import 'native_chrome/adaptive_native_view.dart';
+import 'native_chrome/native_snapshot.dart';
 import 'native_view_settle.dart';
 
 /// A Liquid Glass capsule with an icon, a label and a trailing icon, all drawn
@@ -214,7 +212,7 @@ class _IOS26GlassControlState extends State<IOS26GlassControl>
         if (leading != null)
           KeyedSubtree(
             key: _leadingKey,
-            child: _Snapshot(
+            child: NativeSnapshot(
               enabled: native,
               onImage: (bytes, scale) => _onImage('leading', bytes, scale),
               child: leading,
@@ -236,7 +234,7 @@ class _IOS26GlassControlState extends State<IOS26GlassControl>
           SizedBox(width: widget.trailingSpacing),
           KeyedSubtree(
             key: _trailingKey,
-            child: _Snapshot(
+            child: NativeSnapshot(
               enabled: native,
               onImage: (bytes, scale) => _onImage('trailing', bytes, scale),
               child: native
@@ -319,132 +317,11 @@ class _IOS26GlassControlState extends State<IOS26GlassControl>
                 ),
               ),
             IgnorePointer(
-              child: _Visibility(visible: !settled, child: content),
+              child: NativeOutOfSight(visible: !settled, child: content),
             ),
           ],
         ),
       ),
     );
-  }
-}
-
-/// [child], painted or not: kept out of sight it is still laid out and
-/// painted, for the images taken of its icons ([_Snapshot]).
-class _Visibility extends SingleChildRenderObjectWidget {
-  const _Visibility({required this.visible, super.child});
-
-  final bool visible;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderVisibility(visible);
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    _RenderVisibility renderObject,
-  ) {
-    renderObject.visible = visible;
-  }
-}
-
-class _RenderVisibility extends RenderProxyBox {
-  _RenderVisibility(this._visible);
-
-  bool _visible;
-  set visible(bool value) {
-    if (value == _visible) return;
-    _visible = value;
-    markNeedsCompositingBitsUpdate();
-    markNeedsPaint();
-  }
-
-  @override
-  bool get alwaysNeedsCompositing => child != null && !_visible;
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    if (_visible) {
-      super.paint(context, offset);
-      return;
-    }
-    // Out of sight: the engine draws nothing for a layer at no opacity, so it
-    // costs no overlay over a platform view under it.
-    layer = context.pushOpacity(
-      offset,
-      0,
-      super.paint,
-      oldLayer: layer as OpacityLayer?,
-    );
-  }
-}
-
-/// [child] in a layer of its own, taken as an image at the screen's scale
-/// after each frame it was painted in, while [enabled].
-class _Snapshot extends SingleChildRenderObjectWidget {
-  const _Snapshot({
-    required this.enabled,
-    required this.onImage,
-    required super.child,
-  });
-
-  final bool enabled;
-  final void Function(Uint8List bytes, double scale) onImage;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) => _RenderSnapshot(
-    enabled: enabled,
-    onImage: onImage,
-    scale: MediaQuery.devicePixelRatioOf(context),
-  );
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderSnapshot renderObject) {
-    renderObject
-      ..enabled = enabled
-      ..onImage = onImage
-      ..scale = MediaQuery.devicePixelRatioOf(context);
-  }
-}
-
-class _RenderSnapshot extends RenderRepaintBoundary {
-  _RenderSnapshot({
-    required this.enabled,
-    required this.onImage,
-    required double scale,
-  }) : _scale = scale;
-
-  bool enabled;
-  void Function(Uint8List bytes, double scale) onImage;
-
-  double _scale;
-  set scale(double value) {
-    if (value == _scale) return;
-    _scale = value;
-    markNeedsPaint();
-  }
-
-  bool _scheduled = false;
-  int _generation = 0;
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    super.paint(context, offset);
-    if (!enabled || _scheduled) return;
-    _scheduled = true;
-    SchedulerBinding.instance.addPostFrameCallback((_) => _take());
-  }
-
-  Future<void> _take() async {
-    _scheduled = false;
-    if (!attached || !hasSize || size.isEmpty) return;
-    final generation = ++_generation;
-    final scale = _scale;
-    final ui.Image image = await toImage(pixelRatio: scale);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    // A later one is on its way.
-    if (data == null || generation != _generation) return;
-    onImage(data.buffer.asUint8List(), scale);
   }
 }

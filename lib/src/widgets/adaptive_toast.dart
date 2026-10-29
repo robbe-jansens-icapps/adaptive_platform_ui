@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../platform/platform_info.dart';
 import 'ios26/ios26_glass_surface.dart';
-import 'ios26/native_chrome/native_chrome_occluder.dart';
 
 /// A short message that slides in at the top of the screen and goes again by
 /// itself, like a system banner: on Liquid Glass on iOS 26, a Material 3 card
@@ -180,15 +179,14 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
     );
     final Widget card;
     if (PlatformInfo.isIOS26OrHigher()) {
-      // Over the bars: their native views shown over the Flutter view would
-      // stay above it.
-      card = NativeChromeOccluder(
-        child: IOS26GlassSurface(
-          cornerRadius: 26,
-          // Light enough to read on whatever is behind it, and still glass.
-          tint: (widget.color ?? Colors.white).withValues(alpha: 0.85),
-          child: content,
-        ),
+      card = IOS26GlassSurface(
+        cornerRadius: 26,
+        // Light enough to read on whatever is behind it, and still glass.
+        tint: (widget.color ?? Colors.white).withValues(alpha: 0.85),
+        // Over the bars' native views too, with no platform view: its message
+        // stays as it is.
+        chrome: true,
+        child: content,
       );
     } else {
       card = Material(

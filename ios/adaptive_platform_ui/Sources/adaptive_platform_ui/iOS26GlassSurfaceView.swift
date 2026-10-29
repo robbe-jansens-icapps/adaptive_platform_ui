@@ -27,7 +27,8 @@ class iOS26GlassSurfaceFactory: NSObject, FlutterPlatformViewFactory {
     }
 }
 
-/// An empty Liquid Glass surface: Flutter draws the content on top of it.
+/// A Liquid Glass surface: Flutter draws the content on top of it, or, over
+/// the Flutter view (Dart: `chrome`), gives an image of it to show.
 ///
 /// It never takes touches, and it rounds its own corners, because a Flutter
 /// clip or opacity around a platform view becomes a mask or an alpha on it,
@@ -38,6 +39,8 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
     /// Over the glass, in its shape: a partly opaque fill lets less of what is
     /// behind the glass show through.
     private let fillView = UIView()
+    /// Over the fill: the image of the content, over the Flutter view.
+    private let contentImageView = UIImageView()
     private let channel: FlutterMethodChannel
 
     init(
@@ -67,6 +70,14 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
         fillView.isHidden = true
         effectView.contentView.addSubview(fillView)
 
+        contentImageView.frame = effectView.contentView.bounds
+        contentImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // At its own size: one taken before the glass changed size stays as
+        // it is until the next one.
+        contentImageView.contentMode = .topLeft
+        contentImageView.isUserInteractionEnabled = false
+        effectView.contentView.addSubview(contentImageView)
+
         if let params = args as? [String: Any] {
             apply(params)
         }
@@ -74,6 +85,9 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
         channel.setMethodCallHandler { [weak self] call, result in
             if call.method == "update", let params = call.arguments as? [String: Any] {
                 self?.apply(params)
+                result(nil)
+            } else if call.method == "setContent", let args = call.arguments as? [String: Any] {
+                self?.setContent(args)
                 result(nil)
             } else {
                 result(FlutterMethodNotImplemented)
@@ -120,6 +134,12 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
             effectView.layer.cornerCurve = .continuous
             effectView.clipsToBounds = true
         }
+    }
+
+    private func setContent(_ args: [String: Any]) {
+        guard let bytes = args["bytes"] as? FlutterStandardTypedData else { return }
+        let scale = CGFloat((args["scale"] as? NSNumber)?.doubleValue ?? UIScreen.main.scale)
+        contentImageView.image = UIImage(data: bytes.data, scale: scale)
     }
 
     private func color(argb: Int) -> UIColor {

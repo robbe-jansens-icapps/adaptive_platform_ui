@@ -9,6 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../platform/platform_info.dart';
+import 'native_chrome/adaptive_native_chrome.dart';
+import 'native_chrome/adaptive_native_view.dart';
+import 'native_chrome/native_snapshot.dart';
 import 'native_view_settle.dart';
 
 /// How the corners of an [IOS26GlassSurface] are rounded.
@@ -46,6 +49,7 @@ class IOS26GlassSurface extends StatefulWidget {
     this.clear = false,
     this.interactive = false,
     this.clipBehavior = Clip.none,
+    this.chrome = false,
     this.child,
   });
 
@@ -73,6 +77,15 @@ class IOS26GlassSurface extends StatefulWidget {
   /// of a sheet, is cut off where the glass ends. Only [child] is clipped: a
   /// clip around the glass would break it.
   final Clip clipBehavior;
+
+  /// With [AdaptiveNativeChrome.enabled], iOS draws the glass over the
+  /// Flutter view rather than as a platform view, and [child] on it, from an
+  /// image Flutter takes of it after each frame it changed in. Flutter still
+  /// lays [child] out, out of sight, and it takes the touches. For content
+  /// that seldom changes, like a toast's message: a change shows a frame or
+  /// two late, and content that keeps moving (a list scrolling, a spinner)
+  /// would be taken as an image every frame.
+  final bool chrome;
 
   final Widget? child;
 
@@ -116,6 +129,15 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   /// The stand-in's opacity: it fades out over the glass once the glass is
   /// back, rather than leaving it at once.
   late final AnimationController _standIn;
+
+  bool get _chrome =>
+      _hasUIKit && widget.chrome && AdaptiveNativeChrome.enabled;
+
+  /// The last image taken of the child, for the glass over the Flutter view.
+  (Uint8List, double)? _contentImage;
+
+  /// Whether the glass over the Flutter view has had an image of the child.
+  bool _contentSent = false;
 
   // Gone once faded out.
   void _onStandInStatus(AnimationStatus status) {
@@ -163,7 +185,14 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   }
 
   @override
+  bool get followsRouteOverFlutter => _chrome && routeIsFollowed;
+
+  @override
   void didChangeSettled(bool settled) {
+    if (_chrome) {
+      setState(() {});
+      return;
+    }
     if (settled) {
       _created = true;
       // An existing view shows in the next frame; a new one once created.
@@ -190,7 +219,27 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
   void _onCreated(int id) {
     _channel = MethodChannel('adaptive_platform_ui/ios26_glass_surface_$id');
     _sync();
-    if (settled) _showNative();
+    if (_chrome) {
+      _sendContent();
+    } else if (settled) {
+      _showNative();
+    }
+  }
+
+  void _onContentImage(Uint8List bytes, double scale) {
+    _contentImage = (bytes, scale);
+    _sendContent();
+  }
+
+  void _sendContent() {
+    final channel = _channel;
+    final image = _contentImage;
+    if (channel == null || image == null || !mounted) return;
+    channel.invokeMethod<void>('setContent', {
+      'bytes': image.$1,
+      'scale': image.$2,
+    });
+    if (!_contentSent) setState(() => _contentSent = true);
   }
 
   void _sync() {
@@ -228,6 +277,7 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
         ],
       );
     }
+    if (_chrome) return _buildChrome();
     final showsStandIn = !settled || !_nativeShown || _standIn.isAnimating;
     return Stack(
       alignment: Alignment.center,
@@ -257,6 +307,44 @@ class _IOS26GlassSurfaceState extends State<IOS26GlassSurface>
             ),
           ),
         ?_content,
+      ],
+    );
+  }
+
+  Widget _buildChrome() {
+    final content = _content;
+    final shown = settled && (content == null || _contentSent);
+    return Stack(
+      alignment: Alignment.center,
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(
+          // Painted once iOS has the image of the child: until then, and
+          // while something covers it, the stand-in and the child take its
+          // place.
+          child: Opacity(
+            opacity: shown ? 1 : 0,
+            child: IgnorePointer(
+              child: AdaptiveNativeView(
+                viewType: 'adaptive_platform_ui/ios26_glass_surface',
+                chrome: true,
+                interactive: false,
+                creationParams: _sent ??= _params,
+                onPlatformViewCreated: _onCreated,
+              ),
+            ),
+          ),
+        ),
+        if (!shown) Positioned.fill(child: _StandIn(widget: widget)),
+        if (content != null)
+          NativeOutOfSight(
+            visible: !shown,
+            child: NativeSnapshot(
+              enabled: true,
+              onImage: _onContentImage,
+              child: content,
+            ),
+          ),
       ],
     );
   }
