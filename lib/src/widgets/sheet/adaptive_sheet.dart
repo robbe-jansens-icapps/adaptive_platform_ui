@@ -26,6 +26,7 @@ import '../adaptive_accessory_scope.dart';
 import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
+import '../ios26/native_chrome/adaptive_native_chrome.dart';
 import '../ios26/native_chrome/native_chrome_occluder.dart';
 import '../ios26/native_view_settle.dart';
 import '../material_tab_accessory.dart' show MaterialTabAccessoryLink;
@@ -260,8 +261,9 @@ class AdaptiveSheet extends StatefulWidget {
   /// ([IOS26GlassSurface.drawnByFlutter]) rather than a native Liquid Glass
   /// view: a platform view under the sheet makes the engine draw every frame
   /// of the page through extra surfaces on the main thread, which a sheet
-  /// over a map, moving with it, pays for on older iPhones. On by default;
-  /// set it before the first sheet is built.
+  /// over a map, moving with it, pays for on older iPhones. Only with
+  /// [AdaptiveNativeChrome.enabled], whose native views hand touches on the
+  /// sheet to Flutter. On by default; set it before the first sheet is built.
   static bool drawsGlassInFlutter = true;
 
   @override
@@ -1031,6 +1033,12 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     _extent.value = from * (1 - out);
   }
 
+  // Over a platform view, such as a map, touches on glass Flutter draws reach
+  // Flutter through the native views over it (NativeChromeHost): the platform
+  // view's own gestures could take them otherwise.
+  static bool get _drawsGlassInFlutter =>
+      AdaptiveSheet.drawsGlassInFlutter && AdaptiveNativeChrome.enabled;
+
   // Dragging ----------------------------------------------------------------
 
   void _interrupt() {
@@ -1540,7 +1548,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
       // In the glass's own shape, whose corners near the display's are
       // rounder than radius.
       clipBehavior: Clip.antiAlias,
-      drawnByFlutter: AdaptiveSheet.drawsGlassInFlutter,
+      drawnByFlutter: _drawsGlassInFlutter,
       child: _ClearOfAccessory(
         bottom: _accessoryEdge(metrics),
         moves: _accessoryEdgeMoves,
@@ -1550,7 +1558,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     return NativeChromeOccluder(
       // Glass Flutter draws blurs only while the sheet rests: a blur on every
       // frame of a drag or a spring costs more than its stand-in.
-      child: AdaptiveSheet.drawsGlassInFlutter
+      child: _drawsGlassInFlutter
           ? NativeViewSettleScope(moving: _moving, child: glass)
           : glass,
     );

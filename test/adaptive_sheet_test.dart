@@ -66,11 +66,12 @@ double fitExtent(double content) => 8 + 16 + 60 + content + 42;
 double collapsedExtent() => 16 + 60 + 34;
 
 void main() {
-  testWidgets('on iOS Flutter draws its glass, with no platform view, unless '
-      'drawsGlassInFlutter is off', (tester) async {
+  testWidgets('on iOS with native chrome Flutter draws its glass, with no '
+      'platform view, unless drawsGlassInFlutter is off', (tester) async {
     usePhone(tester);
     PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
     IOS26GlassSurface.debugHasUIKitOverride = true;
+    AdaptiveNativeChrome.enabled = true;
     final created = <Object?>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform_views,
@@ -84,6 +85,7 @@ void main() {
     addTearDown(() {
       PlatformInfo.debugPlatformOverride = null;
       IOS26GlassSurface.debugHasUIKitOverride = null;
+      AdaptiveNativeChrome.enabled = false;
       AdaptiveSheet.drawsGlassInFlutter = true;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform_views,

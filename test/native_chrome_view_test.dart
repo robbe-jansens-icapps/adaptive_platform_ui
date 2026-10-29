@@ -20,10 +20,20 @@ class _Host {
   final Map<int, Float64List> views = <int, Float64List>{};
   int layouts = 0;
 
+  /// Where Flutter content covers what is under it, as last told.
+  List<Rect>? touchRegions;
+
   Future<Object?> handle(MethodCall call) async {
     calls.add(call.method);
     if (call.method == 'reset' && frameLocked) {
       return <String, Object?>{'frameLocked': true};
+    }
+    if (call.method == 'touchRegions') {
+      final values = call.arguments as Float64List;
+      touchRegions = [
+        for (var i = 0; i + 3 < values.length; i += 4)
+          Rect.fromLTRB(values[i], values[i + 1], values[i + 2], values[i + 3]),
+      ];
     }
     if (call.method == 'layout') {
       layouts++;
@@ -351,6 +361,18 @@ void main() {
         Rect.fromLTRB(values[21], values[22], values[23], values[24]),
         const Rect.fromLTRB(20, 40, 120, 62),
       );
+    });
+
+    testWidgets('has iOS hand the touches over it to Flutter, rather than to '
+        'a platform view under it, for as long as it is there', (tester) async {
+      await tester.pumpWidget(scene(occluderTop: 300));
+      expect(host.touchRegions, [const Rect.fromLTWH(0, 300, 800, 60)]);
+
+      await tester.pumpWidget(scene(occluderTop: 200));
+      expect(host.touchRegions, [const Rect.fromLTWH(0, 200, 800, 60)]);
+
+      await tester.pumpWidget(placed(view()));
+      expect(host.touchRegions, isEmpty);
     });
 
     testWidgets('painted before a view leaves it alone', (tester) async {

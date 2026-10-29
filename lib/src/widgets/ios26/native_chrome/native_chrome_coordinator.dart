@@ -103,14 +103,18 @@ class NativeChromeCoordinator {
 
   /// Runs after the binding drew the frame, as it was registered later.
   void _flush(Duration _) {
-    if (_slots.isEmpty) {
-      _z = 0;
-      return;
-    }
     final occluders = [
       for (final occluder in _occluders)
         if (occluder._composited) (z: occluder._z, rect: occluder._rect),
     ];
+    _sendTouchRegions([for (final occluder in occluders) occluder.rect]);
+    if (_slots.isEmpty) {
+      for (final occluder in _occluders) {
+        occluder._composited = false;
+      }
+      _z = 0;
+      return;
+    }
     final changes = <double>[];
     var again = false;
     for (final slot in _slots.values) {
@@ -136,6 +140,27 @@ class NativeChromeCoordinator {
     if (again) SchedulerBinding.instance.scheduleFrame();
   }
 
+  Float64List? _touchRegions;
+
+  /// Where Flutter content covers what is under it, such as a sheet over a
+  /// map: iOS hands touches there to Flutter rather than to a platform view
+  /// under it, whose own gestures could take a touch from Flutter for good (a
+  /// map panning under a sheet dragged far, Flutter never told the finger
+  /// went up).
+  void _sendTouchRegions(List<Rect> rects) {
+    final values = Float64List.fromList([
+      for (final rect in rects) ...[
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+      ],
+    ]);
+    if (_listEquals(values, _touchRegions ?? Float64List(0))) return;
+    _touchRegions = values;
+    unawaited(channel.invokeMethod<void>('touchRegions', values));
+  }
+
   static bool _listEquals(Float64List a, Float64List? b) {
     if (b == null || a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
@@ -149,6 +174,7 @@ class NativeChromeCoordinator {
     _frameLocked = false;
     _slots.clear();
     _occluders.clear();
+    _touchRegions = null;
     _started = false;
     _z = 0;
   }

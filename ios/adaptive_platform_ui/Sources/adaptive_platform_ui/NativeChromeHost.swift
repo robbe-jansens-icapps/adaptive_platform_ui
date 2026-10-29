@@ -121,8 +121,14 @@ final class NativeChromeHost: NSObject {
                 enqueue(data)
             }
             result(nil)
+        case "touchRegions":
+            if let data = call.arguments as? FlutterStandardTypedData {
+                touchRegions = Self.rects(data)
+            }
+            result(nil)
         case "reset":
             // A hot restart: the views of the isolate before are gone in Dart.
+            touchRegions = []
             for slot in slots.values {
                 slot.remove()
             }
@@ -256,7 +262,24 @@ final class NativeChromeHost: NSObject {
             }
             if let hit { return hit }
         }
+        // Flutter content over a platform view takes the touch itself: one
+        // that went through the platform view, as everywhere else over it,
+        // could be taken by the view's own gestures for good.
+        if touchRegions.contains(where: { $0.contains(point) }) {
+            return root.superview
+        }
         return nil
+    }
+
+    /// Where Flutter content covers what is under it (Dart: the
+    /// NativeChromeOccluder rects), in the Flutter view's points.
+    private var touchRegions: [CGRect] = []
+
+    private static func rects(_ data: FlutterStandardTypedData) -> [CGRect] {
+        let values = data.data.withUnsafeBytes { Array($0.bindMemory(to: Double.self)) }
+        return Swift.stride(from: 0, to: values.count - 3, by: 4).map { i in
+            CGRect(x: values[i], y: values[i + 1], width: values[i + 2] - values[i], height: values[i + 3] - values[i + 1])
+        }
     }
 
     private static var hookedClasses = Set<ObjectIdentifier>()
