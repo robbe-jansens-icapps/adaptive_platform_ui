@@ -76,6 +76,7 @@ export 'src/toolbar/duo_vertical_bar.dart'
         kDuoVerticalBarBezelInset,
         kDuoVerticalBarWidth;
 export 'src/toolbar/fold_scope.dart';
+export 'src/toolbar/hosted_tab_bar.dart' show kNativeTabCapsuleInset;
 export 'src/toolbar/hosted_top_toolbar.dart' show kHostedToolbarHeight;
 export 'src/toolbar/toolbar_chrome_scope.dart';
 export 'src/toolbar/toolbar_registry.dart';
