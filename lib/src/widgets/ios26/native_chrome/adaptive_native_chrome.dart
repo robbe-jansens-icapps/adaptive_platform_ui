@@ -17,9 +17,9 @@ abstract final class AdaptiveNativeChrome {
   static bool enabled = const bool.fromEnvironment('adaptive_native_chrome');
 
   /// For the app's navigator (`navigatorObservers`): pages sliding over a
-  /// page with native views on it cut them off at their edge, and a dialog's
-  /// barrier is laid over them, rather than Flutter stand-ins taking their
-  /// place while pages move or something covers them.
+  /// page with native views on it cut them off at their edge, and the views
+  /// fade out as a dialog comes up over it, rather than Flutter stand-ins
+  /// taking their place while pages move or something covers them.
   static final NavigatorObserver navigatorObserver =
       NativeChromeNavigatorObserver();
 }

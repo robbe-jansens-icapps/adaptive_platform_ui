@@ -1467,8 +1467,9 @@ void main() {
       unmockPlatformViews();
     });
 
-    testWidgets('under a dialog, the glass it is lifted onto is a stand-in, '
-        'which the dialog dims with it', (tester) async {
+    testWidgets('lifted onto a sheet, it leaves with the glass it is lifted '
+        'onto as a dialog comes in, which would show under it, and comes '
+        'back as the dialog goes', (tester) async {
       final (tabs, _) = await pumpSheet(
         tester,
         opens: ValueNotifier<bool>(false),
@@ -1482,13 +1483,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(showsNativeGlass(tester), isFalse);
-      expect(
-        find.ancestor(
-          of: glassOf(accessory),
-          matching: find.byType(ColorFiltered),
-        ),
-        findsOneWidget,
-      );
+      expect(opacityOf(tester, accessory), 0);
+
+      Navigator.of(tabs.root.currentContext!).pop();
+      await tester.pumpAndSettle();
+      expect(opacityOf(tester, accessory), 1);
+      expect(showsNativeGlass(tester), isTrue);
       unmockPlatformViews();
     });
 
@@ -1525,7 +1525,7 @@ void main() {
 
     testWidgets('under a dialog the sheet\'s glass is dimmed once, by the '
         'page\'s barrier: no barrier over the tray\'s place, the tabs\' '
-        'capsule and the accessory dimmed on their own', (tester) async {
+        'capsule dimmed on its own and the accessory gone', (tester) async {
       final (tabs, _) = await pumpSheet(tester);
       // The barriers laid over the bars, not the stand-ins of their glass.
       Finder barriers(Type shape) => find.descendant(
@@ -1539,11 +1539,7 @@ void main() {
               (widget.decoration as ShapeDecoration).shape.runtimeType == shape,
         ),
       );
-      final dimmed = find.ancestor(
-        of: accessory,
-        matching: find.byType(ColorFiltered),
-      );
-      expect(dimmed, findsNothing);
+      expect(opacityOf(tester, accessory), 1);
 
       showDialog<void>(
         context: tabs.root.currentContext!,
@@ -1552,7 +1548,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(barriers(RoundedSuperellipseBorder), findsNothing);
       expect(barriers(StadiumBorder), findsOneWidget);
-      expect(dimmed, findsOneWidget);
+      expect(opacityOf(tester, accessory), 0);
       unmockPlatformViews();
     });
   });

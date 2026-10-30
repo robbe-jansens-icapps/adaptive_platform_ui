@@ -3,8 +3,8 @@ import 'package:flutter/widgets.dart';
 /// Keeps the order of a navigator's routes, the ones on their way out too,
 /// for native views shown over the Flutter view ([NativeChromeView]) to know
 /// which pages are over theirs: those are above all Flutter content, so a
-/// page sliding over theirs cuts them off at its edge, and a dialog's barrier
-/// is laid over them by iOS.
+/// page sliding over theirs cuts them off at its edge, and they fade out as a
+/// dialog or a sheet with a barrier comes up over theirs.
 ///
 /// Add one to each navigator whose pages hold such views
 /// ([AdaptiveNativeChrome.navigatorObserver] for the app's own). On pages of

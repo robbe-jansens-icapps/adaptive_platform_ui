@@ -194,9 +194,8 @@ void main() {
   });
 
   testWidgets('on a page whose navigator is followed, iOS keeps drawing it '
-      'while a page comes over it and under a dialog, which it dims', (
-    tester,
-  ) async {
+      'while a page comes over it, and fades it out under a dialog, which '
+      'Flutter draws under it, with no touches meanwhile', (tester) async {
     final navigator = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       app(
@@ -223,12 +222,21 @@ void main() {
     // No stand-in: the row stays out of sight.
     expect(standIn, findsNothing);
     expect(hidden(), isFalse);
+    expect(layouts[id]![19], inExclusiveRange(0, 1));
+    expect(
+      layouts[id]![27].toInt() & NativeChromeCoordinator.interactiveFlag,
+      0,
+    );
     await tester.pumpAndSettle();
-    expect(hidden(), isFalse);
-    expect(Color(layouts[id]![28].toInt()).a, greaterThan(0));
+    expect(layouts[id]![19], 0);
 
     navigator.currentState!.pop();
     await tester.pumpAndSettle();
+    expect(layouts[id]![19], 1);
+    expect(
+      layouts[id]![27].toInt() & NativeChromeCoordinator.interactiveFlag,
+      NativeChromeCoordinator.interactiveFlag,
+    );
     navigator.currentState!.push(
       MaterialPageRoute<void>(builder: (_) => const Text('Detail')),
     );

@@ -207,6 +207,10 @@ class NativeChromeSlot {
   double _showsThrough = 1;
   Color? _routeDim;
 
+  /// Whether a dialog or a sheet with a barrier is over the view's page: the
+  /// barrier takes the touches there.
+  bool _underBarrier = false;
+
   RenderBox? _box;
   bool _disposed = false;
 
@@ -278,7 +282,7 @@ class NativeChromeSlot {
           ..[24] = clip.bottom
           ..[25] = 0;
       }
-      if (!_interactive || _ignoresPointer(_box)) {
+      if (!_interactive || _underBarrier || _ignoresPointer(_box)) {
         values[27] =
             (values[27].toInt() & ~NativeChromeCoordinator.interactiveFlag)
                 .toDouble();
@@ -338,13 +342,15 @@ class NativeChromeSlot {
   }
 
   /// Finds what Flutter draws over the view this frame: the [occluders]
-  /// composited after it, the pages over its page, and the barrier of a
-  /// dialog over its page. A view they cover all of, or in the middle, is
-  /// taken off the screen; one they cover along a side is cut off there.
+  /// composited after it, the pages over its page, and a dialog over its
+  /// page, which the view makes way for. A view they cover all of, or in the
+  /// middle, is taken off the screen; one they cover along a side is cut off
+  /// there.
   void _findCover(List<({int z, Rect rect})> occluders) {
     _uncovered = null;
     _showsThrough = 1;
     _routeDim = null;
+    _underBarrier = false;
     final bounds = _bounds;
     if (!_composited || bounds == null) return;
     final covers = [
@@ -362,6 +368,12 @@ class NativeChromeSlot {
         _routeDim =
             chromeBarrierOf(page, showsThrough: kGlassShowsThrough)?.value ??
             _routeDim;
+        // Flutter draws the dialog or the sheet under the view, which would
+        // show over it where it reaches: the view leaves as it comes in.
+        if ((page.barrierColor?.a ?? 0) > 0) {
+          _showsThrough *= 1 - (page.animation?.value ?? 1);
+          _underBarrier = true;
+        }
         continue;
       }
       final box = page.subtreeContext?.findRenderObject();

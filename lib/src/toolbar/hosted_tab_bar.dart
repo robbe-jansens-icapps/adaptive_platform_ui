@@ -694,9 +694,10 @@ class _HostedTabBarState extends State<HostedTabBar>
                 ),
               )
             else if (onSheet)
-              // The page's barrier dims the sheet's glass under it; only its
-              // own pixels are dimmed here.
-              _DimmedUnderDialog(
+              // On the page's sheet, but above the navigator: it would show
+              // over a dialog reaching down to it, so it leaves as the
+              // dialog comes in.
+              _LeavesUnderDialog(
                 route: dialog,
                 child: AccessoryMakesWay(
                   covered: covered,
@@ -1922,39 +1923,19 @@ class _BarrierOverTabs extends StatelessWidget {
   }
 }
 
-/// [child] dimmed as a dialog's barrier ([route]) would dim it, where it
-/// sits above the navigator, out of the barrier's reach, on glass the
-/// barrier dims already: only its own pixels, in the barrier's colour, so
-/// the glass under it is not dimmed twice. It comes and goes with the
-/// dialog.
-class _DimmedUnderDialog extends StatelessWidget {
-  const _DimmedUnderDialog({required this.route, required this.child});
+/// [child] fading out as a dialog ([route]) comes in, and back as it goes,
+/// where it sits above the navigator: Flutter draws the dialog under it.
+class _LeavesUnderDialog extends StatelessWidget {
+  const _LeavesUnderDialog({required this.route, required this.child});
 
   final ModalRoute<Object?>? route;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final route = this.route;
-    final color = route?.barrierColor;
     final animation = route?.animation;
-    if (route == null || color == null || color.a == 0 || animation == null) {
-      return child;
-    }
-    final barrier = animation.drive(
-      ColorTween(
-        begin: color.withValues(alpha: 0),
-        end: color,
-      ).chain(CurveTween(curve: route.barrierCurve)),
-    );
-    return AnimatedBuilder(
-      animation: barrier,
-      child: child,
-      builder: (context, child) => ColorFiltered(
-        colorFilter: ColorFilter.mode(barrier.value!, BlendMode.srcATop),
-        child: child,
-      ),
-    );
+    if (animation == null) return child;
+    return FadeTransition(opacity: ReverseAnimation(animation), child: child);
   }
 }
 
