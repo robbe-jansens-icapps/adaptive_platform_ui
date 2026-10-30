@@ -17,6 +17,34 @@ class NativeChromeNavigatorObserver extends NavigatorObserver {
 
   static final List<NativeChromeNavigatorObserver> _all = [];
 
+  static final ValueNotifier<int> _changes = ValueNotifier<int>(0);
+
+  /// Tells as a route comes over a page or leaves, on any navigator with an
+  /// observer. It may tell in the middle of a build.
+  static Listenable get changes => _changes;
+
+  /// The first dialog or sheet with a barrier over [context]'s page, or over
+  /// a page it is in on an outer navigator, as a dialog on the app's
+  /// navigator covers everything inside it; null where there is none, or no
+  /// observer keeps the navigators.
+  static ModalRoute<dynamic>? dialogOver(BuildContext context) {
+    var route = ModalRoute.of(context);
+    var navigator = Navigator.maybeOf(context);
+    while (route != null && navigator != null) {
+      for (final above in routesAbove(route) ?? const <Route<dynamic>>[]) {
+        if (above is ModalRoute<dynamic> &&
+            !above.opaque &&
+            (above.barrierColor?.a ?? 0) > 0) {
+          return above;
+        }
+      }
+      // The page the navigator is on, on the navigator around it.
+      route = ModalRoute.of(navigator.context);
+      navigator = navigator.context.findAncestorStateOfType<NavigatorState>();
+    }
+    return null;
+  }
+
   final List<Route<dynamic>> _routes = [];
 
   /// The routes over [route], nearest first; null where no observer keeps
@@ -38,6 +66,7 @@ class NativeChromeNavigatorObserver extends NavigatorObserver {
     _routes
       ..remove(route)
       ..add(route);
+    _changes.value++;
   }
 
   @override
@@ -46,20 +75,24 @@ class NativeChromeNavigatorObserver extends NavigatorObserver {
     final animation = route is TransitionRoute ? route.animation : null;
     if (animation == null || animation.isDismissed) {
       _routes.remove(route);
+      _changes.value++;
       return;
     }
     void gone(AnimationStatus status) {
       if (!status.isDismissed) return;
       animation.removeStatusListener(gone);
       _routes.remove(route);
+      _changes.value++;
     }
 
     animation.addStatusListener(gone);
+    _changes.value++;
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _routes.remove(route);
+    _changes.value++;
   }
 
   @override
@@ -72,5 +105,6 @@ class NativeChromeNavigatorObserver extends NavigatorObserver {
     } else {
       _routes.add(newRoute);
     }
+    _changes.value++;
   }
 }

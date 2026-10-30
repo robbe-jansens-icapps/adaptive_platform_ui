@@ -27,6 +27,7 @@ import '../adaptive_glass.dart';
 import '../adaptive_scaffold.dart' show AdaptiveBottomBarInset;
 import '../ios26/ios26_glass_surface.dart';
 import '../ios26/native_chrome/adaptive_native_chrome.dart';
+import '../ios26/native_chrome/native_chrome_navigator_observer.dart';
 import '../ios26/native_chrome/native_chrome_occluder.dart';
 import '../ios26/native_view_settle.dart';
 import '../material_tab_accessory.dart' show MaterialTabAccessoryLink;
@@ -1206,6 +1207,14 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
     final material =
         PlatformInfo.isAndroid && AdaptiveChromeScope.chromeOf(context) == null;
     final rtl = Directionality.maybeOf(context) == TextDirection.rtl;
+    return _LeavesWithAccessoryUnderDialog(
+      holdsAccessory: widget.opensFromAccessory,
+      covered: _covered,
+      child: _buildSheet(material: material, rtl: rtl),
+    );
+  }
+
+  Widget _buildSheet({required bool material, required bool rtl}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final sidePanel =
@@ -2146,4 +2155,84 @@ class _AccessorySheetLink implements AccessorySheet {
 
   @override
   void dragEnd(double velocity) => _sheet._onDragEnd(velocity);
+}
+
+/// A sheet that opens from the tab accessory on it
+/// ([AdaptiveSheet.opensFromAccessory]), fading out as a dialog comes up
+/// over its page by as much as only the accessory shows on it: the
+/// accessory, above the navigator, leaves under the dialog, which would leave
+/// the glass it sat on empty. A sheet open above it stays, dimmed by the
+/// dialog's barrier. It finds the dialog with the navigators'
+/// [NativeChromeNavigatorObserver]s.
+class _LeavesWithAccessoryUnderDialog extends StatefulWidget {
+  const _LeavesWithAccessoryUnderDialog({
+    required this.holdsAccessory,
+    required this.covered,
+    required this.child,
+  });
+
+  final bool holdsAccessory;
+
+  /// How much the sheet's content covers the accessory: 0 where only the
+  /// accessory shows.
+  final Animation<double> covered;
+
+  final Widget child;
+
+  @override
+  State<_LeavesWithAccessoryUnderDialog> createState() =>
+      _LeavesWithAccessoryUnderDialogState();
+}
+
+class _LeavesWithAccessoryUnderDialogState
+    extends State<_LeavesWithAccessoryUnderDialog> {
+  @override
+  void initState() {
+    super.initState();
+    NativeChromeNavigatorObserver.changes.addListener(_onRoutesChanged);
+  }
+
+  @override
+  void dispose() {
+    NativeChromeNavigatorObserver.changes.removeListener(_onRoutesChanged);
+    super.dispose();
+  }
+
+  // Routes change in the middle of a build too.
+  void _onRoutesChanged() {
+    if (!widget.holdsAccessory) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = widget.holdsAccessory
+        ? NativeChromeNavigatorObserver.dialogOver(context)?.animation
+        : null;
+    // The same widget either way, so the sheet keeps its state.
+    return FadeTransition(
+      opacity: animation == null
+          ? kAlwaysCompleteAnimation
+          : _ShownUnderDialog(animation, widget.covered),
+      child: widget.child,
+    );
+  }
+}
+
+/// How much of a sheet holding the accessory shows as a dialog comes in: all
+/// of it where its content covers the accessory, none where only the
+/// accessory shows, once the dialog is all in.
+class _ShownUnderDialog extends CompoundAnimation<double> {
+  _ShownUnderDialog(Animation<double> dialog, Animation<double> covered)
+    : super(first: dialog, next: covered);
+
+  @override
+  double get value => 1 - first.value * (1 - next.value);
 }

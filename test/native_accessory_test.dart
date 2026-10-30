@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_navigator_observer.dart';
 import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
     show DuoVerticalBar;
 import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
@@ -149,11 +150,15 @@ class NativeTabs {
     this.expanded,
     this.sheet,
     this.layoutOf,
+    this.observers = const <NavigatorObserver>[],
     FoldableData? fold,
   }) : fold = fold ?? forcedChrome();
 
   /// A sheet over the first tab's page, as a map has.
   final Widget? sheet;
+
+  /// The app navigator's observers.
+  final List<NavigatorObserver> observers;
 
   /// The accessory's layout on each tab, where it is not [layout] on all.
   final AdaptiveTabAccessoryLayout Function(int tab)? layoutOf;
@@ -207,6 +212,7 @@ class NativeTabs {
 
   Widget app() => MaterialApp(
     navigatorKey: root,
+    navigatorObservers: observers,
     builder: (context, child) => AdaptiveToolbarHost(
       debugFold: fold,
       sheetNavigatorKey: sheetNavigatorKey,
@@ -1118,6 +1124,7 @@ void main() {
       bool lifts = false,
       AdaptiveTabAccessoryLayout Function(int tab)? layoutOf,
       Widget accessory = const RentalAccessory(),
+      List<NavigatorObserver> observers = const <NavigatorObserver>[],
     }) async {
       mockPlatformViews();
       IOS26NativeTabBar.debugHasUIKitOverride = true;
@@ -1135,6 +1142,7 @@ void main() {
         accessory: accessory,
         layout: AdaptiveTabAccessoryLayout.onSheet,
         layoutOf: layoutOf,
+        observers: observers,
         sheet: ValueListenableBuilder<bool>(
           valueListenable: opens ?? ValueNotifier<bool>(true),
           builder: (context, opens, _) => AdaptiveSheet(
@@ -1465,6 +1473,48 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getRect(card).bottom, closeTo(874 - 84, 0.5));
       expect(paintedDownTo(tester, card), greaterThan(874 - 84));
+      unmockPlatformViews();
+    });
+
+    testWidgets('at its collapsed detent the sheet leaves with the accessory '
+        'as a dialog comes up, rather than stay empty; open above it, the '
+        'sheet stays under the dialog', (tester) async {
+      final (tabs, controller) = await pumpSheet(
+        tester,
+        observers: [NativeChromeNavigatorObserver()],
+      );
+      double sheetOpacity() => tester
+          .widget<FadeTransition>(
+            find
+                .descendant(
+                  of: find.byType(AdaptiveSheet),
+                  matching: find.byType(FadeTransition),
+                )
+                .first,
+          )
+          .opacity
+          .value;
+      expect(sheetOpacity(), 1);
+
+      showDialog<void>(
+        context: tabs.root.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(sheetOpacity(), 0);
+
+      Navigator.of(tabs.root.currentContext!).pop();
+      await tester.pumpAndSettle();
+      expect(sheetOpacity(), 1);
+
+      controller.animateTo(AdaptiveSheetDetent.fitContent);
+      await tester.pumpAndSettle();
+      showDialog<void>(
+        context: tabs.root.currentContext!,
+        builder: (_) => const Center(child: Text('Sure?')),
+      );
+      await tester.pumpAndSettle();
+      expect(sheetOpacity(), 1);
       unmockPlatformViews();
     });
 
