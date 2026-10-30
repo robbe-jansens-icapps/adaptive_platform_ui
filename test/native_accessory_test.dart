@@ -1669,6 +1669,53 @@ void main() {
     unmockPlatformViews();
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
+  testWidgets('lifted onto a sheet whose glass Flutter draws, it sits on a '
+      'raised capsule rather than glass blurring the sheet\'s own', (
+    tester,
+  ) async {
+    AdaptiveNativeChrome.enabled = true;
+    NativeChromeCoordinator.instance.debugReset();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          NativeChromeCoordinator.channel,
+          (call) async => null,
+        );
+    addTearDown(() {
+      AdaptiveNativeChrome.enabled = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, null);
+    });
+    await tester.pumpWidget(
+      const Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: SizedBox(
+            width: 360,
+            height: 48,
+            child: NativeAccessoryGlass(
+              glass: false,
+              glassOpacity: kAlwaysCompleteAnimation,
+              child: SizedBox.expand(key: ValueKey('accessory')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final raised = find.descendant(
+      of: find.byType(NativeAccessoryGlass),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            widget.decoration is ShapeDecoration &&
+            (widget.decoration as ShapeDecoration).shadows!.isNotEmpty,
+      ),
+    );
+    expect(raised, findsOneWidget);
+    expect(tester.getSize(raised), const Size(360, 48));
+    expect(glassOf(accessory), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   group('on the iPhone Duo', () {
     Finder tabCapsule() => find.byWidgetPredicate(
       (widget) =>

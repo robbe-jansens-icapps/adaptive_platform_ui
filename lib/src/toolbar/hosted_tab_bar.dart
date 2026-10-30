@@ -1249,6 +1249,17 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
     final opacity = widget.glassOpacity;
     if (_empty) return const SizedBox.shrink();
     if (opacity != null) {
+      // Lifted onto a page's sheet, glass Flutter draws would blur the
+      // sheet's own and all but vanish on it: a raised capsule sets the
+      // accessory apart, as the native glass does.
+      if (AdaptiveSheet.glassDrawnByFlutter) {
+        return NativeChromeOccluder(
+          child: FadeTransition(
+            opacity: opacity,
+            child: const _RaisedCapsule(),
+          ),
+        );
+      }
       return NativeViewSettleScope(
         fade: opacity,
         child: FadeTransition(opacity: opacity, child: _capsule),
@@ -1271,6 +1282,39 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
         Positioned.fill(child: _glass()),
         SizeReporter(onSizeChanged: _onSize, child: widget.child),
       ],
+    );
+  }
+}
+
+/// The accessory's capsule lifted onto a page's sheet, drawn by Flutter: the
+/// glass's stand-in, raised off the sheet by a shadow.
+class _RaisedCapsule extends StatelessWidget {
+  const _RaisedCapsule();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final standIn = glassStandInDecoration(
+          context,
+          borderRadius: BorderRadius.circular(
+            constraints.biggest.shortestSide / 2,
+          ),
+        );
+        return DecoratedBox(
+          decoration: ShapeDecoration(
+            color: standIn.color,
+            shape: standIn.shape,
+            shadows: const [
+              BoxShadow(
+                color: Color(0x24000000),
+                blurRadius: 16,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
