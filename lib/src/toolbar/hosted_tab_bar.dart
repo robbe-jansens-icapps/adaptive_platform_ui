@@ -1176,7 +1176,7 @@ bool _traysIt(AdaptiveTabAccessoryLayout layout) =>
 /// [AdaptiveAccessoryScope], on its glass capsule ([NativeAccessoryGlass])
 /// unless it has other [glass] under it, told what it sits on ([surface]),
 /// in the key that keeps its state
-/// wherever the host shows it.
+/// wherever the host shows it. See [NativeAccessoryGlass.overFlutter].
 Widget nativeAccessory(
   ToolbarRegistry registry,
   ToolbarEntry tabs,
@@ -1186,6 +1186,7 @@ Widget nativeAccessory(
   Animation<double>? glassOpacity,
   AdaptiveTrayExpansion? expansion,
   AdaptiveAccessorySurface? surface,
+  bool overFlutter = false,
 }) => KeyedSubtree(
   key: registry.accessoryKey(tabs.id),
   child: AdaptiveAccessoryScope(
@@ -1197,6 +1198,7 @@ Widget nativeAccessory(
     child: NativeAccessoryGlass(
       glass: glass,
       glassOpacity: glassOpacity,
+      overFlutter: overFlutter,
       child: accessory,
     ),
   ),
@@ -1211,6 +1213,7 @@ class NativeAccessoryGlass extends StatefulWidget {
     super.key,
     this.glass = true,
     this.glassOpacity,
+    this.overFlutter = false,
     required this.child,
   });
 
@@ -1222,6 +1225,13 @@ class NativeAccessoryGlass extends StatefulWidget {
   /// place of [glass]: its native view is on screen only while it is all in,
   /// a stand-in fading in its place on the way.
   final Animation<double>? glassOpacity;
+
+  /// With [AdaptiveNativeChrome.enabled], whether iOS draws the [glass] over
+  /// the Flutter view, with the accessory on it as an image Flutter takes
+  /// after each frame it changed in ([IOS26GlassSurface.chrome]): real Liquid
+  /// Glass at no cost per frame, for an accessory that seldom changes, such
+  /// as a key in the iPhone Duo's vertical bar. Flutter keeps its touches.
+  final bool overFlutter;
 
   final Widget child;
 
@@ -1276,6 +1286,20 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.overFlutter &&
+        widget.glass &&
+        widget.glassOpacity == null &&
+        AdaptiveNativeChrome.enabled) {
+      // Over a platform view, such as a map, the touches on it reach Flutter
+      // through the native views over it (the occluder).
+      return NativeChromeOccluder(
+        child: IOS26GlassSurface(
+          corners: GlassSurfaceCorners.capsule,
+          chrome: true,
+          child: widget.child,
+        ),
+      );
+    }
     return Stack(
       fit: StackFit.passthrough,
       children: [

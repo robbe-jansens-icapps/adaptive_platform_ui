@@ -1779,6 +1779,61 @@ void main() {
       unmockPlatformViews();
     });
 
+    testWidgets('held sideways with native chrome, the round control is iOS\'s '
+        'glass over the Flutter view with the accessory on it, no platform '
+        'view, and Flutter keeps its touches', (tester) async {
+      mockPlatformViews();
+      IOS26GlassSurface.debugHasUIKitOverride = true;
+      AdaptiveNativeChrome.enabled = true;
+      NativeChromeCoordinator.instance.debugReset();
+      final overFlutter = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, (
+            call,
+          ) async {
+            if (call.method == 'create') {
+              overFlutter.add(
+                (call.arguments as Map<Object?, Object?>)['viewType']!
+                    as String,
+              );
+            }
+            return null;
+          });
+      addTearDown(() {
+        AdaptiveNativeChrome.enabled = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(NativeChromeCoordinator.channel, null);
+      });
+      window(
+        tester,
+        const Size(951, 669),
+        const FakeViewPadding(right: 84, bottom: 34),
+      );
+      addTearDown(tester.view.reset);
+      final tabs = NativeTabs(
+        accessory: const RentalAccessory(),
+        actions: actions,
+        fold: duo([innerCamera]),
+      );
+      await tester.pumpWidget(tabs.app());
+      await tester.pumpAndSettle();
+
+      final glass = tester.widget<IOS26GlassSurface>(glassOf(accessory));
+      expect(glass.chrome, isTrue);
+      expect(tester.getRect(glassOf(accessory)), tester.getRect(accessory));
+      expect(overFlutter, contains('adaptive_platform_ui/ios26_glass_surface'));
+      expect(
+        created.where((view) => view.$2.endsWith('ios26_glass_surface')),
+        isEmpty,
+      );
+      await tester.tap(accessory);
+      expect(
+        tester.state<RentalAccessoryState>(find.byType(RentalAccessory)).count,
+        1,
+      );
+      unmockPlatformViews();
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets('on the cover display it gets what the page\'s controls '
         'leave of the bar, so one that fits in that keeps them all in sight', (
       tester,

@@ -241,7 +241,15 @@ class HostedDuoBar extends StatelessWidget {
               holdsNativeViews: true,
               child: SizedBox(
                 width: IOS26GlassCapsule.width,
-                child: nativeAccessory(registry, tabs, accessory, spec),
+                // A key the bar holds still: iOS's glass over the Flutter
+                // view, with no platform view or blur for Flutter to draw.
+                child: nativeAccessory(
+                  registry,
+                  tabs,
+                  accessory,
+                  spec,
+                  overFlutter: true,
+                ),
               ),
             ),
           )
