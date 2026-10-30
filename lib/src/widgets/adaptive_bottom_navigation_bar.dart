@@ -1,5 +1,9 @@
 import 'package:flutter/cupertino.dart';
-import '../chrome/adaptive_chrome.dart' show AdaptiveTabAccessoryLayout;
+import '../chrome/adaptive_chrome.dart'
+    show
+        AdaptiveAccessorySpec,
+        AdaptiveChromePlacement,
+        AdaptiveTabAccessoryLayout;
 import 'adaptive_scaffold.dart';
 
 /// Configuration for an adaptive bottom navigation bar
@@ -32,7 +36,17 @@ class AdaptiveBottomNavigationBar {
     this.accessory,
     this.accessoryLayout = AdaptiveTabAccessoryLayout.floating,
     this.accessoryExpanded,
+    this.railMinWidth,
   });
+
+  /// What the [accessory] is told at the top of the Android navigation rail
+  /// ([railMinWidth]): a sidebar collapsed to a rail, as wide as the rail's
+  /// 80 dp less its sides.
+  static const AdaptiveAccessorySpec railAccessorySpec = AdaptiveAccessorySpec(
+    placement: AdaptiveChromePlacement.sidebar,
+    compact: true,
+    room: 56,
+  );
 
   /// Navigation items for bottom navigation bar
   /// These will be used to build the platform-specific navigation items if custom
@@ -155,6 +169,15 @@ class AdaptiveBottomNavigationBar {
   /// expansion, say to fade in. Elsewhere it is not shown.
   final Widget? accessoryExpanded;
 
+  /// On Android, the width from which a window shows the tabs as a
+  /// `NavigationRail` along its leading side rather than a `NavigationBar`
+  /// along its bottom, built from [items] (a custom [bottomNavigationBar] is
+  /// for the bar only), with the [accessory] at the top of the rail under
+  /// [railAccessorySpec]. The pages keep their state as the window widens or
+  /// narrows past it, as a foldable opens or closes. Null, the default,
+  /// keeps the bar at any width. Ignored on iOS.
+  final double? railMinWidth;
+
   /// Creates a copy of this bottom navigation bar with the given fields replaced
   AdaptiveBottomNavigationBar copyWith({
     List<AdaptiveNavigationDestination>? items,
@@ -171,6 +194,7 @@ class AdaptiveBottomNavigationBar {
     Widget? accessory,
     AdaptiveTabAccessoryLayout? accessoryLayout,
     Widget? accessoryExpanded,
+    double? railMinWidth,
   }) {
     return AdaptiveBottomNavigationBar(
       items: items ?? this.items,
@@ -187,6 +211,7 @@ class AdaptiveBottomNavigationBar {
       accessory: accessory ?? this.accessory,
       accessoryLayout: accessoryLayout ?? this.accessoryLayout,
       accessoryExpanded: accessoryExpanded ?? this.accessoryExpanded,
+      railMinWidth: railMinWidth ?? this.railMinWidth,
     );
   }
 }

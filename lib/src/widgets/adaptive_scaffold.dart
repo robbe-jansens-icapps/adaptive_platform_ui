@@ -13,6 +13,7 @@ import '../platform/platform_info.dart';
 import '../style/sf_symbol.dart';
 import '../toolbar/duo_top_strip.dart';
 import '../toolbar/duo_vertical_bar.dart';
+import 'adaptive_accessory_scope.dart';
 import 'adaptive_app_bar.dart';
 import 'adaptive_app_bar_action.dart';
 import 'adaptive_badge.dart';
@@ -367,6 +368,11 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
   /// What the Material navigation bar follows of the tab accessory's band.
   final MaterialTabAccessoryLink _materialTabAccessory =
       MaterialTabAccessoryLink();
+
+  /// The pages of a tab layout with a rail
+  /// ([AdaptiveBottomNavigationBar.railMinWidth]), beside the rail or above
+  /// the bar.
+  final GlobalKey _railTabsKey = GlobalKey(debugLabel: 'adaptive rail tabs');
 
   /// Whether the native tab bar is shrunk while the page scrolls, for the bar
   /// that the toolbar host draws (see [ToolbarEntry.tabBarMinimized]).
@@ -1373,27 +1379,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
           onDestinationSelected: widget.bottomNavigationBar!.onTap!,
           indicatorColor: widget.bottomNavigationBar!.selectedItemColor,
           destinations: widget.bottomNavigationBar!.items!.map((dest) {
-            Widget iconWidget = _buildNavigationIconWidget(
-              rawIcon: dest.icon,
-              platform: TargetPlatform.android,
-            );
-
-            Widget selectedIconWidget = _buildNavigationIconWidget(
-              rawIcon: dest.selectedIcon ?? dest.icon,
-              platform: TargetPlatform.android,
-            );
-
-            if (dest.hasBadge) {
-              iconWidget = dest.wrapWithBadge(iconWidget);
-              selectedIconWidget = dest.wrapWithBadge(selectedIconWidget);
-            } else if (dest.showsBadgeDot) {
-              iconWidget = Badge(child: iconWidget);
-              selectedIconWidget = Badge(child: selectedIconWidget);
-            }
-
+            final (icon, selectedIcon) = _materialDestinationIcons(dest);
             final destination = NavigationDestination(
-              icon: iconWidget,
-              selectedIcon: selectedIconWidget,
+              icon: icon,
+              selectedIcon: selectedIcon,
               label: dest.label,
             );
             return dest.identifier == null
@@ -1410,7 +1399,18 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       // The tab layout's accessory, on a card in a band above the navigation
       // bar that the pages run on under, tucked behind the bar.
       final accessory = widget.bottomNavigationBar!.accessory;
-      final tabsBody = widget.body ?? const SizedBox.shrink();
+      final railMinWidth = widget.bottomNavigationBar!.railMinWidth;
+      // One key in both layouts, so the pages move between them as they are.
+      final tabsBody = railMinWidth == null
+          ? widget.body ?? const SizedBox.shrink()
+          : KeyedSubtree(
+              key: _railTabsKey,
+              child: widget.body ?? const SizedBox.shrink(),
+            );
+      if (railMinWidth != null &&
+          MediaQuery.sizeOf(context).width >= railMinWidth) {
+        return _buildRail(context, appBar: appBar, body: tabsBody);
+      }
       return Scaffold(
         key: widget.scaffoldKey,
         appBar: appBar,
@@ -1744,6 +1744,94 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       'checkmark.circle': CupertinoIcons.checkmark_circle,
     };
     return iconMap[sfSymbol] ?? CupertinoIcons.circle;
+  }
+
+  /// The icon and the selected icon of a destination of the Material
+  /// navigation bar or rail, with its badge or dot.
+  (Widget, Widget) _materialDestinationIcons(
+    AdaptiveNavigationDestination dest,
+  ) {
+    Widget icon = _buildNavigationIconWidget(
+      rawIcon: dest.icon,
+      platform: TargetPlatform.android,
+    );
+    Widget selectedIcon = _buildNavigationIconWidget(
+      rawIcon: dest.selectedIcon ?? dest.icon,
+      platform: TargetPlatform.android,
+    );
+    if (dest.hasBadge) {
+      icon = dest.wrapWithBadge(icon);
+      selectedIcon = dest.wrapWithBadge(selectedIcon);
+    } else if (dest.showsBadgeDot) {
+      icon = Badge(child: icon);
+      selectedIcon = Badge(child: selectedIcon);
+    }
+    return (icon, selectedIcon);
+  }
+
+  /// The tabs as a `NavigationRail` along the leading side of a wide Android
+  /// window ([AdaptiveBottomNavigationBar.railMinWidth]), with the accessory
+  /// at its top.
+  Widget _buildRail(
+    BuildContext context, {
+    required PreferredSizeWidget? appBar,
+    required Widget body,
+  }) {
+    final bar = widget.bottomNavigationBar!;
+    final accessory = bar.accessory;
+    return Scaffold(
+      key: widget.scaffoldKey,
+      appBar: appBar,
+      body: Row(
+        children: [
+          NavigationRail(
+            selectedIndex: bar.selectedIndex!,
+            onDestinationSelected: bar.onTap!,
+            indicatorColor: bar.selectedItemColor,
+            labelType: NavigationRailLabelType.all,
+            groupAlignment: 0,
+            leading: accessory == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: AdaptiveAccessoryScope(
+                      spec: AdaptiveBottomNavigationBar.railAccessorySpec,
+                      child: accessory,
+                    ),
+                  ),
+            destinations: [
+              for (final dest in bar.items!) _railDestination(dest),
+            ],
+          ),
+          Expanded(child: body),
+        ],
+      ),
+      resizeToAvoidBottomInset: widget.resizeToAvoidBottomInset,
+      floatingActionButton: widget.floatingActionButton,
+      extendBodyBehindAppBar: widget.extendBodyBehindAppBar,
+      backgroundColor: widget.backgroundColor,
+      drawer: widget.drawer,
+      endDrawer: widget.endDrawer,
+      drawerScrimColor: widget.drawerScrimColor,
+      onDrawerChanged: widget.onDrawerChanged,
+      onEndDrawerChanged: widget.onEndDrawerChanged,
+      drawerEnableOpenDragGesture: widget.drawerEnableOpenDragGesture,
+      endDrawerEnableOpenDragGesture: widget.endDrawerEnableOpenDragGesture,
+    );
+  }
+
+  NavigationRailDestination _railDestination(
+    AdaptiveNavigationDestination dest,
+  ) {
+    final (icon, selectedIcon) = _materialDestinationIcons(dest);
+    Widget identified(Widget child) => dest.identifier == null
+        ? child
+        : Semantics(identifier: dest.identifier, child: child);
+    return NavigationRailDestination(
+      icon: identified(icon),
+      selectedIcon: identified(selectedIcon),
+      label: Text(dest.label),
+    );
   }
 
   Widget _buildNavigationIconWidget({
