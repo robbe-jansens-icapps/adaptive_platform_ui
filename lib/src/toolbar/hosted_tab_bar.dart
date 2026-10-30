@@ -547,18 +547,18 @@ class _HostedTabBarState extends State<HostedTabBar>
                   sheet: sheet,
                 ),
                 expanded: opens ? _expanded(entry, bar, fade: fade) : null,
+                // Above the navigator, the tray would show over a dialog
+                // reaching down to it: it leaves with the accessory as the
+                // dialog comes in, the tabs staying on their own capsule.
                 tray: onTray && ownGlass
-                    ? _tray(fade: fade, drags: opens)
-                    : null,
-                // On a page's sheet, the page's barrier dims the sheet's
-                // glass already: a barrier over the tray's place would dim
-                // it twice. The tabs and the accessory are dimmed on their
-                // own there.
-                cover: onTray && ownGlass
-                    ? _BarrierOverTabs(
+                    ? _LeavesUnderDialog(
                         route: dialog,
-                        fills: true,
-                        borderRadius: _trayCorners,
+                        child: _tray(
+                          fade: dialog != null
+                              ? kAlwaysDismissedAnimation
+                              : fade,
+                          drags: opens,
+                        ),
                       )
                     : null,
                 tabs: _Minimizable(
@@ -587,10 +587,7 @@ class _HostedTabBarState extends State<HostedTabBar>
                       ),
                       Positioned.fill(
                         child: _BarrierOverTabs(
-                          route:
-                              onTray && ownGlass || AdaptiveNativeChrome.enabled
-                              ? null
-                              : dialog,
+                          route: AdaptiveNativeChrome.enabled ? null : dialog,
                           capsule: _capsules[entry.id],
                         ),
                       ),
@@ -672,11 +669,11 @@ class _HostedTabBarState extends State<HostedTabBar>
         : _capsuleSurface;
     return NativeViewSettleScope(
       // Its native views leave the screen too as it makes way for a sheet,
-      // and under a dialog, whose barrier dims only what Flutter draws there.
-      fade: !onSheet
-          ? fade
-          : dialog != null
+      // and under a dialog, as it fades out.
+      fade: dialog != null
           ? kAlwaysDismissedAnimation
+          : !onSheet
+          ? fade
           : AnimationMin<double>(fade, ReverseAnimation(covered)),
       child: AdaptiveKeyboardFade(
         holdsNativeViews: true,
@@ -684,15 +681,18 @@ class _HostedTabBarState extends State<HostedTabBar>
           fit: StackFit.passthrough,
           children: [
             if (expansion != null)
-              _trayDrag(
-                nativeAccessory(
-                  widget.blend.registry,
-                  entry,
-                  accessory,
-                  spec,
-                  glass: false,
-                  expansion: expansion,
-                  surface: surface,
+              _LeavesUnderDialog(
+                route: dialog,
+                child: _trayDrag(
+                  nativeAccessory(
+                    widget.blend.registry,
+                    entry,
+                    accessory,
+                    spec,
+                    glass: false,
+                    expansion: expansion,
+                    surface: surface,
+                  ),
                 ),
               )
             else if (onSheet)
@@ -726,18 +726,19 @@ class _HostedTabBarState extends State<HostedTabBar>
                 ),
               )
             else
-              nativeAccessory(
-                widget.blend.registry,
-                entry,
-                accessory,
-                spec,
-                glass: !onTray,
-                surface: surface,
-              ),
-            // On the tray, the tray's barrier dims it.
-            if (!onTray)
-              Positioned.fill(
-                child: _BarrierOverTabs(route: dialog, fills: true),
+              // On the tray or on glass of its own above the tabs, above the
+              // navigator: it would show over a dialog reaching down to it,
+              // so it leaves as the dialog comes in.
+              _LeavesUnderDialog(
+                route: dialog,
+                child: nativeAccessory(
+                  widget.blend.registry,
+                  entry,
+                  accessory,
+                  spec,
+                  glass: !onTray,
+                  surface: surface,
+                ),
               ),
           ],
         ),
@@ -1319,7 +1320,7 @@ class _RaisedCapsule extends StatelessWidget {
   }
 }
 
-enum _TabsSlot { tray, accessory, expanded, tabs, cover }
+enum _TabsSlot { tray, accessory, expanded, tabs }
 
 /// Where [_RenderAccessoryOverTabs] puts its children: its size, where the
 /// tabs and the accessory go, the tray under both, if it shows, and what the
@@ -1357,7 +1358,6 @@ class _AccessoryOverTabs
     required this.accessory,
     required this.tabs,
     this.tray,
-    this.cover,
     this.expanded,
     this.expansion,
     this.onRestingHeight,
@@ -1385,14 +1385,9 @@ class _AccessoryOverTabs
   /// where there is none.
   final ValueChanged<EdgeInsets?>? onTrayOutsets;
 
-  /// Laid over all of it, as the tray is, or as the capsule of the tabs is
-  /// while there is no tray to show: a dialog's barrier.
-
   final Rect? capsule;
   final Widget? accessory;
   final Widget tabs;
-
-  final Widget? cover;
 
   /// The glass under the accessory and the tabs on a tray.
   final Widget? tray;
@@ -1406,7 +1401,6 @@ class _AccessoryOverTabs
     _TabsSlot.accessory => accessory,
     _TabsSlot.expanded => expanded,
     _TabsSlot.tabs => tabs,
-    _TabsSlot.cover => cover,
   };
 
   @override
@@ -1497,22 +1491,19 @@ class _RenderAccessoryOverTabs extends RenderBox
   RenderBox? get _tray => childForSlot(_TabsSlot.tray);
   RenderBox? get _accessory => childForSlot(_TabsSlot.accessory);
   RenderBox? get _tabs => childForSlot(_TabsSlot.tabs);
-  RenderBox? get _cover => childForSlot(_TabsSlot.cover);
   RenderBox? get _expanded => childForSlot(_TabsSlot.expanded);
 
   /// What the tray opens into, while any of it is in sight.
   RenderBox? get _revealed => _reveal > 0.5 && _trayShown ? _expanded : null;
 
-  // Hit in this order, reversed: the tray under the bar, what it opens into
-  // and the accessory over it. The cover over all of them takes no touches.
+  // Hit and painted in this order, reversed: the tray under the bar, what it
+  // opens into and the accessory over it.
   Iterable<RenderBox> get _hit => [
     if (_trayShown) ?_tray,
     ?_tabs,
     ?_revealed,
     ?_accessory,
   ];
-
-  Iterable<RenderBox> get _painted => [..._hit, ?_cover];
 
   /// Where the accessory goes across: over the capsule, at most
   /// [kFloatingAccessoryMaxWidth] wide.
@@ -1811,21 +1802,12 @@ class _RenderAccessoryOverTabs extends RenderBox
       (tray.parentData! as BoxParentData).offset =
           placed.tray?.topLeft ?? Offset.zero;
     }
-    if (_cover case final cover?) {
-      // Over the tray, or with no tray to show over the capsule of the tabs.
-      final capsule = _capsule;
-      final rect =
-          placed.tray ??
-          (capsule == null ? Rect.zero : capsule.shift(placed.tabs));
-      cover.layout(BoxConstraints.tight(rect.size));
-      (cover.parentData! as BoxParentData).offset = rect.topLeft;
-    }
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
     final revealed = _revealed;
-    for (final child in _painted) {
+    for (final child in _hit) {
       final at = offset + (child.parentData! as BoxParentData).offset;
       if (child != revealed) {
         context.paintChild(child, at);
@@ -1897,22 +1879,10 @@ class HostedSidebar {
 /// through. It comes and goes with the dialog, in its colour, as the route
 /// draws its own barrier ([ModalRoute.buildModalBarrier]).
 class _BarrierOverTabs extends StatelessWidget {
-  const _BarrierOverTabs({
-    required this.route,
-    this.capsule,
-    this.fills = false,
-    this.borderRadius,
-  });
+  const _BarrierOverTabs({required this.route, this.capsule});
 
   final ModalRoute<Object?>? route;
   final Rect? capsule;
-
-  /// Whether the capsule is all of it: the glass of the tab accessory, or
-  /// the tray.
-  final bool fills;
-
-  /// The corners of what it covers, where that is no capsule: the tray's.
-  final BorderRadius? borderRadius;
 
   /// How much of what is behind it the native bar's glass shows, as measured
   /// on iOS 26: what is behind it is under the barrier already, so a barrier
@@ -1945,32 +1915,22 @@ class _BarrierOverTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final capsule = this.capsule;
     final barrier = overGlassOf(route);
-    if (barrier == null || (capsule == null && !fills)) {
-      return const SizedBox.shrink();
-    }
-    final dim = LayoutBuilder(
-      builder: (context, constraints) => AnimatedBuilder(
-        animation: barrier,
-        builder: (context, _) => DecoratedBox(
-          decoration: ShapeDecoration(
-            color: barrier.value,
-            // The tray's corners; a capsule's where it covers only that.
-            shape:
-                borderRadius == null ||
-                    constraints.maxHeight <= kNativeTabCapsuleHeight + 1
-                ? const StadiumBorder()
-                : RoundedSuperellipseBorder(borderRadius: borderRadius!),
-          ),
-        ),
-      ),
-    );
+    if (barrier == null || capsule == null) return const SizedBox.shrink();
     return IgnorePointer(
       child: Stack(
         children: [
-          if (fills)
-            Positioned.fill(child: dim)
-          else
-            Positioned.fromRect(rect: capsule!, child: dim),
+          Positioned.fromRect(
+            rect: capsule,
+            child: AnimatedBuilder(
+              animation: barrier,
+              builder: (context, _) => DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: barrier.value,
+                  shape: const StadiumBorder(),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1988,8 +1948,13 @@ class _LeavesUnderDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final animation = route?.animation;
-    if (animation == null) return child;
-    return FadeTransition(opacity: ReverseAnimation(animation), child: child);
+    // The same widget either way, so the accessory keeps its state.
+    return FadeTransition(
+      opacity: animation == null
+          ? kAlwaysCompleteAnimation
+          : ReverseAnimation(animation),
+      child: child,
+    );
   }
 }
 

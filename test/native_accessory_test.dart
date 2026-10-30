@@ -771,8 +771,9 @@ void main() {
     unmockPlatformViews();
   });
 
-  testWidgets('under a dialog it stays with the tabs, under the dialog\'s '
-      'barrier', (tester) async {
+  testWidgets('under a dialog the tabs stay, under the dialog\'s barrier, '
+      'and the accessory above them leaves, as the dialog would show under '
+      'it, and comes back', (tester) async {
     mockPlatformViews();
     IOS26NativeTabBar.debugHasUIKitOverride = true;
     window(
@@ -800,23 +801,24 @@ void main() {
       builder: (_) => const Center(child: Text('Sure?')),
     );
     await tester.pumpAndSettle();
-    expect(opacityOf(tester, accessory), 1);
-    expect(barriers, findsNWidgets(2));
-    // One over the tabs' capsule, one over the accessory's.
-    final dimmed = [
-      for (final element in barriers.evaluate())
-        tester.getRect(find.byElementPredicate((e) => e == element)),
-    ];
-    expect(dimmed, contains(tester.getRect(glassOf(accessory))));
+    expect(opacityOf(tester, accessory), 0);
+    // Over the tabs' capsule only.
+    expect(barriers, findsOneWidget);
+    expect(
+      tester.getRect(barriers).top,
+      greaterThan(tester.getRect(glassOf(accessory)).bottom),
+    );
 
     tabs.root.currentState!.pop();
     await tester.pumpAndSettle();
+    expect(opacityOf(tester, accessory), 1);
     expect(barriers, findsNothing);
     unmockPlatformViews();
   });
 
-  testWidgets('on a tray under a dialog one barrier dims the tray, its '
-      'accessory and the tabs together', (tester) async {
+  testWidgets('on a tray under a dialog the tray and its accessory leave, '
+      'as the dialog would show under them, the tabs staying under the '
+      'dialog\'s barrier on their own capsule, and come back', (tester) async {
     mockPlatformViews();
     IOS26NativeTabBar.debugHasUIKitOverride = true;
     window(
@@ -849,12 +851,16 @@ void main() {
       builder: (_) => const Center(child: Text('Sure?')),
     );
     await tester.pumpAndSettle();
+    expect(opacityOf(tester, accessory), 0);
+    expect(opacityOf(tester, trayGlass.first), 0);
+    expect(barriers(RoundedSuperellipseBorder), findsNothing);
+    expect(barriers(StadiumBorder), findsOneWidget);
+
+    tabs.root.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(opacityOf(tester, accessory), 1);
+    expect(opacityOf(tester, trayGlass.first), 1);
     expect(barriers(StadiumBorder), findsNothing);
-    expect(barriers(RoundedSuperellipseBorder), findsOneWidget);
-    expect(
-      tester.getRect(barriers(RoundedSuperellipseBorder)),
-      tester.getRect(trayGlass),
-    );
     unmockPlatformViews();
   });
 

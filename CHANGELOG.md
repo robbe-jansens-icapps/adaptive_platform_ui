@@ -7,6 +7,7 @@
 ## [Blue Bike fork]
 Changes on top of the vendored 1.0.2 release (forked from 1.0.1).
 
+* **FIX**: The tab accessory above the tabs, on glass of its own or on the tray with the tray's glass, fades out under a dialog too, as the one lifted onto a sheet does, rather than staying dimmed above a dialog that reaches down to it; the tabs stay under the dialog's barrier on their own capsule
 * **FIX**: With glass Flutter draws, the tab accessory lifted onto a page's sheet sits on a raised capsule (the glass's stand-in with a shadow) rather than glass that blurred the sheet's own and all but vanished on it
 * **FIX**: A sheet that opens from the tab accessory on it (`AdaptiveSheet.opensFromAccessory`) fades out with the accessory as a dialog comes up over its page, by as much as only the accessory shows on it, rather than stay behind as empty glass; open above it, it stays under the dialog. `NativeChromeNavigatorObserver.dialogOver` finds the dialog or sheet with a barrier over a page, on its navigator or one around it, and `NativeChromeNavigatorObserver.changes` tells as routes come and go
 * **IMPROVEMENT**: The glass the tab bar floats its accessory on is drawn by Flutter wherever sheets' glass is (`AdaptiveSheet.glassDrawnByFlutter`: `drawsGlassInFlutter` with `AdaptiveNativeChrome.enabled`), rather than a platform view, and hands the touches on it to Flutter: an accessory over a map (a ride's pill) no longer makes every frame of the page cost an extra surface
