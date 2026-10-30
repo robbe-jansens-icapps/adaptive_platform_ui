@@ -16,12 +16,14 @@ import '../widgets/adaptive_bottom_navigation_bar.dart';
 import '../widgets/adaptive_keyboard_fade.dart';
 import '../widgets/ios26/ios26_glass_surface.dart';
 import '../widgets/ios26/native_view_settle.dart';
-import '../widgets/sheet/adaptive_sheet.dart' show kAdaptiveSheetCornerRadius;
+import '../widgets/sheet/adaptive_sheet.dart'
+    show AdaptiveSheet, kAdaptiveSheetCornerRadius;
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'hosted_top_toolbar.dart' show kHostedToolbarHeight;
 import '../widgets/ios26/ios26_native_tab_bar.dart';
 import '../widgets/ios26/native_chrome/adaptive_native_chrome.dart';
+import '../widgets/ios26/native_chrome/native_chrome_occluder.dart';
 import 'toolbar_blend.dart';
 import 'toolbar_registry.dart';
 
@@ -1230,10 +1232,18 @@ class _NativeAccessoryGlassState extends State<NativeAccessoryGlass> {
   /// Whether the accessory had no size when last laid out.
   bool _empty = false;
 
-  static const _capsule = IOS26GlassSurface(
-    corners: GlassSurfaceCorners.capsule,
-    interactive: true,
-  );
+  // Glass Flutter draws, over a map, also needs its touches (the occluder).
+  static Widget get _capsule => AdaptiveSheet.glassDrawnByFlutter
+      ? const NativeChromeOccluder(
+          child: IOS26GlassSurface(
+            corners: GlassSurfaceCorners.capsule,
+            drawnByFlutter: true,
+          ),
+        )
+      : const IOS26GlassSurface(
+          corners: GlassSurfaceCorners.capsule,
+          interactive: true,
+        );
 
   Widget _glass() {
     final opacity = widget.glassOpacity;

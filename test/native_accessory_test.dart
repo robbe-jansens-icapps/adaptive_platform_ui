@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chrome_coordinator.dart';
 import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
     show DuoVerticalBar;
 import 'package:adaptive_platform_ui/src/toolbar/hosted_duo_bar.dart';
@@ -1576,6 +1577,47 @@ void main() {
     expect(tester.getBottomLeft(nativeBar), const Offset(0, 874));
     unmockPlatformViews();
   });
+
+  testWidgets('with native chrome, its glass is drawn by Flutter, as no '
+      'platform view, and hands the touches on it to Flutter', (tester) async {
+    mockPlatformViews();
+    AdaptiveNativeChrome.enabled = true;
+    NativeChromeCoordinator.instance.debugReset();
+    final touchRegions = <Float64List>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(NativeChromeCoordinator.channel, (
+          call,
+        ) async {
+          if (call.method == 'touchRegions') {
+            touchRegions.add(call.arguments as Float64List);
+          }
+          return null;
+        });
+    addTearDown(() {
+      AdaptiveNativeChrome.enabled = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(NativeChromeCoordinator.channel, null);
+    });
+    window(
+      tester,
+      const Size(402, 874),
+      const FakeViewPadding(top: 62, bottom: 34),
+    );
+    addTearDown(tester.view.reset);
+    final tabs = NativeTabs(accessory: const RentalAccessory());
+    await tester.pumpWidget(tabs.app());
+    await tester.pumpAndSettle();
+
+    final glass = tester.widget<IOS26GlassSurface>(glassOf(accessory));
+    expect(glass.drawnByFlutter, isTrue);
+    expect(
+      created.where((view) => view.$2.endsWith('ios26_glass_surface')),
+      isEmpty,
+    );
+    final rect = tester.getRect(glassOf(accessory));
+    expect(touchRegions.last, [rect.left, rect.top, rect.right, rect.bottom]);
+    unmockPlatformViews();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   group('on the iPhone Duo', () {
     Finder tabCapsule() => find.byWidgetPredicate(
