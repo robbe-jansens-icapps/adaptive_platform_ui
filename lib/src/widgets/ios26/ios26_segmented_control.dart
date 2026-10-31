@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../../platform/adaptive_native_fonts.dart';
 import 'native_view_settle.dart';
 
 /// Native iOS 26 segmented control implementation using platform views
@@ -182,6 +183,14 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl>
     }
   }
 
+  /// A tap on the stand-in, told as UIKit tells one on the control: only a
+  /// new segment, with a light tap.
+  void _select(int index) {
+    if (index == widget.selectedIndex) return;
+    HapticFeedback.lightImpact();
+    widget.onValueChanged(index);
+  }
+
   @override
   void didUpdateWidget(IOS26SegmentedControl oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -299,6 +308,7 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl>
                 selectedTextColor: Color(
                   themeParams['selectedTextColor'] as int,
                 ),
+                onSelected: settled || !widget.enabled ? null : _select,
               ),
             )
           : const SizedBox.shrink();
@@ -347,9 +357,17 @@ class _IOS26SegmentedControlState extends State<IOS26SegmentedControl>
   }
 }
 
+/// The size and weight UIKit draws every segment's label in (Swift:
+/// `iOS26SegmentedControlView.applyTheme`).
+const double _labelSize = 13;
+const FontWeight _labelWeight = FontWeight.w500;
+
 /// What shows for the native segmented control while its page is covered or
 /// moves: its segments on a capsule track, the one selected on a thumb in its
-/// tint, as UIKit draws them. It takes no touches.
+/// tint 2 points in from the segment's edges, the labels in the face and size
+/// UIKit draws them in. While the native control is away it takes the taps on
+/// the segments, as a sheet that springs to rest keeps the control off screen
+/// for a while after it looks still.
 class _SegmentedControlStandIn extends StatelessWidget {
   const _SegmentedControlStandIn({
     required this.labels,
@@ -357,6 +375,7 @@ class _SegmentedControlStandIn extends StatelessWidget {
     required this.tint,
     required this.textColor,
     required this.selectedTextColor,
+    required this.onSelected,
   });
 
   final List<String> labels;
@@ -364,6 +383,10 @@ class _SegmentedControlStandIn extends StatelessWidget {
   final Color? tint;
   final Color textColor;
   final Color selectedTextColor;
+
+  /// Called with the segment tapped; null while the stand-in fades out over
+  /// the native control, which takes the taps then.
+  final ValueChanged<int>? onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -377,40 +400,48 @@ class _SegmentedControlStandIn extends StatelessWidget {
           ),
           context,
         );
+    final style = AdaptiveNativeFonts.textStyle(
+      _labelWeight,
+    ).copyWith(fontSize: _labelSize);
+    final onSelected = this.onSelected;
     return IgnorePointer(
+      ignoring: onSelected == null,
       child: DecoratedBox(
         decoration: ShapeDecoration(color: track, shape: const StadiumBorder()),
-        child: Padding(
-          padding: const EdgeInsets.all(2),
-          child: Row(
-            children: [
-              for (final (i, label) in labels.indexed)
-                Expanded(
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: i == selectedIndex ? thumb : null,
-                      shape: const StadiumBorder(),
-                    ),
-                    child: Center(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: i == selectedIndex
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                          color: i == selectedIndex
-                              ? selectedTextColor
-                              : textColor,
+        child: Row(
+          children: [
+            for (final (i, label) in labels.indexed)
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onSelected == null ? null : () => onSelected(i),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: i == selectedIndex ? thumb : null,
+                        shape: const StadiumBorder(),
+                      ),
+                      child: Center(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          // UIKit's label keeps its size whatever the text
+                          // size setting.
+                          textScaler: TextScaler.noScaling,
+                          style: style.copyWith(
+                            color: i == selectedIndex
+                                ? selectedTextColor
+                                : textColor,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
