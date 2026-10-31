@@ -6,6 +6,7 @@ import 'package:adaptive_platform_ui/src/widgets/ios26/native_chrome/native_chro
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -373,6 +374,70 @@ void main() {
 
       await tester.pumpWidget(placed(view()));
       expect(host.touchRegions, isEmpty);
+    });
+
+    testWidgets('leaves iOS the touches on a platform view drawn on it, not '
+        'on one under it', (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (call) async => null,
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          null,
+        ),
+      );
+
+      // A segmented control on a sheet over a map, under the map's search
+      // field.
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Stack(
+            children: [
+              const Positioned.fill(child: UiKitView(viewType: 'map')),
+              Positioned(
+                left: 20,
+                top: 40,
+                width: 100,
+                height: 44,
+                child: view(),
+              ),
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 300,
+                height: 60,
+                child: NativeChromeOccluder(
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 20, top: 10),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: SizedBox(
+                        width: 100,
+                        height: 40,
+                        child: UiKitView(viewType: 'segmented_control'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.layers.whereType<PlatformViewLayer>(), hasLength(2));
+      expect(host.touchRegions, [
+        const Rect.fromLTRB(0, 300, 800, 310),
+        const Rect.fromLTRB(0, 350, 800, 360),
+        const Rect.fromLTRB(0, 310, 20, 350),
+        const Rect.fromLTRB(120, 310, 800, 350),
+      ]);
     });
 
     testWidgets('painted before a view leaves it alone', (tester) async {

@@ -103,11 +103,14 @@ class NativeChromeCoordinator {
 
   /// Runs after the binding drew the frame, as it was registered later.
   void _flush(Duration _) {
-    final occluders = [
+    final composited = [
       for (final occluder in _occluders)
-        if (occluder._composited) (z: occluder._z, rect: occluder._rect),
+        if (occluder._composited) occluder,
     ];
-    _sendTouchRegions([for (final occluder in occluders) occluder.rect]);
+    final occluders = [
+      for (final occluder in composited) (z: occluder._z, rect: occluder._rect),
+    ];
+    _sendTouchRegions(_touchRegionsOf(composited));
     if (_slots.isEmpty) {
       for (final occluder in _occluders) {
         occluder._composited = false;
@@ -159,6 +162,44 @@ class NativeChromeCoordinator {
     if (_listEquals(values, _touchRegions ?? Float64List(0))) return;
     _touchRegions = values;
     unawaited(channel.invokeMethod<void>('touchRegions', values));
+  }
+
+  /// Each occluder's rect, less where a platform view composited within it,
+  /// or within an occluder painted after it, lies: that view is drawn over
+  /// the Flutter content and takes its own touches, as a segmented control on
+  /// a sheet over a map does.
+  static List<Rect> _touchRegionsOf(
+    List<NativeChromeOccluderHandle> occluders,
+  ) {
+    final regions = <Rect>[];
+    for (final occluder in occluders) {
+      var pieces = [occluder._rect];
+      for (final other in occluders) {
+        if (other._z < occluder._z) continue;
+        for (final view in other._platformViews) {
+          pieces = [for (final piece in pieces) ..._without(piece, view)];
+        }
+      }
+      regions.addAll(pieces);
+    }
+    return regions;
+  }
+
+  /// What of [rect] lies outside [hole]: the bands above and below it, and
+  /// beside it between them.
+  static List<Rect> _without(Rect rect, Rect hole) {
+    if (!rect.overlaps(hole)) return [rect];
+    final cut = rect.intersect(hole);
+    return [
+      if (cut.top > rect.top)
+        Rect.fromLTRB(rect.left, rect.top, rect.right, cut.top),
+      if (cut.bottom < rect.bottom)
+        Rect.fromLTRB(rect.left, cut.bottom, rect.right, rect.bottom),
+      if (cut.left > rect.left)
+        Rect.fromLTRB(rect.left, cut.top, cut.left, cut.bottom),
+      if (cut.right < rect.right)
+        Rect.fromLTRB(cut.right, cut.top, rect.right, cut.bottom),
+    ];
   }
 
   static bool _listEquals(Float64List a, Float64List? b) {
@@ -483,6 +524,9 @@ class NativeChromeOccluderHandle {
   bool _composited = false;
   int _z = 0;
   Rect _rect = Rect.zero;
+
+  /// Where the platform views composited within it show, in logical pixels.
+  List<Rect> _platformViews = const <Rect>[];
   RenderBox? box;
 
   void dispose() => NativeChromeCoordinator.instance._occluders.remove(this);
@@ -502,10 +546,30 @@ class NativeChromeOccluderHandle {
     _composited = true;
     _z = coordinator._z++;
     final (:transform, alpha: _, clip: _, radius: _, supported: _) = _walk(
-      layer as OffsetLayer,
+      layer,
     );
     _rect = MatrixUtils.transformRect(transform, Offset.zero & box.size);
+    _platformViews = [
+      for (final view in _platformViewsIn(layer as ContainerLayer))
+        if (_shownRect(view) case final rect?) rect,
+    ];
   }
+}
+
+Iterable<PlatformViewLayer> _platformViewsIn(ContainerLayer layer) sync* {
+  for (var child = layer.firstChild; child != null; child = child.nextSibling) {
+    if (child is PlatformViewLayer) yield child;
+    if (child is ContainerLayer) yield* _platformViewsIn(child);
+  }
+}
+
+/// Where [view] shows in logical pixels, within the clips above it: null
+/// where it does not show.
+Rect? _shownRect(PlatformViewLayer view) {
+  final (:transform, :alpha, :clip, radius: _, supported: _) = _walk(view);
+  final rect = MatrixUtils.transformRect(transform, view.rect);
+  final shown = clip == null ? rect : rect.intersect(clip);
+  return alpha > 0 && !shown.isEmpty ? shown : null;
 }
 
 /// What the layers above [layer] do to it, as the engine finds it for a
@@ -514,7 +578,7 @@ class NativeChromeOccluderHandle {
 /// round alike, and whether a filter that cannot apply to a native view is
 /// among them.
 ({Matrix4 transform, double alpha, Rect? clip, double radius, bool supported})
-_walk(OffsetLayer layer) {
+_walk(Layer layer) {
   final path = <Layer>[layer];
   while (path.last.parent != null) {
     path.add(path.last.parent!);
@@ -586,7 +650,9 @@ _walk(OffsetLayer layer) {
     }
     ancestor.applyTransform(path[i - 1], transform);
   }
-  transform.translateByDouble(layer.offset.dx, layer.offset.dy, 0, 1);
+  if (layer is OffsetLayer) {
+    transform.translateByDouble(layer.offset.dx, layer.offset.dy, 0, 1);
+  }
   return (
     transform: transform,
     alpha: alpha,
