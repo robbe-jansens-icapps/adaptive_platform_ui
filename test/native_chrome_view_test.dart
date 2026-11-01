@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:foldable/foldable.dart';
 
 /// What iOS was told about each view, by id: the values of its last `layout`.
 class _Host {
@@ -565,6 +566,55 @@ void main() {
       navigator.currentState!.pop();
       await tester.pumpAndSettle();
       expect(host.only[28], 0);
+    });
+  });
+  group('under a sheet over the bars', () {
+    final sheets = GlobalKey<NavigatorState>();
+
+    // No hinge, no fold: the chrome as on a phone.
+    final fold = FoldableData(
+      capabilities: FoldableData.unsupported.capabilities,
+      status: FoldableData.unsupported.status,
+      angleDegrees: FoldableData.unsupported.angleDegrees,
+      regions: const [],
+      displayFeatures: const [],
+    );
+
+    Widget app() => MaterialApp(
+      builder: (context, child) => AdaptiveToolbarHost(
+        debugFold: fold,
+        sheetNavigatorKey: sheets,
+        child: child!,
+      ),
+      home: Stack(
+        children: [
+          Positioned(left: 20, top: 40, width: 100, height: 44, child: view()),
+        ],
+      ),
+    );
+
+    testWidgets('it stays, dimmed with the page under the barrier, and '
+        'leaves the touches to it', (tester) async {
+      await tester.pumpWidget(app());
+      expect(_Host.interactive(host.only), isTrue);
+      expect(host.only[28], 0);
+
+      sheets.currentState!.push(
+        RawDialogRoute<void>(
+          barrierColor: const Color(0x33000000),
+          pageBuilder: (_, _, _) => const SizedBox.shrink(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(_Host.hidden(host.only), isFalse);
+      expect(host.only[19], 1);
+      expect(Color(host.only[28].toInt()).a, greaterThan(0));
+      expect(_Host.interactive(host.only), isFalse);
+
+      sheets.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(host.only[28], 0);
+      expect(_Host.interactive(host.only), isTrue);
     });
   });
 }

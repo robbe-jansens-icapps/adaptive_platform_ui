@@ -11,9 +11,19 @@ import 'package:flutter/widgets.dart';
 /// a navigator without one, the views leave it to their Flutter stand-ins
 /// while pages move or something covers them.
 class NativeChromeNavigatorObserver extends NavigatorObserver {
-  NativeChromeNavigatorObserver() {
+  NativeChromeNavigatorObserver() : _overPages = false {
     _all.add(this);
   }
+
+  /// For a navigator over all the pages and the bars, such as the one
+  /// `AdaptiveToolbarHost.sheetNavigatorKey` names: a dialog or a sheet with
+  /// a barrier on it dims the native views of every page and of the bars, as
+  /// its barrier dims what Flutter draws under it ([routesOverPages]).
+  NativeChromeNavigatorObserver.overPages() : _overPages = true {
+    _all.add(this);
+  }
+
+  final bool _overPages;
 
   static final List<NativeChromeNavigatorObserver> _all = [];
 
@@ -60,6 +70,18 @@ class NativeChromeNavigatorObserver extends NavigatorObserver {
   /// Whether an observer keeps the navigator [route] is on.
   static bool tracks(Route<dynamic>? route) =>
       route != null && routesAbove(route) != null;
+
+  /// The routes on navigators over all the pages
+  /// ([NativeChromeNavigatorObserver.overPages]), other than the one [route]
+  /// is on, where [routesAbove] has those over it.
+  static Iterable<Route<dynamic>> routesOverPages(Route<dynamic>? route) sync* {
+    for (final observer in _all) {
+      // A navigator that is gone no longer covers anything.
+      if (!observer._overPages || observer.navigator == null) continue;
+      if (route != null && observer._routes.contains(route)) continue;
+      yield* observer._routes;
+    }
+  }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {

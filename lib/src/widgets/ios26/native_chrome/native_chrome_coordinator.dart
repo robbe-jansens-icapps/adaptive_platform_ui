@@ -432,6 +432,17 @@ class NativeChromeSlot {
       }
       covers.add(rect);
     }
+    // A sheet with a barrier on a navigator over all the pages and the bars:
+    // the view stays, dimmed with the page under the barrier, as it would be
+    // as a platform view. Where the sheet reaches over it, the sheet's glass
+    // is an occluder and cuts it off.
+    for (final page in NativeChromeNavigatorObserver.routesOverPages(route)) {
+      if (page is! ModalRoute<dynamic> || page.offstage) continue;
+      final barrier = chromeBarrierOf(page, showsThrough: kGlassShowsThrough);
+      if (barrier == null) continue;
+      _routeDim = barrier.value ?? _routeDim;
+      _underBarrier = true;
+    }
     var uncovered = bounds;
     for (final cover in covers) {
       final left = _uncoveredBy(uncovered, cover);

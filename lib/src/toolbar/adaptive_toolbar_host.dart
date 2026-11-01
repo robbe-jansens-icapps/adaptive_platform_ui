@@ -11,6 +11,7 @@ import '../platform/platform_info.dart';
 import '../platform/system_vertical_bar.dart';
 import '../widgets/adaptive_glass.dart';
 import '../widgets/adaptive_toast.dart';
+import '../widgets/ios26/native_chrome/native_chrome_navigator_observer.dart';
 import 'duo_top_strip.dart';
 import 'duo_vertical_bar.dart';
 import 'fold_scope.dart';
@@ -92,6 +93,10 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
     with TickerProviderStateMixin {
   final ToolbarRegistry _registry = ToolbarRegistry();
   late final ToolbarBlend _blend;
+
+  /// Follows the sheets over the bars, for the native views under them.
+  final NativeChromeNavigatorObserver _sheetObserver =
+      NativeChromeNavigatorObserver.overPages();
 
   /// The bars read the content underneath once, together.
   final BackdropKey _chromeBackdrop = BackdropKey();
@@ -450,6 +455,7 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
                                   'adaptive_sheet_layer',
                                 ),
                                 navigatorKey: key,
+                                observer: _sheetObserver,
                               ),
                           ],
                         ),
@@ -471,15 +477,23 @@ class _AdaptiveToolbarHostState extends State<AdaptiveToolbarHost>
 /// nothing and takes no touches, so the bars and the pages under it work as
 /// if it were not there.
 class _SheetLayer extends StatelessWidget {
-  const _SheetLayer({super.key, required this.navigatorKey});
+  const _SheetLayer({
+    super.key,
+    required this.navigatorKey,
+    required this.observer,
+  });
 
   final GlobalKey<NavigatorState> navigatorKey;
+
+  /// Lets the native views under a sheet on it dim with the page.
+  final NavigatorObserver observer;
 
   @override
   Widget build(BuildContext context) => HeroControllerScope.none(
     // The app's navigator has the app's hero controller; a sheet flies none.
     child: Navigator(
       key: navigatorKey,
+      observers: [observer],
       onGenerateInitialRoutes: (navigator, initialRoute) => [_NoSheet()],
     ),
   );
