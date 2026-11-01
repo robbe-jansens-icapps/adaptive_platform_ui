@@ -958,7 +958,7 @@ void main() {
       skipOffstage: false,
     );
 
-    Future<NativeTabs> pumpTray(WidgetTester tester) async {
+    Future<NativeTabs> pumpTray(WidgetTester tester, {Widget? page}) async {
       mockPlatformViews();
       IOS26NativeTabBar.debugHasUIKitOverride = true;
       window(
@@ -977,6 +977,7 @@ void main() {
           color: Color(0x00000000),
           child: SizedBox(width: double.infinity, height: opened),
         ),
+        sheet: page,
       );
       await tester.pumpWidget(tabs.app());
       await tester.pumpAndSettle();
@@ -1086,6 +1087,88 @@ void main() {
       await tester.pumpAndSettle();
       expect(expansion.isOpen, isFalse);
       expect(tester.getRect(trayGlass).top, closeTo(closed.top, 1));
+      unmockPlatformViews();
+    });
+
+    // Content over the whole page that takes the touches the page gets.
+    final page = find.byKey(const ValueKey('page'));
+
+    // At a point on the page above the tray, open too.
+    bool pageTakesTouch(WidgetTester tester) => hits(tester, page);
+
+    Future<AdaptiveTrayExpansion> openTray(WidgetTester tester) async {
+      await pumpTray(
+        tester,
+        page: const Align(
+          alignment: Alignment.topCenter,
+          child: ColoredBox(
+            key: ValueKey('page'),
+            color: Color(0x00000000),
+            child: SizedBox(width: 100, height: 400),
+          ),
+        ),
+      );
+      final expansion = AdaptiveAccessoryScope.expansionOf(
+        tester.element(accessory),
+      )!;
+      expansion.open();
+      await tester.pumpAndSettle();
+      // Open, the dimmed page takes no touches: a tap on it closes the tray.
+      expect(pageTakesTouch(tester), isFalse);
+      return expansion;
+    }
+
+    // Frame by frame, as a device draws them: the spring overshoots closed
+    // and stops on its way back, where a longer step may step past.
+    Future<void> settleByFrames(WidgetTester tester) =>
+        tester.pumpAndSettle(const Duration(milliseconds: 16));
+
+    testWidgets('swiped down past closed, it rests closed, and the page '
+        'takes touches again', (tester) async {
+      final expansion = await openTray(tester);
+
+      // Further down than the tray opens, so it ends up past closed.
+      await tester.flingFrom(
+        tester.getCenter(expanded),
+        const Offset(0, opened * 2),
+        3000,
+      );
+      await settleByFrames(tester);
+
+      expect(pageTakesTouch(tester), isTrue);
+      expect(expansion.isOpen, isFalse);
+      expect(expansion.value.value, 0);
+      unmockPlatformViews();
+    });
+
+    testWidgets('flicked down hard from open, it rests closed, and the page '
+        'takes touches again', (tester) async {
+      final expansion = await openTray(tester);
+
+      await tester.flingFrom(
+        tester.getCenter(expanded),
+        const Offset(0, opened * 0.4),
+        4000,
+      );
+      await settleByFrames(tester);
+
+      expect(pageTakesTouch(tester), isTrue);
+      expect(expansion.isOpen, isFalse);
+      expect(expansion.value.value, 0);
+      unmockPlatformViews();
+    });
+
+    testWidgets('closing, it leaves the page its touches while it is still '
+        'on its way', (tester) async {
+      final expansion = await openTray(tester);
+
+      expansion.close();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(expansion.value.value, greaterThan(0));
+      expect(pageTakesTouch(tester), isTrue);
+
+      await settleByFrames(tester);
+      expect(expansion.value.value, 0);
       unmockPlatformViews();
     });
   });

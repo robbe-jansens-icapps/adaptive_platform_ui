@@ -156,7 +156,7 @@ class _HostedTabBarState extends State<HostedTabBar>
   late final _TrayExpansion _trayExpansion = _TrayExpansion(this);
 
   /// Whether the tray is open, or on its way to be.
-  bool _trayOpening = false;
+  final _trayOpening = ValueNotifier<bool>(false);
 
   /// How tall what the tray opens into is, as last laid out: a drag moves it
   /// by as much as the finger.
@@ -175,14 +175,22 @@ class _HostedTabBarState extends State<HostedTabBar>
   /// Opens or closes the tray, from where it is at the speed it has
   /// ([velocity] in openings a second).
   void _settleTray({required bool open, double velocity = 0}) {
-    _trayOpening = open;
+    _trayOpening.value = open;
     final target = open ? 1.0 : 0.0;
     if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
       _trayOpen.value = target;
       return;
     }
+    // Snapped to its end: the spring overshoots, and swinging back it stops
+    // as soon as it is within its tolerance, a hair past closed or open.
     _trayOpen.animateWith(
-      SpringSimulation(_traySpring, _trayOpen.value, target, velocity),
+      SpringSimulation(
+        _traySpring,
+        _trayOpen.value,
+        target,
+        velocity,
+        snapToEnd: true,
+      ),
     );
   }
 
@@ -191,9 +199,11 @@ class _HostedTabBarState extends State<HostedTabBar>
   void _onOpenExtent(double extent) {
     _openExtent = extent;
     // Once: closing, it is on its way already.
-    if (extent > 0 || !_trayOpening) return;
+    if (extent > 0 || !_trayOpening.value) return;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _openExtent == 0 && _trayOpening) _settleTray(open: false);
+      if (mounted && _openExtent == 0 && _trayOpening.value) {
+        _settleTray(open: false);
+      }
     });
   }
 
@@ -225,7 +235,12 @@ class _HostedTabBarState extends State<HostedTabBar>
                     : next;
               };
               recognizer.onEnd = (details) {
-                if (_openExtent <= 0) return;
+                // With nothing left to open into, the drag leaves it closed
+                // rather than wherever it stopped.
+                if (_openExtent <= 0) {
+                  _settleTray(open: false);
+                  return;
+                }
                 // Up is opening.
                 final velocity = -(details.primaryVelocity ?? 0) / _openExtent;
                 _settleTray(
@@ -265,6 +280,7 @@ class _HostedTabBarState extends State<HostedTabBar>
   void dispose() {
     _unlisten(widget.blend);
     _trayOpen.dispose();
+    _trayOpening.dispose();
     _reveal.dispose();
     super.dispose();
   }
@@ -377,7 +393,7 @@ class _HostedTabBarState extends State<HostedTabBar>
     if (trayFor != _trayFor) {
       final first = _trayFor == null;
       _trayFor = trayFor;
-      if (!first && (_trayOpening || _trayOpen.value != 0)) {
+      if (!first && (_trayOpening.value || _trayOpen.value != 0)) {
         SchedulerBinding.instance.addPostFrameCallback((_) {
           if (mounted) _settleTray(open: false);
         });
@@ -433,6 +449,7 @@ class _HostedTabBarState extends State<HostedTabBar>
             // closes the tray.
             _TrayBarrier(
               open: _trayOpen,
+              opening: _trayOpening,
               onTap: () => _settleTray(open: false),
             ),
             for (final entry in _built)
@@ -2048,7 +2065,7 @@ class _TrayExpansion implements AdaptiveTrayExpansion {
   Animation<double> get value => _state._trayOpen;
 
   @override
-  bool get isOpen => _state._trayOpening;
+  bool get isOpen => _state._trayOpening.value;
 
   @override
   void open() => _state._settleTray(open: true);
@@ -2062,27 +2079,40 @@ class _TrayExpansion implements AdaptiveTrayExpansion {
 
 /// The page dimmed while the tray is open ([open] above 0), as under a
 /// sheet; a tap on it closes the tray. Nothing, and no touches, while it is
-/// closed.
+/// closed. It takes touches only while the tray is open or on its way to be
+/// ([opening]): as a route's barrier does once its route goes, a closing
+/// tray leaves the page to take them.
 class _TrayBarrier extends StatelessWidget {
-  const _TrayBarrier({required this.open, required this.onTap});
+  const _TrayBarrier({
+    required this.open,
+    required this.opening,
+    required this.onTap,
+  });
 
   final Animation<double> open;
+  final ValueListenable<bool> opening;
   final VoidCallback onTap;
 
   /// The dim of a sheet's barrier.
   static const _color = Color(0x33000000);
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: open,
-    builder: (context, _) {
-      final t = open.value.clamp(0.0, 1.0);
-      if (t <= 0) return const SizedBox.shrink();
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: ColoredBox(color: _color.withValues(alpha: _color.a * t)),
-      );
-    },
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: opening,
+    builder: (context, opening, _) => AnimatedBuilder(
+      animation: open,
+      builder: (context, _) {
+        final t = open.value.clamp(0.0, 1.0);
+        if (t <= 0) return const SizedBox.shrink();
+        return IgnorePointer(
+          ignoring: !opening,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: ColoredBox(color: _color.withValues(alpha: _color.a * t)),
+          ),
+        );
+      },
+    ),
   );
 }
