@@ -532,19 +532,24 @@ extension iOS26ToolbarPlatformView: ChromeHitRegion, ChromeDimmable {
         return nil
     }
 
+    /// The glass an item or a group of items floats on is the first view down
+    /// from the bar that holds a button and is narrower than the bar: the
+    /// views as wide as it, or without a size, only hold the items. UIKit's
+    /// classes for them differ from one iOS version to the next.
     func chromeDimPath() -> UIBezierPath? {
         let path = UIBezierPath()
+        let barWidth = navigationBar.bounds.width
         func collect(_ view: UIView) {
             for subview in view.subviews where !subview.isHidden && subview.alpha > 0.01 {
-                if Self.isGlass(subview) {
-                    let rect = subview.convert(subview.bounds, to: containerView)
+                let rect = subview.convert(subview.bounds, to: containerView)
+                if rect.isEmpty || rect.width >= barWidth - 0.5 {
+                    collect(subview)
+                } else if Self.holdsButton(subview) {
                     path.append(UIBezierPath(
                         roundedRect: rect,
                         cornerRadius: min(rect.width, rect.height) / 2
                     ))
-                    continue
                 }
-                collect(subview)
             }
         }
         collect(navigationBar)
@@ -556,12 +561,7 @@ extension iOS26ToolbarPlatformView: ChromeHitRegion, ChromeDimmable {
         String(describing: type(of: view)).contains("Button")
     }
 
-    /// The glass an item or a group of items floats on, or an item's button
-    /// where there is none; not the container of all the platters, which is as
-    /// wide as the bar and has no glass of its own.
-    private static func isGlass(_ view: UIView) -> Bool {
-        let name = String(describing: type(of: view))
-        if name.contains("Container") { return false }
-        return name.contains("Platter") || name.contains("ButtonBarButton")
+    private static func holdsButton(_ view: UIView) -> Bool {
+        view is UIControl || isButton(view) || view.subviews.contains { holdsButton($0) }
     }
 }
