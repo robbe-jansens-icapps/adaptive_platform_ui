@@ -557,9 +557,11 @@ extension iOS26ToolbarPlatformView: ChromeHitRegion, ChromeDimmable {
     }
 
     /// The glass an item or a group of items floats on, or an item's button
-    /// where there is none.
+    /// where there is none; not the container of all the platters, which is as
+    /// wide as the bar and has no glass of its own.
     private static func isGlass(_ view: UIView) -> Bool {
         let name = String(describing: type(of: view))
+        if name.contains("Container") { return false }
         return name.contains("Platter") || name.contains("ButtonBarButton")
     }
 }
