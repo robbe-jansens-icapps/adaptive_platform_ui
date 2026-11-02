@@ -363,6 +363,42 @@ void main() {
     expect(controller.extent.value, closeTo(collapsedExtent(), 0.5));
   });
 
+  testWidgets('the controller tells how far up a detent brings it once it has '
+      'measured itself, and its listeners when that changes', (tester) async {
+    usePhone(tester);
+    final controller = AdaptiveSheetController();
+    expect(controller.extentOf(AdaptiveSheetDetent.collapsed), isNull);
+
+    await tester.pumpWidget(sheetApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(controller.detent, AdaptiveSheetDetent.fitContent);
+    expect(
+      controller.extentOf(AdaptiveSheetDetent.collapsed),
+      closeTo(collapsedExtent(), 0.5),
+    );
+    expect(
+      controller.extentOf(AdaptiveSheetDetent.fitContent),
+      closeTo(fitExtent(200), 0.5),
+    );
+
+    // Such as a tab bar coming in below it after the first frame.
+    var told = 0;
+    controller.addListener(() => told++);
+    tester.view.padding = const FakeViewPadding(top: 60, bottom: 83);
+    tester.view.viewPadding = const FakeViewPadding(top: 60, bottom: 83);
+    await tester.pumpAndSettle();
+    expect(told, greaterThan(0));
+    expect(
+      controller.extentOf(AdaptiveSheetDetent.collapsed),
+      closeTo(collapsedExtent() + 83 - 34, 0.5),
+    );
+
+    tester.view.physicalSize = const Size(951, 669);
+    await tester.pumpAndSettle();
+    expect(controller.isSidePanel, isTrue);
+    expect(controller.extentOf(AdaptiveSheetDetent.collapsed), isNull);
+  });
+
   testWidgets('follows new content while resting at its size', (tester) async {
     usePhone(tester);
     await tester.pumpWidget(sheetApp());

@@ -48,6 +48,21 @@ class AdaptiveSheetController extends ChangeNotifier {
   /// Whether the sheet is shown as a side panel right now.
   bool get isSidePanel => _sheet?._metrics?.sidePanel ?? false;
 
+  /// How far up from the bottom of its area the sheet comes at [detent], as
+  /// it is laid out now: null until it has measured itself, and as a side
+  /// panel. Listeners hear when it may have changed, as the sheet measures
+  /// itself again or its area changes. A map can keep its padding at the
+  /// collapsed detent, so the sheet covers Google's logo only as it comes up
+  /// further.
+  double? extentOf(AdaptiveSheetDetent detent) {
+    final sheet = _sheet;
+    final m = sheet?._metrics;
+    if (sheet == null || m == null || m.sidePanel || !sheet._measured) {
+      return null;
+    }
+    return sheet._extentOf(detent, m);
+  }
+
   /// Springs the sheet to [detent], which need not be one of its detents.
   Future<void> animateTo(AdaptiveSheetDetent detent) =>
       _sheet?._settleTo(detent) ?? Future<void>.value();
@@ -64,6 +79,8 @@ class AdaptiveSheetController extends ChangeNotifier {
   }
 
   void _onDetentChanged() => notifyListeners();
+
+  void _onExtentsChanged() => notifyListeners();
 }
 
 /// The radius of the top corners of a sheet that floats over its page with
@@ -862,6 +879,7 @@ class _AdaptiveSheetState extends State<AdaptiveSheet>
   /// sheet, later ones follow the detent it rests at.
   void _onExtentsChanged() {
     if (!mounted || !_measured || _metrics == null || _dragging) return;
+    _afterBuild(() => widget.controller?._onExtentsChanged());
     final target = _target;
     if (target == null) {
       _settleTo(widget.initialDetent);
