@@ -42,6 +42,8 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
     /// Over the fill: the image of the content, over the Flutter view.
     private let contentImageView = UIImageView()
     private let channel: FlutterMethodChannel
+    private var corners: String?
+    private var cornerRadius: CGFloat = 0
 
     init(
         frame: CGRect,
@@ -104,6 +106,8 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
         container.overrideUserInterfaceStyle = isDark ? .dark : .light
 
         let radius = (params["cornerRadius"] as? NSNumber)?.doubleValue ?? 0
+        corners = params["corners"] as? String
+        cornerRadius = radius
         let tint = (params["tint"] as? NSNumber).map { color(argb: $0.intValue) }
         let fill = (params["fill"] as? NSNumber).map { color(argb: $0.intValue) }
         fillView.backgroundColor = fill
@@ -149,5 +153,19 @@ class iOS26GlassSurfaceView: NSObject, FlutterPlatformView {
             blue: CGFloat(argb & 0xFF) / 255,
             alpha: CGFloat((argb >> 24) & 0xFF) / 255
         )
+    }
+}
+
+/// Over the Flutter view, a dialog's barrier dims the glass in its shape.
+extension iOS26GlassSurfaceView: ChromeDimmable {
+    func chromeDimPath() -> UIBezierPath? {
+        let bounds = container.bounds
+        var radius = cornerRadius
+        if corners == "capsule" {
+            radius = min(bounds.width, bounds.height) / 2
+        } else if corners == "concentric", #available(iOS 26.0, *) {
+            radius = max(radius, effectView.effectiveRadius(corner: .topLeft))
+        }
+        return UIBezierPath(roundedRect: bounds, cornerRadius: radius)
     }
 }
