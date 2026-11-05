@@ -43,7 +43,8 @@ class AdaptiveAlertDialog {
   /// Shows a standard adaptive alert dialog
   ///
   /// The [icon] parameter accepts:
-  /// - iOS 26+: String (SF Symbol name, e.g., "checkmark.circle.fill")
+  /// - iOS 26+: not shown: the native alert has no public API for content
+  ///   of its own. A [oneTimeCode] shows in its message.
   /// - iOS <26: IconData (e.g., CupertinoIcons.checkmark_alt_circle_fill)
   /// - Android: IconData (e.g., Icons.check_circle)
   ///

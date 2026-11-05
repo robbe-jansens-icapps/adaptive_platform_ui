@@ -82,16 +82,17 @@ class IOS26AlertDialog extends StatefulWidget {
   /// List of actions for the alert
   final List<AlertAction> actions;
 
-  /// Optional SF Symbol icon name to display in the alert
+  /// Optional SF Symbol icon name. Not shown: `UIAlertController` has no
+  /// public API for content of its own.
   final String? icon;
 
-  /// Optional icon size
+  /// Optional icon size, see [icon].
   final double? iconSize;
 
-  /// Optional icon color
+  /// Optional icon color, see [icon].
   final Color? iconColor;
 
-  /// Optional 6-digit one-time code to display
+  /// Optional 6-digit one-time code, shown below the message.
   final String? oneTimeCode;
 
   /// Optional text input configuration

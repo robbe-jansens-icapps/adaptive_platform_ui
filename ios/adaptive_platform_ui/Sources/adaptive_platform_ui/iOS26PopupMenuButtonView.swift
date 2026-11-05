@@ -113,11 +113,7 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
         // Build menu
         rebuildMenu()
 
-        if #available(iOS 14.0, *) {
-            button.showsMenuAsPrimaryAction = !triggerOnLongPress
-        } else {
-            button.addTarget(self, action: #selector(onButtonPressedLegacy(_:)), for: .touchUpInside)
-        }
+        button.showsMenuAsPrimaryAction = !triggerOnLongPress
 
         channel.setMethodCallHandler { [weak self] call, result in
             guard let self = self else { result(nil); return }
@@ -261,55 +257,6 @@ class iOS26PopupMenuButtonView: NSObject, FlutterPlatformView {
             }
             button.menu = UIMenu(title: "", children: children)
         }
-    }
-
-    @objc private func onButtonPressedLegacy(_ sender: UIButton) {
-        // iOS 13 fallback: use action sheet
-        let ac = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        var selectableIndex = 0
-        let count = max(labels.count, max(symbols.count, dividers.count))
-
-        for i in 0..<count {
-            if i < dividers.count, dividers[i] {
-                let fake = UIAlertAction(title: "—", style: .default, handler: nil)
-                fake.isEnabled = false
-                ac.addAction(fake)
-                continue
-            }
-
-            let title = i < labels.count ? labels[i] : ""
-            let isDestructiveItem = i < isDestructive.count ? isDestructive[i] : false
-            let currentSelectableIndex = selectableIndex
-            selectableIndex += 1
-
-            let action = UIAlertAction(title: title, style: isDestructiveItem ? .destructive : .default) { [weak self] _ in
-                self?.channel.invokeMethod("itemSelected", arguments: ["index": currentSelectableIndex])
-            }
-
-            if i < enabled.count { action.isEnabled = enabled[i] }
-
-            // Optional: set image where supported
-            if i < symbols.count, !symbols[i].isEmpty, let img = UIImage(systemName: symbols[i]) {
-                if #available(iOS 13.0, *) { action.setValue(img, forKey: "image") }
-            }
-            ac.addAction(action)
-        }
-        ac.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-
-        if let pop = ac.popoverPresentationController {
-            pop.sourceView = sender
-            pop.sourceRect = sender.bounds
-        }
-        parentViewController(for: container)?.present(ac, animated: true, completion: nil)
-    }
-
-    private func parentViewController(for view: UIView) -> UIViewController? {
-        var responder: UIResponder? = view
-        while let r = responder {
-            if let vc = r as? UIViewController { return vc }
-            responder = r.next
-        }
-        return nil
     }
 
     private func applyButtonStyle(buttonStyle: String, round: Bool) {

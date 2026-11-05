@@ -89,9 +89,6 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
         var actionTitles: [String] = []
         var actionStyles: [String] = []
         var actionEnabled: [Bool] = []
-        var iconName: String? = nil
-        var iconSize: CGFloat? = nil
-        var iconColor: UIColor? = nil
         var oneTimeCode: String? = nil
         var isDark: Bool = false
         var tint: UIColor? = nil
@@ -108,9 +105,6 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
             if let at = dict["actionTitles"] as? [String] { actionTitles = at }
             if let ast = dict["actionStyles"] as? [String] { actionStyles = ast }
             if let ae = dict["actionEnabled"] as? [Bool] { actionEnabled = ae }
-            if let iconNameValue = dict["iconName"] as? String { iconName = iconNameValue }
-            if let iconSizeValue = dict["iconSize"] as? NSNumber { iconSize = CGFloat(truncating: iconSizeValue) }
-            if let ic = dict["iconColor"] as? NSNumber { iconColor = UIColor(argb: ic.intValue) }
             if let otc = dict["oneTimeCode"] as? String { oneTimeCode = otc }
             if let v = dict["isDark"] as? NSNumber { isDark = v.boolValue }
             if let t = dict["tint"] as? NSNumber { tint = UIColor(argb: t.intValue) }
@@ -132,9 +126,6 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
             actionTitles: actionTitles,
             actionStyles: actionStyles,
             actionEnabled: actionEnabled,
-            iconName: iconName,
-            iconSize: iconSize,
-            iconColor: iconColor,
             oneTimeCode: oneTimeCode,
             isDark: isDark,
             tint: tint,
@@ -158,9 +149,6 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
         actionTitles: [String],
         actionStyles: [String],
         actionEnabled: [Bool],
-        iconName: String?,
-        iconSize: CGFloat?,
-        iconColor: UIColor?,
         oneTimeCode: String?,
         isDark: Bool,
         tint: UIColor?,
@@ -208,167 +196,10 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
             }
         }
 
-        // Custom content with OTP code
+        // UIKit has no public API for content of one's own in an alert: a
+        // one-time code shows in the message, and an icon not at all.
         if let otpCode = oneTimeCode {
-            let contentViewController = UIViewController()
-            var constraints: [NSLayoutConstraint] = []
-            var currentTopAnchor: NSLayoutYAxisAnchor = contentViewController.view.topAnchor
-            var currentTopConstant: CGFloat = 16
-
-            // 1. Icon (if provided)
-            if let iconName = iconName, let image = UIImage(systemName: iconName) {
-                var finalImage = image
-
-                // Apply icon styling
-                if let size = iconSize {
-                    let config = UIImage.SymbolConfiguration(pointSize: size)
-                    finalImage = finalImage.withConfiguration(config)
-                }
-                if let color = iconColor {
-                    finalImage = finalImage.withTintColor(color, renderingMode: .alwaysOriginal)
-                }
-
-                let imageView = UIImageView(image: finalImage)
-                imageView.translatesAutoresizingMaskIntoConstraints = false
-                imageView.contentMode = .scaleAspectFit
-                contentViewController.view.addSubview(imageView)
-
-                constraints.append(contentsOf: [
-                    imageView.topAnchor.constraint(equalTo: currentTopAnchor, constant: currentTopConstant),
-                    imageView.centerXAnchor.constraint(equalTo: contentViewController.view.centerXAnchor),
-                    imageView.widthAnchor.constraint(equalToConstant: iconSize ?? 32),
-                    imageView.heightAnchor.constraint(equalToConstant: iconSize ?? 32)
-                ])
-
-                currentTopAnchor = imageView.bottomAnchor
-                currentTopConstant = 12
-            }
-
-            // 2. Title
-            let titleLabel = UILabel()
-            titleLabel.text = title
-            titleLabel.font = UIFont.boldSystemFont(ofSize: 17)
-            titleLabel.textColor = .label
-            titleLabel.textAlignment = .center
-            titleLabel.numberOfLines = 0
-            titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            contentViewController.view.addSubview(titleLabel)
-
-            constraints.append(contentsOf: [
-                titleLabel.topAnchor.constraint(equalTo: currentTopAnchor, constant: currentTopConstant),
-                titleLabel.leadingAnchor.constraint(equalTo: contentViewController.view.leadingAnchor, constant: 20),
-                titleLabel.trailingAnchor.constraint(equalTo: contentViewController.view.trailingAnchor, constant: -20)
-            ])
-
-            currentTopAnchor = titleLabel.bottomAnchor
-            currentTopConstant = 8
-
-            // 3. Description (if provided)
-            if let messageText = message, !messageText.isEmpty {
-                let messageLabel = UILabel()
-                messageLabel.text = messageText
-                messageLabel.font = UIFont.systemFont(ofSize: 13)
-                messageLabel.textColor = .secondaryLabel
-                messageLabel.textAlignment = .center
-                messageLabel.numberOfLines = 0
-                messageLabel.translatesAutoresizingMaskIntoConstraints = false
-                contentViewController.view.addSubview(messageLabel)
-
-                constraints.append(contentsOf: [
-                    messageLabel.topAnchor.constraint(equalTo: currentTopAnchor, constant: currentTopConstant),
-                    messageLabel.leadingAnchor.constraint(equalTo: contentViewController.view.leadingAnchor, constant: 20),
-                    messageLabel.trailingAnchor.constraint(equalTo: contentViewController.view.trailingAnchor, constant: -20)
-                ])
-
-                currentTopAnchor = messageLabel.bottomAnchor
-                currentTopConstant = 12
-            }
-
-            // 4. OTP Code
-            let otpLabel = UILabel()
-            otpLabel.text = otpCode
-            otpLabel.font = UIFont.monospacedSystemFont(ofSize: 28, weight: .bold)
-            otpLabel.textColor = .label
-            otpLabel.textAlignment = .center
-            otpLabel.layer.cornerRadius = 8
-            otpLabel.layer.masksToBounds = true
-            otpLabel.translatesAutoresizingMaskIntoConstraints = false
-            contentViewController.view.addSubview(otpLabel)
-
-            constraints.append(contentsOf: [
-                otpLabel.topAnchor.constraint(equalTo: currentTopAnchor, constant: currentTopConstant),
-                otpLabel.centerXAnchor.constraint(equalTo: contentViewController.view.centerXAnchor),
-                otpLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
-                otpLabel.heightAnchor.constraint(equalToConstant: 44),
-                otpLabel.bottomAnchor.constraint(equalTo: contentViewController.view.bottomAnchor, constant: -8),
-                contentViewController.view.widthAnchor.constraint(equalToConstant: 280),
-                contentViewController.view.heightAnchor.constraint(greaterThanOrEqualToConstant: 80)
-            ])
-
-            NSLayoutConstraint.activate(constraints)
-
-            // Clear alert's title and message
-            alert.title = nil
-            alert.message = nil
-            alert.setValue(contentViewController, forKey: "contentViewController")
-
-        } else if let iconName = iconName, let image = UIImage(systemName: iconName) {
-            // Icon without OTP
-            var finalImage = image
-
-            if let size = iconSize {
-                let config = UIImage.SymbolConfiguration(pointSize: size)
-                finalImage = finalImage.withConfiguration(config)
-            }
-            if let color = iconColor {
-                finalImage = finalImage.withTintColor(color, renderingMode: .alwaysOriginal)
-            }
-
-            let contentViewController = UIViewController()
-            let imageView = UIImageView(image: finalImage)
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.contentMode = .scaleAspectFit
-            contentViewController.view.addSubview(imageView)
-
-            if let messageText = message, !messageText.isEmpty {
-                let messageLabel = UILabel()
-                messageLabel.text = messageText
-                messageLabel.numberOfLines = 0
-                messageLabel.textAlignment = .center
-                messageLabel.font = UIFont.systemFont(ofSize: 13)
-                messageLabel.textColor = .secondaryLabel
-                messageLabel.translatesAutoresizingMaskIntoConstraints = false
-                contentViewController.view.addSubview(messageLabel)
-
-                NSLayoutConstraint.activate([
-                    imageView.topAnchor.constraint(equalTo: contentViewController.view.topAnchor, constant: 8),
-                    imageView.centerXAnchor.constraint(equalTo: contentViewController.view.centerXAnchor),
-                    imageView.widthAnchor.constraint(equalToConstant: iconSize ?? 24),
-                    imageView.heightAnchor.constraint(equalToConstant: iconSize ?? 24),
-
-                    messageLabel.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 8),
-                    messageLabel.leadingAnchor.constraint(equalTo: contentViewController.view.leadingAnchor, constant: 16),
-                    messageLabel.trailingAnchor.constraint(equalTo: contentViewController.view.trailingAnchor, constant: -16),
-                    messageLabel.bottomAnchor.constraint(equalTo: contentViewController.view.bottomAnchor, constant: -4),
-
-                    contentViewController.view.widthAnchor.constraint(equalToConstant: 250),
-                    contentViewController.view.heightAnchor.constraint(greaterThanOrEqualToConstant: 60)
-                ])
-
-                alert.message = nil
-            } else {
-                NSLayoutConstraint.activate([
-                    imageView.centerXAnchor.constraint(equalTo: contentViewController.view.centerXAnchor),
-                    imageView.centerYAnchor.constraint(equalTo: contentViewController.view.centerYAnchor),
-                    imageView.widthAnchor.constraint(equalToConstant: iconSize ?? 24),
-                    imageView.heightAnchor.constraint(equalToConstant: iconSize ?? 24),
-
-                    contentViewController.view.widthAnchor.constraint(equalToConstant: 250),
-                    contentViewController.view.heightAnchor.constraint(equalToConstant: 60)
-                ])
-            }
-
-            alert.setValue(contentViewController, forKey: "contentViewController")
+            alert.message = [message, otpCode].compactMap { $0 }.joined(separator: "\n\n")
         }
 
         // Add text field if placeholder is provided
@@ -409,46 +240,9 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
             let style = index < actionStyles.count ? actionStyles[index] : "defaultAction"
             let enabled = index < actionEnabled.count ? actionEnabled[index] : true
 
-            let isDarkMode: Bool
-            if #available(iOS 13.0, *) {
-                isDarkMode = alert.traitCollection.userInterfaceStyle == .dark
-            } else {
-                isDarkMode = false
-            }
-
-            let alertActionStyle: UIAlertAction.Style
-            var textColor: UIColor?
-            var textFont: UIFont?
-
-            switch style {
-            case "cancel":
-                alertActionStyle = .default
-                textColor = nil
-            case "destructive":
-                alertActionStyle = .destructive
-                textColor = nil
-            case "primary":
-                alertActionStyle = .default
-                textColor = nil  // Don't set color - let preferred action make it white
-                textFont = .boldSystemFont(ofSize: 17)
-            case "secondary":
-                alertActionStyle = .default
-                textColor = isDarkMode ? UIColor.secondaryLabel.withAlphaComponent(0.8) : .secondaryLabel
-            case "success":
-                alertActionStyle = .default
-                textColor = isDarkMode ? UIColor.systemGreen.withAlphaComponent(0.9) : .systemGreen
-            case "warning":
-                alertActionStyle = .default
-                textColor = isDarkMode ? UIColor.systemOrange.withAlphaComponent(0.9) : .systemOrange
-            case "info":
-                alertActionStyle = .default
-                textColor = isDarkMode ? UIColor.systemBlue.withAlphaComponent(0.8) : .systemBlue
-            case "disabled":
-                alertActionStyle = .default
-                textColor = isDarkMode ? UIColor.tertiaryLabel.withAlphaComponent(0.6) : .tertiaryLabel
-            default:
-                alertActionStyle = .default
-            }
+            // UIKit has no public API for an action's own colour or font: the
+            // preferred action is bold, a destructive one red, the rest tinted.
+            let alertActionStyle: UIAlertAction.Style = style == "destructive" ? .destructive : .default
 
             let action = UIAlertAction(title: actionTitle, style: alertActionStyle) { [weak self] _ in
                 guard let self = self, let alert = self.alertController else { return }
@@ -465,35 +259,6 @@ class iOS26AlertDialogView: NSObject, FlutterPlatformView {
                 }
 
                 self.channel.invokeMethod("actionPressed", arguments: arguments)
-            }
-
-            // Apply custom colors (but not for primary, which will be white as preferred action)
-            if let color = textColor, style != "destructive", style != "primary" {
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: color,
-                    .font: textFont ?? UIFont.systemFont(ofSize: 17)
-                ]
-                let attributedTitle = NSAttributedString(string: actionTitle, attributes: attributes)
-
-                if action.responds(to: Selector(("_setTitleTextColor:"))) {
-                    action.setValue(color, forKey: "_titleTextColor")
-                }
-
-                if action.responds(to: Selector(("setAttributedTitle:"))) {
-                    action.setValue(attributedTitle, forKey: "attributedTitle")
-                }
-            }
-
-            // Apply bold font for primary action
-            if style == "primary", let font = textFont {
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: font
-                ]
-                let attributedTitle = NSAttributedString(string: actionTitle, attributes: attributes)
-
-                if action.responds(to: Selector(("setAttributedTitle:"))) {
-                    action.setValue(attributedTitle, forKey: "attributedTitle")
-                }
             }
 
             action.isEnabled = enabled && style != "disabled"
