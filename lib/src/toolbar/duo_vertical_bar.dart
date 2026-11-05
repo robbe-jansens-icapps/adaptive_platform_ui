@@ -12,6 +12,7 @@ import '../widgets/adaptive_popover.dart';
 import '../widgets/adaptive_scaffold.dart';
 import '../widgets/ios26/ios26_popup_menu_button.dart';
 import '../widgets/ios26/ios26_glass_capsule.dart';
+import '../widgets/ios26/ios26_system_tab_bar.dart';
 
 /// Width of the strip the vertical control bar lives in when the system
 /// reserves none: the leading pane in Split View, or a missing inset. Matches
@@ -558,23 +559,40 @@ class DuoVerticalBar extends StatelessWidget {
                 SizedBox(
                   width: IOS26GlassCapsule.width,
                   height: IOS26GlassCapsule.tabsHeight(tabs.length),
-                  child: IOS26GlassCapsule(
-                    items: [
-                      for (final tab in tabs)
-                        GlassCapsuleItem.fromDestination(tab),
-                    ],
-                    selectedIndex: tabBar!.selectedIndex ?? 0,
-                    inset: IOS26GlassCapsule.tabsInset,
-                    tint:
-                        tabBar!.selectedItemColor ??
-                        CupertinoTheme.of(context).primaryColor,
-                    onTap: (index) => tabBar!.onTap?.call(index),
-                  ),
+                  child: _nativeTabs(context, tabs),
                 ),
             ],
           );
         },
       ),
+    );
+  }
+
+  /// The tabs on the native path: iOS's own where it lays them out in this
+  /// place, the glass capsule otherwise.
+  Widget _nativeTabs(
+    BuildContext context,
+    List<AdaptiveNavigationDestination> tabs,
+  ) {
+    final bar = tabBar!;
+    final tint =
+        bar.selectedItemColor ?? CupertinoTheme.of(context).primaryColor;
+    final capsule = IOS26GlassCapsule(
+      items: [for (final tab in tabs) GlassCapsuleItem.fromDestination(tab)],
+      selectedIndex: bar.selectedIndex ?? 0,
+      inset: IOS26GlassCapsule.tabsInset,
+      tint: tint,
+      onTap: (index) => bar.onTap?.call(index),
+    );
+    if (!IOS26SystemTabBar.isAvailable || !IOS26SystemTabBar.canShow(tabs)) {
+      return capsule;
+    }
+    return IOS26SystemTabBar(
+      destinations: tabs,
+      selectedIndex: bar.selectedIndex ?? 0,
+      tint: tint,
+      onTap: (index) => bar.onTap?.call(index),
+      fallback: capsule,
     );
   }
 

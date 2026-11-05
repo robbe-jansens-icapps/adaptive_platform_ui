@@ -49,7 +49,7 @@ class iOS26TabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelegate {
     /// background (nil = system default red), [textColorARGB] the glyph color
     /// (nil = platform default). A transparent background + a colored glyph
     /// renders a clean dot (e.g. badgeText "●").
-    private static func applyBadge(to item: UITabBarItem, count: Int?, text: String?, colorARGB: Int?, textColorARGB: Int?) {
+    static func applyBadge(to item: UITabBarItem, count: Int?, text: String?, colorARGB: Int?, textColorARGB: Int?) {
         if (text ?? "").isEmpty, count == -1 {
             applyBadgeDot(to: item, colorARGB: colorARGB)
             return

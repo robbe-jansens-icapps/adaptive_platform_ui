@@ -320,6 +320,9 @@ public class AdaptivePlatformUiPlugin: NSObject, FlutterPlugin {
             "adaptive_platform_ui/ios26_tab_bar": ios26TabBarFactory,
             "adaptive_platform_ui/ios26_toolbar": ios26ToolbarFactory,
             "adaptive_platform_ui/ios26_glass_surface": ios26GlassSurfaceFactory,
+            // iPhone Duo: iOS's own tab bar in the vertical bar, over the
+            // Flutter view only (Dart: IOS26SystemTabBar)
+            "adaptive_platform_ui/ios26_system_tab_bar": iOS26SystemTabBarFactory(registrar: registrar),
         ])
 
         // iPhone Duo: where the system puts its vertical bar (iOS 27.1)
