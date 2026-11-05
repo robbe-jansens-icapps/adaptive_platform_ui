@@ -16,6 +16,24 @@ protocol ChromeDimmable: AnyObject {
     func chromeDimPath() -> UIBezierPath?
 }
 
+/// A native view hosted over the Flutter view that spans the whole Flutter
+/// view, where iOS places what it draws itself (a tab bar controller's bar),
+/// rather than taking its Flutter placeholder's size and place. The
+/// placeholder still decides whether it shows, its alpha, clip and touches;
+/// the view is told where it is, and a barrier dims it in the placeholder's
+/// capsule shape rather than over the whole Flutter view.
+protocol ChromeWindowAnchored: AnyObject {
+    /// Where the Flutter placeholder is, in the Flutter view's points, as of
+    /// the frame being shown; nil while it is hidden.
+    func chromePlaceholderChanged(_ frame: CGRect?)
+}
+
+/// A native view hosted over the Flutter view that has to let go of more than
+/// its view when its slot goes, such as a view controller it added.
+protocol ChromeRemovable: AnyObject {
+    func chromeWillRemove()
+}
+
 /// Native views shown over the Flutter view instead of inside it as platform
 /// views (Dart: AdaptiveNativeView with `chrome: true`).
 ///
@@ -330,6 +348,10 @@ private final class NativeChromeSlot {
     private(set) var z: Double = -1
     private(set) var interactive = false
 
+    /// For a `ChromeWindowAnchored` view: where its placeholder is, in the
+    /// root's points.
+    private var placeholder: CGRect?
+
     init(platformView: FlutterPlatformView) {
         self.platformView = platformView
         hosted = platformView.view()
@@ -345,6 +367,7 @@ private final class NativeChromeSlot {
     }
 
     func remove() {
+        (platformView as? ChromeRemovable)?.chromeWillRemove()
         clipView.removeFromSuperview()
     }
 
@@ -354,14 +377,17 @@ private final class NativeChromeSlot {
         _ values: UnsafeBufferPointer<Float64>, at offset: Int, in rootBounds: CGRect
     ) -> Bool {
         func value(_ index: Int) -> CGFloat { CGFloat(values[offset + index]) }
+        let anchored = platformView as? ChromeWindowAnchored
         let flags = Int(values[offset + 27])
         interactive = flags & NativeChromeHost.interactiveFlag != 0
         if flags & NativeChromeHost.hiddenFlag != 0 {
             clipView.isHidden = true
+            setPlaceholder(nil, of: anchored)
             return false
         }
 
-        let size = CGSize(width: value(1), height: value(2))
+        let placeholderSize = CGSize(width: value(1), height: value(2))
+        let size = anchored == nil ? placeholderSize : rootBounds.size
         if transformView.bounds.size != size {
             transformView.bounds = CGRect(origin: .zero, size: size)
         }
@@ -387,8 +413,14 @@ private final class NativeChromeSlot {
         clipView.frame = clip
         transformView.layer.position = .zero
         transformView.layer.transform = CATransform3DConcat(
-            matrix, CATransform3DMakeTranslation(-clip.minX, -clip.minY, 0)
+            anchored == nil ? matrix : CATransform3DIdentity,
+            CATransform3DMakeTranslation(-clip.minX, -clip.minY, 0)
         )
+        if anchored != nil {
+            let shown = Self.rect(CGRect(origin: .zero, size: placeholderSize), through: matrix)
+                .intersection(clip)
+            setPlaceholder(shown.isNull || shown.isEmpty ? nil : shown, of: anchored)
+        }
         clipView.alpha = value(19)
         applyDim(Int(values[offset + 28]))
         clipView.isHidden = false
@@ -408,9 +440,41 @@ private final class NativeChromeSlot {
         dimLayer.isHidden = false
         dimLayer.frame = transformView.bounds
         dimLayer.fillColor = UIColor(argb: argb).cgColor
+        let anchoredPath = platformView is ChromeWindowAnchored
+            ? placeholder.map { UIBezierPath(roundedRect: $0, cornerRadius: min($0.width, $0.height) / 2) }
+            : nil
         let path = (platformView as? ChromeDimmable)?.chromeDimPath()
+            ?? anchoredPath
             ?? UIBezierPath(rect: transformView.bounds)
         dimLayer.path = path.cgPath
+    }
+
+    private func setPlaceholder(_ frame: CGRect?, of anchored: ChromeWindowAnchored?) {
+        guard let anchored, frame != placeholder else { return }
+        placeholder = frame
+        anchored.chromePlaceholderChanged(frame)
+    }
+
+    /// The box `rect` takes once `matrix` moves it.
+    private static func rect(_ rect: CGRect, through matrix: CATransform3D) -> CGRect {
+        if CATransform3DIsAffine(matrix) {
+            return rect.applying(CATransform3DGetAffineTransform(matrix))
+        }
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY),
+        ].map { p -> CGPoint in
+            let w = p.x * matrix.m14 + p.y * matrix.m24 + matrix.m44
+            return CGPoint(
+                x: (p.x * matrix.m11 + p.y * matrix.m21 + matrix.m41) / w,
+                y: (p.x * matrix.m12 + p.y * matrix.m22 + matrix.m42) / w
+            )
+        }
+        let xs = corners.map(\.x), ys = corners.map(\.y)
+        return CGRect(
+            x: xs.min()!, y: ys.min()!,
+            width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!
+        )
     }
 }
 
