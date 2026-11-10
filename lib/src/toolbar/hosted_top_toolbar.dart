@@ -193,12 +193,17 @@ class HostedTopToolbar extends StatelessWidget {
   double get _toolbarHeight =>
       chrome?.metrics.toolbarHeight ?? kHostedToolbarHeight;
 
-  /// Room below the controls, down to the bottom edge of the backdrop: on the
-  /// native bar below the status bar, not in the iPhone Duo's top strip.
-  double _bottomPadding(BuildContext context) =>
-      chrome == null && !titleOnly && DuoTopStripScope.of(context) == null
-      ? kHostedToolbarBottomPadding
-      : 0;
+  /// Room below the native bar's controls, down to the bottom edge of the
+  /// backdrop. In the iPhone Duo's top strip that edge is the strip's own
+  /// where the strip reaches further down.
+  double _bottomPadding(BuildContext context) {
+    if (chrome != null || titleOnly) return 0;
+    final strip = DuoTopStripScope.of(context);
+    return strip == null
+        ? kHostedToolbarBottomPadding
+        : strip.barEdge(room: kHostedToolbarBottomPadding) -
+              DuoTopStrip.barBottom;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -122,6 +122,16 @@ void main() {
       const strip = DuoTopStrip(height: 40);
       expect(strip.overhang, DuoTopStrip.barBottom - 40);
     });
+
+    test('a bar ends at the strip\'s own edge, or below it with the room it '
+        'keeps under its controls', () {
+      expect(const DuoTopStrip(height: 84).barEdge(room: 8), 84);
+      expect(
+        const DuoTopStrip(height: 62).barEdge(room: 8),
+        DuoTopStrip.barBottom + 8,
+      );
+      expect(const DuoTopStrip(height: 62).barEdge(), DuoTopStrip.barBottom);
+    });
   });
 
   group('in the top strip', () {
@@ -194,8 +204,40 @@ void main() {
         tester.getRect(inBar(find.byIcon(Icons.share))).right,
         lessThanOrEqualTo(cluster.left),
       );
-      // Nothing to clear below the strip: the bar is in it.
+      // Nothing to clear below the strip: the bar is in it, and its backdrop
+      // ends where the page starts.
       expect(padding!.top, 84);
+      expect(
+        tester.getRect(inBar(find.byType(AdaptiveBarBackdrop))).bottom,
+        84,
+      );
+    });
+
+    testWidgets('a strip that ends at the bar\'s controls leaves the room '
+        'below them that the bar has on any iPhone', (tester) async {
+      useInnerPortrait(tester);
+      const padding = FakeViewPadding(top: 62, bottom: 20);
+      tester.view.padding = padding;
+      tester.view.viewPadding = padding;
+      EdgeInsets? body;
+      await tester.pumpWidget(hosted(page('Home')));
+      await tester.pump();
+      root.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => page('About', body: (value) => body = value),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final back = tester.getRect(inBar(find.byType(AdaptiveButton)));
+      expect(back.center.dy, 48);
+      const edge = DuoTopStrip.barBottom + kHostedToolbarBottomPadding;
+      expect(edge - back.bottom, kHostedToolbarBottomPadding);
+      expect(
+        tester.getRect(inBar(find.byType(AdaptiveBarBackdrop))).bottom,
+        edge,
+      );
+      expect(body!.top, edge);
     });
 
     testWidgets('a page on an ordinary iPhone keeps the bar below the status '

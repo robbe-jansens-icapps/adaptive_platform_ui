@@ -42,8 +42,13 @@ class DuoTopStrip {
 
   static const double barBottom = barTop + kDuoTopStripBarHeight;
 
+  /// Bottom edge of a bar in the strip that keeps [room] below its controls:
+  /// the strip's own edge, or further down where the strip is shorter. The
+  /// bar's backdrop ends there and the page starts there.
+  double barEdge({double room = 0}) => math.max(height, barBottom + room);
+
   /// How far the bar reaches below the strip, which the page's content clears.
-  double get overhang => math.max(0, barBottom - height);
+  double get overhang => barEdge() - height;
 
   /// This strip over a part of the window that reaches only one of its sides,
   /// such as a column of a split view: the cluster at the other side is not

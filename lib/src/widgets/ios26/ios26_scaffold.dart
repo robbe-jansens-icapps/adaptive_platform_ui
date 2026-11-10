@@ -478,17 +478,17 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
     // strip added here was never in it.
     final consumed = addsStrip ? 0.0 : trailingInset;
     if (showTopToolbar || trailingInset > 0) {
+      // The host's bar keeps some room below its controls.
+      final room = (chrome?.hostsToolbar ?? false)
+          ? kHostedToolbarBottomPadding
+          : 0.0;
       final topInset = !showTopToolbar
           ? 0.0
           : duoVerticalPose
           ? kDuoTitleBandHeight
           : strip != null
-          ? strip.overhang
-          // The host's bar keeps some room below its controls.
-          : kToolbarContentHeight +
-                ((chrome?.hostsToolbar ?? false)
-                    ? kHostedToolbarBottomPadding
-                    : 0);
+          ? strip.barEdge(room: room) - strip.height
+          : kToolbarContentHeight + room;
       final page = bodyContent;
       // A page that keeps its content clear of the strip itself lets its
       // background run under the bar: the strip stays in its padding.
