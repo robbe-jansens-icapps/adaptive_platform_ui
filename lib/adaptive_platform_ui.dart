@@ -66,6 +66,7 @@ export 'src/toolbar/duo_vertical_bar.dart'
         DuoPose,
         DuoPoseScope,
         DuoTitleBackdrop,
+        DuoTitleBandTransition,
         kDuoBarBottomMargin,
         kDuoBarEdgeMargin,
         kDuoBarGroupSpacing,

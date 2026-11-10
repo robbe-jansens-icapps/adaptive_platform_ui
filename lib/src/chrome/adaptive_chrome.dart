@@ -612,6 +612,35 @@ abstract final class AdaptiveScrollEdge {
   }
 }
 
+/// How far the bar along the top of a page is shown: 1 at rest, down to 0
+/// once it has moved out of the way while the page scrolls on, as the iPhone
+/// Duo's title band does ([AdaptiveAppBar.hidesOnScroll]). Every
+/// [AdaptiveScaffold] provides it, and it stays 1 wherever the bar stays.
+///
+/// What a page pins below its bar leaves and comes back with the bar:
+/// [AdaptiveSafeAreaBar] does so itself; anything else follows [of], with
+/// [pinnedTop] for what is pinned in a scroll view.
+class AdaptiveTopBarVisibility extends InheritedWidget {
+  const AdaptiveTopBarVisibility({super.key, required this.shown, required super.child});
+
+  final ValueListenable<double> shown;
+
+  /// How far the bar of the nearest page is shown; always 1 without one.
+  static ValueListenable<double> of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AdaptiveTopBarVisibility>()?.shown ?? const AlwaysStoppedListenable<double>(1);
+
+  /// Where the top of something [extent] tall, pinned [top] down the page
+  /// below the bar, sits while the bar is [shown] this far: at [top] with
+  /// the bar there, and just above the page's top edge once the bar is gone,
+  /// so that it leaves and returns with the bar and content that reaches the
+  /// top meanwhile scrolls on past it.
+  static double pinnedTop(double shown, {required double top, required double extent}) =>
+      top - (1 - shown.clamp(0.0, 1.0)) * (top + extent);
+
+  @override
+  bool updateShouldNotify(AdaptiveTopBarVisibility oldWidget) => shown != oldWidget.shown;
+}
+
 /// The room between a custom bar's title and the controls beside it. A
 /// title with no control beside it keeps to the bar's margin instead, in line
 /// with the page's content.

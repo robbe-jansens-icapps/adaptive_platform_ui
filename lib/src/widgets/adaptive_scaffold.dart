@@ -875,7 +875,10 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
 
   @override
   Widget build(BuildContext context) {
-    final page = _buildPage(context);
+    final page = AdaptiveTopBarVisibility(
+      shown: _titleBandShown,
+      child: _buildPage(context),
+    );
     final bg = widget.backgroundColor;
     if (bg == null || bg.a < 0.5) return page;
     // A page that sets its own background keeps the status bar legible
@@ -946,6 +949,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         backdropColor: widget.appBar?.backdropColor,
         showsBackdrop: widget.appBar?.showsBackdrop ?? true,
         scrollEdge: _scrollEdge,
+        titleBandShown: _titleBandShown,
         useHeroBackButton: widget.useHeroBackButton,
         // In a column of a split view the page draws its own bar, as told
         // by the column's chrome.
@@ -965,8 +969,12 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
         );
       }
       final hosted = _usesFixedToolbar(context);
+      final inColumn = AdaptiveSplitView.isInColumn(context);
+      // The iPhone Duo's title band moves out of the way as the page scrolls
+      // on, the one the host draws and the one a page in a column of a split
+      // view draws itself.
       _titleBandFollows(
-        hosted &&
+        (hosted || inColumn) &&
             DuoPoseScope.of(context) != null &&
             (widget.appBar?.hidesOnScroll ?? true) &&
             (widget.appBar?.title != null ||
@@ -975,7 +983,7 @@ class _AdaptiveScaffoldState extends State<AdaptiveScaffold>
       // The fixed toolbar's background comes in as the content scrolls under
       // it, and so does that of the title band a page in a column of a split
       // view draws itself on the iPhone Duo.
-      if (hosted || AdaptiveSplitView.isInColumn(context)) {
+      if (hosted || inColumn) {
         scaffold = NotificationListener<Notification>(
           onNotification: _trackScrollEdge,
           child: scaffold,

@@ -133,9 +133,9 @@ class AdaptiveAppBar {
   final bool showsBackdrop;
 
   /// Whether the bar moves out of the way while the page scrolls on, where it
-  /// does: the iPhone Duo's title band. A page that docks part of its own
-  /// header under the bar keeps it, as moving it would leave a gap above
-  /// what is docked.
+  /// does: the iPhone Duo's title band. What a page pins below the bar goes
+  /// with it ([AdaptiveTopBarVisibility]); a page whose own header cannot
+  /// follow keeps the bar, as moving it would leave a gap above that header.
   final bool hidesOnScroll;
 
   /// Whether the bar's background ends in a hairline once content scrolls

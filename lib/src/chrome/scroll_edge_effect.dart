@@ -160,8 +160,7 @@ class _AdaptiveSafeAreaBarState extends State<AdaptiveSafeAreaBar> {
   @override
   Widget build(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<_RegionScope>();
-    final visibility =
-        scope?.region.visibility ?? const AlwaysStoppedListenable<double>(1);
+    final visibility = AdaptiveTopBarVisibility.of(context);
     final top = MediaQuery.paddingOf(context).top;
     return Stack(
       fit: StackFit.expand,

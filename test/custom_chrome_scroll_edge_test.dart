@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
-import 'package:adaptive_platform_ui/src/toolbar/duo_vertical_bar.dart'
-    show DuoTitleBandTransition;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

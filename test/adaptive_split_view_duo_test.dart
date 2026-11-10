@@ -121,8 +121,9 @@ void main() {
   });
 
   testWidgets('in the iPhone Duo vertical bar pose the title bands of the '
-      'pages in the columns have no background until their content scrolls '
-      'under them, as the fixed toolbar\'s', (tester) async {
+      'pages in the columns move out of the way as their own page scrolls on, '
+      'and come back with a background over the content under them, as the '
+      'fixed toolbar\'s', (tester) async {
     PlatformInfo.debugPlatformOverride = TargetPlatform.iOS;
     PlatformInfo.debugIOSVersionOverride = 26;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -182,11 +183,33 @@ void main() {
     expect(backdropOf('Support'), findsNothing);
     expect(backdropOf('Detail'), findsNothing);
 
+    double bandShownOf(String name) => tester
+        .widget<DuoTitleBandTransition>(
+          find.ancestor(
+            of: find.text(name),
+            matching: find.byType(DuoTitleBandTransition),
+          ),
+        )
+        .shown
+        .value;
+    expect(bandShownOf('Support'), 1);
+    expect(bandShownOf('Detail'), 1);
+
     await tester.drag(
       find.byKey(const ValueKey('Detail list')),
       const Offset(0, -200),
     );
     await tester.pumpAndSettle();
+    expect(bandShownOf('Detail'), 0);
+    expect(backdropOf('Detail'), findsNothing);
+    expect(bandShownOf('Support'), 1);
+
+    await tester.drag(
+      find.byKey(const ValueKey('Detail list')),
+      const Offset(0, 40),
+    );
+    await tester.pumpAndSettle();
+    expect(bandShownOf('Detail'), 1);
     expect(backdropOf('Detail'), findsOneWidget);
     expect(backdropOf('Support'), findsNothing);
 

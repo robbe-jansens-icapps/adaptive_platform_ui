@@ -9,6 +9,7 @@ import '../../style/sf_symbol.dart';
 import '../../toolbar/duo_top_strip.dart';
 import '../../toolbar/duo_vertical_bar.dart';
 import '../../toolbar/hosted_top_toolbar.dart' show kHostedToolbarBottomPadding;
+import '../../chrome/adaptive_chrome.dart' show AlwaysStoppedListenable;
 import '../../toolbar/toolbar_chrome_scope.dart';
 import '../adaptive_app_bar.dart';
 import '../adaptive_app_bar_action.dart';
@@ -50,6 +51,7 @@ class IOS26Scaffold extends StatefulWidget {
     this.backdropColor,
     this.showsBackdrop = true,
     this.scrollEdge,
+    this.titleBandShown = const AlwaysStoppedListenable<double>(1),
     @visibleForTesting this.debugVerticalBarEdge,
     required this.children,
   });
@@ -103,6 +105,11 @@ class IOS26Scaffold extends StatefulWidget {
   /// band's background comes in with it, as the fixed toolbar's does. Null
   /// shows the background all the time.
   final ValueListenable<double>? scrollEdge;
+
+  /// How far that title band is shown: it moves out of the way while the
+  /// page scrolls on and comes back as it scrolls back, as the one the
+  /// toolbar host draws does ([AdaptiveAppBar.hidesOnScroll]).
+  final ValueListenable<double> titleBandShown;
   final bool tabBarHidden;
 
   /// Whether the toolbar host draws the native tab bar at the bottom of the
@@ -254,19 +261,24 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
 
   /// The background of the iPhone Duo's title band the page draws itself, in
   /// a column of a split view: in as soon as the page's content scrolls under
-  /// it, as the fixed toolbar's is, so a page at its top shows none.
+  /// it, as the fixed toolbar's is, so a page at its top shows none. It goes
+  /// with the band as that moves out of the way.
   Widget _titleBackdrop() {
     final backdrop = DuoTitleBackdrop(
       color: widget.backdropColor ?? widget.backgroundColor,
     );
     final scrollEdge = widget.scrollEdge;
-    if (scrollEdge == null) return backdrop;
-    return ValueListenableBuilder<double>(
-      valueListenable: scrollEdge,
+    final shown = widget.titleBandShown;
+    return ListenableBuilder(
+      listenable: Listenable.merge([scrollEdge, shown]),
       child: backdrop,
-      builder: (context, edge, child) => edge <= 0
-          ? const SizedBox.shrink()
-          : Opacity(opacity: edge.clamp(0.0, 1.0), child: child),
+      builder: (context, child) {
+        final opacity = (scrollEdge?.value ?? 1) * shown.value;
+        if (opacity <= 0) return const SizedBox.shrink();
+        return opacity >= 1
+            ? child!
+            : Opacity(opacity: opacity.clamp(0.0, 1.0), child: child);
+      },
     );
   }
 
@@ -541,9 +553,12 @@ class _IOS26ScaffoldState extends State<IOS26Scaffold>
                     clipBehavior: Clip.none,
                     children: [
                       if (widget.showsBackdrop) _titleBackdrop(),
-                      DuoToolbarTitle(
-                        title: widget.title,
-                        titleWidget: widget.titleWidget,
+                      DuoTitleBandTransition(
+                        shown: widget.titleBandShown,
+                        child: DuoToolbarTitle(
+                          title: widget.title,
+                          titleWidget: widget.titleWidget,
+                        ),
                       ),
                     ],
                   )
